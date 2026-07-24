@@ -17,10 +17,13 @@ def _items(count: int, *, prefix: str) -> list[dict[str, object]]:
             "schema_version": "todo_item_v0",
             "todo_id": f"{prefix}-{index}",
             "text": f"{prefix} item {index}",
+            "title": f"{prefix} item {index}",
             "status": "open",
             "priority": "P1",
             "task_class": "advancement_task",
             "action_kind": f"{prefix}-action",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "note": "cold-path diagnostic note",
         }
         for index in range(count)
     ]
@@ -72,8 +75,17 @@ def test_compact_quota_should_run_cli_payload_keeps_decision_lanes_and_counts() 
     summary = compact["agent_todo_summary"]
     assert summary["total_count"] == 50
     assert summary["open_count"] == 40
-    assert len(summary["first_open_items"]) == 3
+    assert "first_open_items" not in summary
     assert len(summary["first_executable_items"]) == 3
+    assert summary["first_executable_items"][0] == {
+        "schema_version": "todo_item_v0",
+        "todo_id": "execute-0",
+        "text": "execute item 0",
+        "status": "open",
+        "priority": "P1",
+        "task_class": "advancement_task",
+        "action_kind": "execute-action",
+    }
     assert [item["todo_id"] for item in summary["unclaimed_priority_open_items"]] == [
         "unclaimed-0",
         "unclaimed-1",
@@ -98,7 +110,7 @@ def test_compact_quota_should_run_cli_payload_keeps_decision_lanes_and_counts() 
         "claim_scope.other_agent_claimed_items": 40,
         "claimed_open_items": 40,
         "first_executable_items": 1,
-        "first_open_items": 2,
+        "first_open_items": 5,
         "monitor_due_items": 1,
         "monitor_capability_blocked_due_items": 1,
         "monitor_schedule_gap_items": 1,
@@ -130,7 +142,7 @@ def test_compact_quota_should_run_cli_payload_keeps_decision_lanes_and_counts() 
     larger_compact = compact_quota_should_run_cli_payload(larger_payload)
     compact_chars = len(json.dumps(compact, sort_keys=True))
     larger_compact_chars = len(json.dumps(larger_compact, sort_keys=True))
-    assert compact_chars < 10_000
+    assert compact_chars < 7_000
     assert larger_compact_chars - compact_chars < 200
 
 

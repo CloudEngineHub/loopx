@@ -10,14 +10,53 @@ QUOTA_CLI_TODO_SUMMARY_DETAIL_COMMAND = (
     "quota should-run --include-todo-summary-detail"
 )
 _RETAINED_AGENT_ITEM_LANES = {
-    "first_open_items": 3,
     "first_executable_items": 3,
     "unclaimed_priority_open_items": 3,
     "monitor_due_items": 1,
     "monitor_capability_blocked_due_items": 2,
     "monitor_schedule_gap_items": 1,
 }
+_RETAINED_AGENT_ITEM_FIELDS = (
+    "schema_version",
+    "todo_id",
+    "index",
+    "text",
+    "status",
+    "priority",
+    "task_class",
+    "action_kind",
+    "claimed_by",
+    "bound_agent",
+    "goal_bound",
+    "blocks_agent",
+    "global_gate",
+    "task_repository",
+    "required_capabilities",
+    "required_write_scopes",
+    "excluded_agents",
+    "unblocks_todo_id",
+    "continuation_policy",
+    "resume_when",
+    "target_key",
+    "cadence",
+    "next_due_at",
+    "expires_at",
+    "last_checked_at",
+    "consecutive_no_change",
+    "material_change",
+    "result_hash",
+)
 _RETAINED_SUCCESSION_WARNING_TODO_IDS = 3
+
+
+def _compact_agent_item(item: Any) -> Any:
+    if not isinstance(item, dict):
+        return item
+    return {
+        key: item[key]
+        for key in _RETAINED_AGENT_ITEM_FIELDS
+        if key in item
+    }
 
 
 def _compact_nested_item_lists(
@@ -54,7 +93,10 @@ def _compact_agent_todo_summary(summary: dict[str, Any]) -> dict[str, Any]:
                 if value:
                     omitted_lanes[key] = len(value)
                 continue
-            compact[key] = value[:limit]
+            compact[key] = [
+                _compact_agent_item(item)
+                for item in value[:limit]
+            ]
             if len(value) > limit:
                 omitted_lanes[key] = len(value) - limit
             continue
