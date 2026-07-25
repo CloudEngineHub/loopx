@@ -188,6 +188,11 @@ capability 与 goal 配置承担。
 - 飞书等领域 adapter 保持可选，公开状态不含凭据和私有 locator；
 - 不修改 Core todo、gate、quota 或 authority 语义。
 
+首个入口切片已实现严格的私有配置加载、goal/agent 路由状态、公开安全的
+source manifest，以及显式配置、只读的 `local-file` source adapter。该切片
+尚不把 source scan 编排为 evidence/proposal packet，也不应用私有 cursor
+checkpoint；这两项仍是 P1 完成前的验收边界。
+
 ### P1：首个 dogfood
 
 - 在一个私有、脱敏的决策助手场景生成 evidence/proposal；

@@ -161,6 +161,12 @@ thin CLI that orchestrates source scans, evidence, and proposals without
 changing Core semantics. Domain adapters such as Lark remain optional and
 credential-free in public state.
 
+The first entry-point slice implements strict private config loading,
+goal-and-agent route status, public-safe source manifests, and an explicitly
+configured read-only `local-file` source adapter. It does not yet orchestrate
+source scans into evidence/proposal packets or apply private cursor
+checkpoints. Those remain the acceptance boundary for completing P1.
+
 ### P1: first dogfood
 
 Use one private, redacted decision-assistant scenario. Write an outcome receipt
