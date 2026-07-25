@@ -11,6 +11,7 @@ SCHEDULER_EXECUTION_CONTEXT_SCHEMA_VERSION = "scheduler_execution_context_v0"
 
 class HostSurface(str, Enum):
     CODEX_APP = "codex_app"
+    CODEX_APP_SSH = "codex_app_ssh"
     CODEX_CLI = "codex_cli"
     GENERIC_CLI = "generic_cli"
     CLAUDE_CODE = "claude_code"
@@ -32,6 +33,7 @@ class ExecutionMode(str, Enum):
 
 class SchedulerRuntimeProfile(str, Enum):
     CODEX_APP_HEARTBEAT = "codex_app_heartbeat"
+    CODEX_APP_SSH_VISIBLE = "codex_app_ssh_goal"
     CODEX_CLI_VISIBLE = "codex_cli"
     CLAUDE_CODE_VISIBLE = "claude_code"
     GENERIC_CLI_AGENT_LOOP = "generic_cli"
@@ -43,6 +45,11 @@ _SCHEDULER_RUNTIME_PROFILE_CONTEXTS = {
         HostSurface.CODEX_APP,
         SchedulerOwner.HOST_AUTOMATION,
         ExecutionMode.HOSTED_AUTOMATION,
+    ),
+    SchedulerRuntimeProfile.CODEX_APP_SSH_VISIBLE: (
+        HostSurface.CODEX_APP_SSH,
+        SchedulerOwner.AGENT_CLI_LOOP,
+        ExecutionMode.INTERACTIVE,
     ),
     SchedulerRuntimeProfile.CODEX_CLI_VISIBLE: (
         HostSurface.CODEX_CLI,
@@ -132,6 +139,7 @@ class SchedulerExecutionContextResolution:
 def _validation_errors(context: SchedulerExecutionContext) -> list[str]:
     errors: list[str] = []
     cli_surfaces = {
+        HostSurface.CODEX_APP_SSH,
         HostSurface.CODEX_CLI,
         HostSurface.GENERIC_CLI,
         HostSurface.CLAUDE_CODE,
@@ -335,6 +343,7 @@ def scheduler_execution_context_for_turn(
     scheduler_owner: str | None = None,
 ) -> SchedulerExecutionContextResolution:
     host_surface = {
+        "codex-app-ssh": HostSurface.CODEX_APP_SSH.value,
         "codex-cli": HostSurface.CODEX_CLI.value,
         "generic-cli": HostSurface.GENERIC_CLI.value,
         "claude-code": HostSurface.CLAUDE_CODE.value,
