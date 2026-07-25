@@ -177,6 +177,9 @@ def test_scope_and_provider_routes_fail_closed_without_private_leaks(
     assert str(authority) not in serialized
     assert str(config_path) not in serialized
     assert PRIVATE_CONTENT not in serialized
+    if adapter == "missing-adapter":
+        assert adapter not in serialized
+        assert status["unavailable_adapter_count"] == 1
 
 
 @pytest.mark.parametrize(

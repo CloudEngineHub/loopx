@@ -138,10 +138,10 @@ class DecisionSourceProviderBinding:
     config: Mapping[str, Any] = field(repr=False)
 
     def public_record(self) -> dict[str, object]:
+        adapter_registered = decision_source_provider_registered(self.adapter)
         return {
-            "provider_id": self.provider_id,
-            "adapter": self.adapter,
-            "adapter_registered": decision_source_provider_registered(self.adapter),
+            "adapter": self.adapter if adapter_registered else "unregistered",
+            "adapter_registered": adapter_registered,
             "private_config_captured": False,
         }
 
@@ -399,12 +399,8 @@ def resolve_decision_context_experiment(
 
     configured_for_agent = normalized_agent in config.enabled_agents
     provider_records = [binding.public_record() for binding in config.provider_bindings]
-    unavailable_adapters = sorted(
-        {
-            str(record["adapter"])
-            for record in provider_records
-            if not record["adapter_registered"]
-        }
+    unavailable_adapter_count = sum(
+        not bool(record["adapter_registered"]) for record in provider_records
     )
     status = base | {
         "enabled": config.enabled,
@@ -418,10 +414,10 @@ def resolve_decision_context_experiment(
         return status | {"status": "disabled"}, config
     if not configured_for_agent:
         return status | {"status": "agent_not_enabled"}, config
-    if unavailable_adapters:
+    if unavailable_adapter_count:
         return status | {
             "status": "provider_unavailable",
             "reason_code": "source_provider_adapter_unavailable",
-            "unavailable_adapters": unavailable_adapters,
+            "unavailable_adapter_count": unavailable_adapter_count,
         }, config
     return status | {"status": "available", "available": True}, config
