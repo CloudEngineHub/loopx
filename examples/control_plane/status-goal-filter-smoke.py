@@ -104,6 +104,7 @@ def run_goal_command(
     project: Path,
     command_name: str,
     *extra: str,
+    goal_id: str | None = GOAL_A,
 ) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
@@ -114,14 +115,18 @@ def run_goal_command(
         "--runtime-root",
         str(runtime),
         command_name,
-        "--goal-id",
-        GOAL_A,
-        "--scan-path",
-        str(project / "PUBLIC.md"),
-        "--limit",
-        "10",
-        *extra,
     ]
+    if goal_id:
+        command.extend(["--goal-id", goal_id])
+    command.extend(
+        [
+            "--scan-path",
+            str(project / "PUBLIC.md"),
+            "--limit",
+            "10",
+            *extra,
+        ]
+    )
     return subprocess.run(
         command,
         cwd=REPO_ROOT,
@@ -196,6 +201,23 @@ def main() -> int:
             )
             assert result.returncode == 0, (result.stdout, result.stderr)
             assert GOAL_B not in result.stdout, result.stdout
+
+        ready_score = run_goal_command(
+            registry_path,
+            runtime,
+            project,
+            "ready-score",
+            "--format",
+            "json",
+            goal_id=None,
+        )
+        assert ready_score.returncode == 0, (
+            ready_score.stdout,
+            ready_score.stderr,
+        )
+        ready_payload = json.loads(ready_score.stdout)
+        assert ready_payload["goal_id"] == GOAL_A, ready_payload
+        assert GOAL_B not in ready_score.stdout, ready_score.stdout
 
     print("status-goal-filter-smoke ok")
     return 0
