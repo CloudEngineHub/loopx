@@ -199,6 +199,45 @@ def _gssapi_configured(ssh_options: Sequence[str]) -> bool:
     return False
 
 
+def _effective_gssapi_configured(
+    *,
+    ssh_options: Sequence[str],
+    destination: str,
+    timeout_seconds: int,
+) -> bool:
+    if _gssapi_configured(ssh_options):
+        return True
+    flattened_options = [
+        argument
+        for option in ssh_options
+        for argument in ("-o", option)
+    ]
+    try:
+        completed = subprocess.run(
+            ["ssh", "-G", *flattened_options, destination],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=min(timeout_seconds, 5),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if completed.returncode != 0:
+        return False
+    effective_options = [
+        "gssapiauthentication="
+        + line.partition(" ")[2]
+        if line.lower().startswith("gssapiauthentication ")
+        else "preferredauthentications="
+        + line.partition(" ")[2]
+        if line.lower().startswith("preferredauthentications ")
+        else ""
+        for line in completed.stdout.splitlines()
+    ]
+    return _gssapi_configured([option for option in effective_options if option])
+
+
 def _local_gssapi_ticket_state(*, gssapi_configured: bool) -> str:
     if not gssapi_configured:
         return "not_checked"
@@ -227,13 +266,17 @@ def probe_skillsbench_runner_connectivity(
         raise SkillsBenchRunnerProfileError("ssh_options_invalid") from error
     for option in options:
         ssh_options.extend(["-o", option])
-    gssapi_configured = _gssapi_configured(options)
-    local_gssapi_ticket_state = _local_gssapi_ticket_state(
-        gssapi_configured=gssapi_configured
-    )
     destination = str(profile.get("SKILLSBENCH_SSH_DESTINATION") or "")
     if not destination:
         raise SkillsBenchRunnerProfileError("required_runner_environment_missing")
+    gssapi_configured = _effective_gssapi_configured(
+        ssh_options=options,
+        destination=destination,
+        timeout_seconds=timeout_seconds,
+    )
+    local_gssapi_ticket_state = _local_gssapi_ticket_state(
+        gssapi_configured=gssapi_configured
+    )
     try:
         completed = subprocess.run(
             [

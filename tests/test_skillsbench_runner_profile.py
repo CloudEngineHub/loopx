@@ -196,3 +196,37 @@ def test_probe_ssh_distinguishes_local_ticket_from_remote_acceptance(
         assert probe["task_material_read"] is False
         assert probe["benchmark_job_launched"] is False
         assert probe["raw_output_recorded"] is False
+
+
+def test_probe_ssh_reads_gssapi_from_effective_host_config(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ssh = fake_bin / "ssh"
+    fake_klist = fake_bin / "klist"
+    fake_ssh.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = '-G' ]; then\n"
+        "  printf 'gssapiauthentication yes\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 255\n",
+        encoding="utf-8",
+    )
+    fake_ssh.chmod(0o755)
+    fake_klist.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_klist.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
+
+    probe = probe_skillsbench_runner_connectivity(
+        {"SKILLSBENCH_SSH_DESTINATION": "runner.example.invalid"}
+    )
+
+    assert probe["reachable"] is False
+    assert probe["gssapi_configured"] is True
+    assert probe["local_gssapi_ticket_state"] == "present"
+    assert probe["remote_task_free_acceptance"] is False
+    assert probe["readiness_state"] == "remote_task_free_acceptance_failed"
+    assert probe["raw_output_recorded"] is False
