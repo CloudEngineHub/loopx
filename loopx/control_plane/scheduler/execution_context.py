@@ -149,6 +149,11 @@ def _validation_errors(context: SchedulerExecutionContext) -> list[str]:
             errors.append("codex_app requires scheduler_owner=host_automation")
         if context.execution_mode is not ExecutionMode.HOSTED_AUTOMATION:
             errors.append("codex_app requires execution_mode=hosted_automation")
+    if context.host_surface is HostSurface.CODEX_APP_SSH:
+        if context.scheduler_owner is not SchedulerOwner.AGENT_CLI_LOOP:
+            errors.append("codex_app_ssh requires scheduler_owner=agent_cli_loop")
+        if context.execution_mode is not ExecutionMode.INTERACTIVE:
+            errors.append("codex_app_ssh requires execution_mode=interactive")
     if context.host_surface is HostSurface.LOCAL_SCHEDULER:
         if context.scheduler_owner is not SchedulerOwner.HOST_AUTOMATION:
             errors.append("local_scheduler requires scheduler_owner=host_automation")
