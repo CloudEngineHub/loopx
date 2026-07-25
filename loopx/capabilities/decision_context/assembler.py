@@ -11,6 +11,7 @@ from typing import Any
 
 from ..context_providers.base import (
     ContextProvider,
+    ContextProviderItem,
     ContextProviderRetrieval,
     canonical_context_matches,
     opaque_provider_ref,
@@ -212,6 +213,16 @@ def _collect_source(
             (),
             False,
         )
+    if not isinstance(scan, DecisionSourceScan):
+        return (
+            _unavailable_source_scan(
+                source=source,
+                observed_at=observed_at,
+                reason_code="provider_contract_invalid",
+            ),
+            (),
+            False,
+        )
 
     exact_reads: list[DecisionSourceExactRead] = []
     exact_read_failed = False
@@ -224,12 +235,13 @@ def _collect_source(
                     timeout_seconds=timeout_seconds,
                     observed_at=observed_at,
                 )
+                if not isinstance(exact_read, DecisionSourceExactRead):
+                    raise TypeError("exact_read must return DecisionSourceExactRead")
+                if exact_read.verified:
+                    exact_reads.append(exact_read)
+                else:
+                    exact_read_failed = True
             except Exception:
-                exact_read_failed = True
-                continue
-            if exact_read.verified:
-                exact_reads.append(exact_read)
-            else:
                 exact_read_failed = True
     return scan, tuple(exact_reads), exact_read_failed
 
@@ -248,7 +260,7 @@ def _collect_recall(
     if provider is None:
         return None
     try:
-        return provider.retrieve(
+        retrieval = provider.retrieve(
             namespace=namespace,
             scope_ref=scope_ref,
             query=query,
@@ -259,13 +271,42 @@ def _collect_recall(
         )
     except Exception:
         return _unavailable_context_retrieval(
-            provider=str(getattr(provider, "provider_id", "context-provider")),
+            provider="context-provider",
             namespace=namespace,
             observed_at=observed_at,
             query_summary=query_summary,
             requested_limit=max_results,
             reason_code="provider_retrieval_failed",
         )
+    provider_id = str(getattr(provider, "provider_id", ""))
+    contract_valid = (
+        isinstance(retrieval, ContextProviderRetrieval)
+        and retrieval.provider == provider_id
+        and retrieval.namespace == namespace
+        and len(retrieval.items) <= max_results
+        and all(isinstance(item, ContextProviderItem) for item in retrieval.items)
+    )
+    if not contract_valid:
+        return _unavailable_context_retrieval(
+            provider="context-provider",
+            namespace=namespace,
+            observed_at=observed_at,
+            query_summary=query_summary,
+            requested_limit=max_results,
+            reason_code="provider_contract_invalid",
+        )
+    try:
+        retrieval.public_packet()
+    except Exception:
+        return _unavailable_context_retrieval(
+            provider="context-provider",
+            namespace=namespace,
+            observed_at=observed_at,
+            query_summary=query_summary,
+            requested_limit=max_results,
+            reason_code="provider_contract_invalid",
+        )
+    return retrieval
 
 
 def _freshness(

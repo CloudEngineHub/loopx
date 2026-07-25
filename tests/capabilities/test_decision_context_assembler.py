@@ -147,6 +147,21 @@ class InvalidSourceProvider(SourceProvider):
         )
 
 
+class InvalidScanTypeProvider(SourceProvider):
+    def scan(self, **kwargs: Any) -> Any:
+        return {"status": "completed", "private": "provider payload"}
+
+
+class InvalidExactReadTypeProvider(SourceProvider):
+    def exact_read(self, **kwargs: Any) -> Any:
+        return {"verified": True, "private": "provider payload"}
+
+
+class InvalidRecallTypeProvider(RecallProvider):
+    def retrieve(self, **kwargs: Any) -> Any:
+        return {"status": "completed", "private": "provider payload"}
+
+
 def accepted_rebase(collection: Any) -> DecisionEvidenceRecords:
     authority = collection.authority[0]
     recall = collection.recall[0]
@@ -325,6 +340,56 @@ def test_invalid_source_provider_contract_fails_open() -> None:
     )
     assert packet["cursor_checkpoint"]["sources"][0]["disposition"] == "preserve"
     assert assembly.proposed_cursors == {}
+
+
+@pytest.mark.parametrize(
+    ("source_provider", "expected_reason"),
+    [
+        (InvalidScanTypeProvider(), "provider_contract_invalid"),
+        (InvalidExactReadTypeProvider(), None),
+    ],
+)
+def test_invalid_source_provider_return_type_fails_open(
+    source_provider: SourceProvider,
+    expected_reason: str | None,
+) -> None:
+    assembly = assemble_decision_evidence(
+        goal_id="goal:decision-advisor",
+        decision_id="decision:priority",
+        observed_at=OBSERVED_AT,
+        before=BEFORE,
+        sources=[authority_source()],
+        source_providers={"source-provider": source_provider},
+        cursors={"source:owner": "private-cursor-before"},
+        rebase=lambda _: DecisionEvidenceRecords(),
+    )
+
+    packet = assembly.public_packet()
+    receipt = packet["source_scan_receipts"][0]
+    row = packet["cursor_checkpoint"]["sources"][0]
+    assert receipt["reason_code"] == expected_reason
+    assert row["disposition"] == "preserve"
+    assert assembly.proposed_cursors == {}
+    assert "provider payload" not in json.dumps(packet, sort_keys=True)
+
+
+def test_invalid_recall_provider_return_type_fails_open() -> None:
+    assembly = assemble_decision_evidence(
+        goal_id="goal:decision-advisor",
+        decision_id="decision:priority",
+        observed_at=OBSERVED_AT,
+        before=BEFORE,
+        sources=[authority_source()],
+        source_providers={"source-provider": SourceProvider(status="no_change")},
+        cursors={},
+        context_provider=InvalidRecallTypeProvider(),
+        rebase=lambda _: DecisionEvidenceRecords(),
+    )
+
+    receipt = assembly.public_packet()["context_retrieval_receipt"]
+    assert receipt["status"] == "unavailable"
+    assert receipt["reason_code"] == "provider_contract_invalid"
+    assert "provider payload" not in json.dumps(receipt, sort_keys=True)
 
 
 def test_exact_read_failure_does_not_advance_cursor() -> None:
