@@ -1,4 +1,4 @@
-"""Default-off, goal-scoped Decision Context experiment configuration."""
+"""Default-off, goal-scoped Decision Context profile and activation status."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from typing import Any
 from .providers import decision_source_provider_registered
 from .sources import DecisionSourceSpec
 
-DECISION_CONTEXT_EXPERIMENT_SCHEMA_VERSION = "decision_context_experiment_config_v0"
-DECISION_CONTEXT_EXPERIMENT_STATUS_SCHEMA_VERSION = (
-    "decision_context_experiment_status_v0"
+DECISION_CONTEXT_PROFILE_SCHEMA_VERSION = "decision_context_profile_v0"
+DECISION_CONTEXT_ACTIVATION_STATUS_SCHEMA_VERSION = (
+    "decision_context_activation_status_v0"
 )
 MAX_DECISION_SOURCES = 64
 MAX_SOURCE_PROVIDER_BINDINGS = 16
@@ -147,7 +147,7 @@ class DecisionSourceProviderBinding:
 
 
 @dataclass(frozen=True)
-class DecisionContextExperimentConfig:
+class DecisionContextProfile:
     goal_id: str
     enabled: bool
     enabled_agents: tuple[str, ...]
@@ -168,18 +168,18 @@ class DecisionContextExperimentConfig:
         }
 
 
-def normalize_decision_context_experiment_config(
+def normalize_decision_context_profile(
     raw: Mapping[str, Any],
-) -> DecisionContextExperimentConfig:
+) -> DecisionContextProfile:
     config = _strict_mapping(
         raw,
-        label="decision-context experiment config",
+        label="decision-context profile",
         allowed=_CONFIG_FIELDS,
     )
-    if config.get("schema_version") != DECISION_CONTEXT_EXPERIMENT_SCHEMA_VERSION:
+    if config.get("schema_version") != DECISION_CONTEXT_PROFILE_SCHEMA_VERSION:
         raise ValueError(
-            "decision-context experiment config must use "
-            + DECISION_CONTEXT_EXPERIMENT_SCHEMA_VERSION
+            "decision-context profile must use "
+            + DECISION_CONTEXT_PROFILE_SCHEMA_VERSION
         )
     goal_id = _token(config.get("goal_id"), field_name="goal_id")
     enabled = _boolean(config.get("enabled"), field_name="enabled")
@@ -191,7 +191,7 @@ def normalize_decision_context_experiment_config(
         sorted({_token(value, field_name="enabled_agents[]") for value in raw_agents})
     )
     if enabled and not enabled_agents:
-        raise ValueError("an enabled experiment requires at least one enabled agent")
+        raise ValueError("an enabled profile requires at least one enabled agent")
 
     bindings: list[DecisionSourceProviderBinding] = []
     binding_ids: set[str] = set()
@@ -280,7 +280,7 @@ def normalize_decision_context_experiment_config(
         sources.append(spec)
         source_ids.add(spec.source_id)
     if enabled and not sources:
-        raise ValueError("an enabled experiment requires at least one source")
+        raise ValueError("an enabled profile requires at least one source")
 
     context_provider: Mapping[str, Any] | None = None
     raw_context_provider = config.get("context_provider")
@@ -327,7 +327,7 @@ def normalize_decision_context_experiment_config(
     if not fail_open:
         raise ValueError("decision-context providers must fail open")
 
-    return DecisionContextExperimentConfig(
+    return DecisionContextProfile(
         goal_id=goal_id,
         enabled=enabled,
         enabled_agents=enabled_agents,
@@ -339,36 +339,36 @@ def normalize_decision_context_experiment_config(
     )
 
 
-def load_decision_context_experiment_config(
+def load_decision_context_profile(
     path: Path,
-) -> DecisionContextExperimentConfig:
+) -> DecisionContextProfile:
     try:
         with path.expanduser().open(encoding="utf-8") as handle:
             payload = json.load(handle)
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError("decision-context experiment config is unavailable") from exc
+        raise ValueError("decision-context profile is unavailable") from exc
     if not isinstance(payload, Mapping):
-        raise ValueError("decision-context experiment config must be an object")
-    return normalize_decision_context_experiment_config(payload)
+        raise ValueError("decision-context profile must be an object")
+    return normalize_decision_context_profile(payload)
 
 
-def resolve_decision_context_experiment(
+def resolve_decision_context_activation(
     *,
     goal_id: str,
     agent_id: str,
-    config_path: Path | None,
-) -> tuple[dict[str, Any], DecisionContextExperimentConfig | None]:
+    profile_path: Path | None,
+) -> tuple[dict[str, Any], DecisionContextProfile | None]:
     normalized_goal = _token(goal_id, field_name="goal_id")
     normalized_agent = _token(agent_id, field_name="agent_id")
     base: dict[str, Any] = {
         "ok": True,
-        "schema_version": DECISION_CONTEXT_EXPERIMENT_STATUS_SCHEMA_VERSION,
+        "schema_version": DECISION_CONTEXT_ACTIVATION_STATUS_SCHEMA_VERSION,
         "capability_id": "decision_context",
         "scope": "goal",
         "default_enabled": False,
         "goal_id": normalized_goal,
         "agent_id": normalized_agent,
-        "configured": config_path is not None,
+        "profile_configured": profile_path is not None,
         "enabled": False,
         "configured_for_agent": False,
         "available": False,
@@ -382,18 +382,18 @@ def resolve_decision_context_experiment(
         "private_locator_captured": False,
         "credentials_captured": False,
     }
-    if config_path is None:
+    if profile_path is None:
         return base | {"status": "disabled"}, None
     try:
-        config = load_decision_context_experiment_config(config_path)
+        config = load_decision_context_profile(profile_path)
     except ValueError:
         return base | {
-            "status": "config_invalid",
-            "reason_code": "config_unavailable_or_invalid",
+            "status": "profile_invalid",
+            "reason_code": "profile_unavailable_or_invalid",
         }, None
     if config.goal_id != normalized_goal:
         return base | {
-            "status": "config_invalid",
+            "status": "profile_invalid",
             "reason_code": "goal_scope_mismatch",
         }, None
 

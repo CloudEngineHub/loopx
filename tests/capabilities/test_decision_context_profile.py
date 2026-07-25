@@ -9,8 +9,8 @@ import pytest
 from loopx.capabilities.catalog import build_capability_detail_packet
 from loopx.capabilities.decision_context import (
     build_decision_source_provider,
-    normalize_decision_context_experiment_config,
-    resolve_decision_context_experiment,
+    normalize_decision_context_profile,
+    resolve_decision_context_activation,
 )
 from loopx.cli import main
 
@@ -18,7 +18,7 @@ OBSERVED_AT = "2026-07-25T18:30:00+00:00"
 PRIVATE_CONTENT = "private authority content"
 
 
-def experiment_payload(
+def profile_payload(
     authority_path: Path,
     *,
     enabled: bool = True,
@@ -26,7 +26,7 @@ def experiment_payload(
     adapter: str = "local-file",
 ) -> dict[str, Any]:
     return {
-        "schema_version": "decision_context_experiment_config_v0",
+        "schema_version": "decision_context_profile_v0",
         "goal_id": "example-decision-goal",
         "enabled": enabled,
         "enabled_agents": [agent_id],
@@ -61,34 +61,34 @@ def experiment_payload(
     }
 
 
-def write_config(path: Path, payload: dict[str, Any]) -> Path:
+def write_profile(path: Path, payload: dict[str, Any]) -> Path:
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
 
 
-def test_experiment_is_default_off_without_private_config() -> None:
-    status, config = resolve_decision_context_experiment(
+def test_profile_is_default_off_without_private_file() -> None:
+    status, profile = resolve_decision_context_activation(
         goal_id="example-decision-goal",
         agent_id="example-agent",
-        config_path=None,
+        profile_path=None,
     )
 
-    assert config is None
+    assert profile is None
     assert status["status"] == "disabled"
     assert status["default_enabled"] is False
     assert status["available"] is False
     assert status["external_writes_performed"] is False
 
 
-def test_available_status_and_manifest_do_not_leak_private_config(
+def test_available_status_and_manifest_do_not_leak_private_profile(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     authority = tmp_path / "private-authority.md"
     authority.write_text(PRIVATE_CONTENT, encoding="utf-8")
-    config_path = write_config(
-        tmp_path / "private-config.json",
-        experiment_payload(authority),
+    profile_path = write_profile(
+        tmp_path / "private-profile.json",
+        profile_payload(authority),
     )
 
     assert (
@@ -102,8 +102,8 @@ def test_available_status_and_manifest_do_not_leak_private_config(
                 "example-decision-goal",
                 "--agent-id",
                 "example-agent",
-                "--config",
-                str(config_path),
+                "--profile",
+                str(profile_path),
                 "--observed-at",
                 OBSERVED_AT,
             ]
@@ -118,7 +118,7 @@ def test_available_status_and_manifest_do_not_leak_private_config(
     assert payload["source_manifest"]["observed_at"] == OBSERVED_AT
     for private_value in (
         str(authority),
-        str(config_path),
+        str(profile_path),
         PRIVATE_CONTENT,
         "max_bytes",
     ):
@@ -135,7 +135,7 @@ def test_available_status_and_manifest_do_not_leak_private_config(
             "another-goal",
             "example-agent",
             "local-file",
-            "config_invalid",
+            "profile_invalid",
         ),
         (
             "example-decision-goal",
@@ -160,22 +160,22 @@ def test_scope_and_provider_routes_fail_closed_without_private_leaks(
 ) -> None:
     authority = tmp_path / "private-authority.md"
     authority.write_text(PRIVATE_CONTENT, encoding="utf-8")
-    config_path = write_config(
-        tmp_path / "private-config.json",
-        experiment_payload(authority, adapter=adapter),
+    profile_path = write_profile(
+        tmp_path / "private-profile.json",
+        profile_payload(authority, adapter=adapter),
     )
 
-    status, _config = resolve_decision_context_experiment(
+    status, _profile = resolve_decision_context_activation(
         goal_id=goal_id,
         agent_id=agent_id,
-        config_path=config_path,
+        profile_path=profile_path,
     )
     serialized = json.dumps(status, sort_keys=True)
 
     assert status["status"] == expected_status
     assert status["available"] is False
     assert str(authority) not in serialized
-    assert str(config_path) not in serialized
+    assert str(profile_path) not in serialized
     assert PRIVATE_CONTENT not in serialized
     if adapter == "missing-adapter":
         assert adapter not in serialized
@@ -189,17 +189,17 @@ def test_scope_and_provider_routes_fail_closed_without_private_leaks(
         ("fail_open", False, "providers must fail open"),
     ],
 )
-def test_experiment_rejects_unsafe_automation_modes(
+def test_profile_rejects_unsafe_automation_modes(
     tmp_path: Path,
     field_name: str,
     value: bool,
     expected_message: str,
 ) -> None:
-    payload = experiment_payload(tmp_path / "authority.md")
+    payload = profile_payload(tmp_path / "authority.md")
     payload["automation"][field_name] = value
 
     with pytest.raises(ValueError, match=expected_message):
-        normalize_decision_context_experiment_config(payload)
+        normalize_decision_context_profile(payload)
 
 
 def test_local_file_provider_supports_bounded_scan_exact_read_and_cursor(
@@ -207,11 +207,11 @@ def test_local_file_provider_supports_bounded_scan_exact_read_and_cursor(
 ) -> None:
     authority = tmp_path / "authority.md"
     authority.write_text(PRIVATE_CONTENT, encoding="utf-8")
-    config = normalize_decision_context_experiment_config(experiment_payload(authority))
+    profile = normalize_decision_context_profile(profile_payload(authority))
     provider = build_decision_source_provider(
-        config.provider_binding_map()["local-authority"]
+        profile.provider_binding_map()["local-authority"]
     )
-    source = config.sources[0]
+    source = profile.sources[0]
 
     first = provider.scan(
         source=source,
@@ -250,7 +250,7 @@ def test_local_file_provider_supports_bounded_scan_exact_read_and_cursor(
 def test_local_file_provider_rejects_oversized_authority(tmp_path: Path) -> None:
     authority = tmp_path / "authority.md"
     authority.write_text(PRIVATE_CONTENT, encoding="utf-8")
-    payload = experiment_payload(authority)
+    payload = profile_payload(authority)
     bindings = payload["source_provider_bindings"]
     assert isinstance(bindings, list)
     binding = bindings[0]
@@ -258,14 +258,14 @@ def test_local_file_provider_rejects_oversized_authority(tmp_path: Path) -> None
     private_config = binding["config"]
     assert isinstance(private_config, dict)
     private_config["max_bytes"] = 2
-    config = normalize_decision_context_experiment_config(payload)
+    profile = normalize_decision_context_profile(payload)
     provider = build_decision_source_provider(
-        config.provider_binding_map()["local-authority"]
+        profile.provider_binding_map()["local-authority"]
     )
 
     with pytest.raises(ValueError, match="exceeds max_bytes"):
         provider.scan(
-            source=config.sources[0],
+            source=profile.sources[0],
             after_cursor=None,
             before="2100-01-01T00:00:00+00:00",
             limit=8,
@@ -274,14 +274,14 @@ def test_local_file_provider_rejects_oversized_authority(tmp_path: Path) -> None
         )
 
 
-def test_catalog_routes_to_default_off_experiment_status() -> None:
+def test_catalog_routes_to_default_off_profile_inspection() -> None:
     capability = build_capability_detail_packet("decision-context")["capability"]
     schema_versions = {
         protocol["schema_version"] for protocol in capability["implemented_protocols"]
     }
 
-    assert "experiment-status" in capability["entry_command"]
+    assert "inspect-profile" in capability["entry_command"]
     assert {
-        "decision_context_experiment_config_v0",
-        "decision_context_experiment_status_v0",
+        "decision_context_profile_v0",
+        "decision_context_activation_status_v0",
     } <= schema_versions

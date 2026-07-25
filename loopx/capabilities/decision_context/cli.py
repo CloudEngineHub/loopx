@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .architecture import build_decision_context_architecture_packet
-from .experiment import resolve_decision_context_experiment
+from .profile import resolve_decision_context_activation
 from .sources import build_decision_source_manifest
 
 PrintPayload = Callable[
@@ -59,25 +59,25 @@ def register_decision_context_commands(
     )
     add_subcommand_format(architecture)
     status = commands.add_parser(
-        "experiment-status",
-        help="Inspect a default-off goal and agent route without provider access.",
+        "inspect-profile",
+        help="Inspect a default-off goal profile without provider access.",
     )
     add_subcommand_format(status)
     status.add_argument("--goal-id", required=True)
     status.add_argument("--agent-id", required=True)
     status.add_argument(
-        "--config",
-        help="Private local experiment config. Omit it to prove the default-off route.",
+        "--profile",
+        help="Private local profile. Omit it to prove the default-off route.",
     )
 
     manifest = commands.add_parser(
         "source-manifest",
-        help="Project an enabled private source config into a public-safe manifest.",
+        help="Project an enabled private source profile into a public-safe manifest.",
     )
     add_subcommand_format(manifest)
     manifest.add_argument("--goal-id", required=True)
     manifest.add_argument("--agent-id", required=True)
-    manifest.add_argument("--config", required=True)
+    manifest.add_argument("--profile", required=True)
     manifest.add_argument(
         "--observed-at",
         help="Optional timezone-aware ISO-8601 time for a reproducible manifest.",
@@ -94,14 +94,14 @@ def handle_decision_context_command(
         return None
     if args.decision_context_command == "architecture":
         payload = build_decision_context_architecture_packet()
-    elif args.decision_context_command in {"experiment-status", "source-manifest"}:
-        config_value = str(getattr(args, "config", None) or "").strip()
-        status, config = resolve_decision_context_experiment(
+    elif args.decision_context_command in {"inspect-profile", "source-manifest"}:
+        profile_value = str(getattr(args, "profile", None) or "").strip()
+        status, profile = resolve_decision_context_activation(
             goal_id=args.goal_id,
             agent_id=args.agent_id,
-            config_path=Path(config_value) if config_value else None,
+            profile_path=Path(profile_value) if profile_value else None,
         )
-        if args.decision_context_command == "experiment-status":
+        if args.decision_context_command == "inspect-profile":
             payload = status
         else:
             observed_at = str(getattr(args, "observed_at", None) or "").strip()
@@ -112,9 +112,9 @@ def handle_decision_context_command(
                         observed_at=(
                             observed_at or datetime.now(timezone.utc).isoformat()
                         ),
-                        sources=config.sources,
+                        sources=profile.sources,
                     )
-                    if status["available"] and config is not None
+                    if status["available"] and profile is not None
                     else None
                 )
             }

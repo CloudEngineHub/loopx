@@ -279,7 +279,7 @@ BUILTIN_CAPABILITIES: tuple[dict[str, Any], ...] = (
             "while keeping source providers replaceable and Core authority unchanged."
         ),
         "entry_command": (
-            "loopx decision-context experiment-status "
+            "loopx decision-context inspect-profile "
             "--goal-id <goal-id> --agent-id <agent-id> --format json"
         ),
         "commands": [
@@ -290,16 +290,16 @@ BUILTIN_CAPABILITIES: tuple[dict[str, Any], ...] = (
             },
             {
                 "command": (
-                    "loopx decision-context experiment-status "
+                    "loopx decision-context inspect-profile "
                     "--goal-id <goal-id> --agent-id <agent-id> "
-                    "[--config <private-local-config>] --format json"
+                    "[--profile <private-local-profile>] --format json"
                 ),
                 "purpose": (
                     "Resolve the default-off goal and agent route while projecting "
                     "only public-safe provider availability."
                 ),
                 "write_boundary": (
-                    "reads an optional private local config; never emits source "
+                    "reads an optional private local profile; never emits source "
                     "locators, provider config, raw content, cursors, or credentials"
                 ),
             },
@@ -307,7 +307,7 @@ BUILTIN_CAPABILITIES: tuple[dict[str, Any], ...] = (
                 "command": (
                     "loopx decision-context source-manifest "
                     "--goal-id <goal-id> --agent-id <agent-id> "
-                    "--config <private-local-config> --format json"
+                    "--profile <private-local-profile> --format json"
                 ),
                 "purpose": (
                     "Project an enabled source profile into a public-safe manifest "
@@ -351,13 +351,13 @@ BUILTIN_CAPABILITIES: tuple[dict[str, Any], ...] = (
                 "doc": "docs/reference/protocols/decision-context-architecture-v0.md",
             },
             {
-                "schema_version": "decision_context_experiment_config_v0",
-                "module": "loopx.capabilities.decision_context.experiment",
+                "schema_version": "decision_context_profile_v0",
+                "module": "loopx.capabilities.decision_context.profile",
                 "doc": "docs/reference/protocols/decision-context-architecture-v0.md",
             },
             {
-                "schema_version": "decision_context_experiment_status_v0",
-                "module": "loopx.capabilities.decision_context.experiment",
+                "schema_version": "decision_context_activation_status_v0",
+                "module": "loopx.capabilities.decision_context.profile",
                 "doc": "docs/reference/protocols/decision-context-architecture-v0.md",
             },
         ],
@@ -1219,9 +1219,7 @@ def capability_ids(
     return build_capability_registry(
         extension_manifest_paths,
         extension_state_file=extension_state_file,
-    ).capability_ids(
-        include_internal=include_internal
-    )
+    ).capability_ids(include_internal=include_internal)
 
 
 def get_capability(
