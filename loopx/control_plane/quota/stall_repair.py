@@ -126,7 +126,7 @@ def _source_todo_items(
     source_items: list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
     candidates = list(source_items or [])
-    if isinstance(summary, dict):
+    if source_items is None and isinstance(summary, dict):
         for key in (
             "items",
             "first_open_items",
@@ -174,11 +174,9 @@ def build_runtime_capability_user_gate_repair_hint(
         for todo_id in [normalize_todo_id(item.get("todo_id"))]
         if todo_id
     }
-    user_summary = dict(user_todo_summary or {})
-    user_summary["items"] = _source_todo_items(
-        user_todo_summary,
-        user_todo_source_items,
-    )
+    user_summary = {
+        "items": _source_todo_items(user_todo_summary, user_todo_source_items)
+    }
     for gate in open_user_gate_todo_items(user_summary):
         if normalize_todo_global_gate(gate.get("global_gate")):
             continue

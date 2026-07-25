@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from loopx.control_plane.quota.stall_repair import (
+    build_runtime_capability_user_gate_repair_hint,
+)
+from loopx.control_plane.quota.turn_envelope import build_turn_envelope
 from loopx.control_plane.scheduler import scheduler_hint as scheduler_hint_module
 from loopx.control_plane.scheduler.ack import build_codex_app_scheduler_ack_event
-from loopx.control_plane.quota.turn_envelope import build_turn_envelope
-from loopx.control_plane.scheduler.scheduler_hint import build_scheduler_hint
 from loopx.control_plane.scheduler.execution_context import (
     scheduler_execution_context_for_runtime_profile,
 )
+from loopx.control_plane.scheduler.scheduler_hint import build_scheduler_hint
 from loopx.control_plane.scheduler.state import (
     SCHEDULER_HOST_UPDATE_FAILURE_SCHEMA_VERSION,
 )
@@ -294,6 +297,27 @@ def test_capability_runnable_runtime_recovery_gate_routes_to_agent_repair() -> N
     }
     assert payload["interaction_contract"]["agent_channel"]["must_attempt"] is True
     assert "response_plan" not in payload["interaction_contract"]
+
+
+def test_empty_authoritative_user_source_ignores_stale_summary_gate() -> None:
+    status = _runtime_recovery_gate_status()
+    item = status["attention_queue"]["items"][0]
+
+    repair = build_runtime_capability_user_gate_repair_hint(
+        user_todo_summary=item["user_todos"],
+        agent_todo_summary=item["agent_todos"],
+        user_todo_source_items=[],
+        agent_todo_source_items=item["agent_todos"]["items"],
+        agent_id=AGENT_ID,
+        available_capabilities=[
+            "shell",
+            "filesystem_write",
+            "network",
+            "benchmark_runner",
+        ],
+    )
+
+    assert repair is None
 
 
 def test_runtime_recovery_gate_with_decision_scope_remains_owner_gate() -> None:
