@@ -67,12 +67,6 @@ def _quota_detail_sections_from_args(args: argparse.Namespace) -> frozenset[str]
     sections = set(getattr(args, "include_details", None) or ())
     if bool(getattr(args, "include_scheduler_detail", False)):
         sections.add("scheduler")
-    if bool(getattr(args, "include_todo_summary_detail", False)):
-        sections.add("agent-todos")
-    if bool(getattr(args, "include_user_todo_summary_detail", False)):
-        sections.add("user-todos")
-    if bool(getattr(args, "include_goal_boundary_detail", False)):
-        sections.add("goal-boundary")
     if "all" in sections:
         sections.update(QUOTA_DETAIL_SECTIONS)
         sections.discard("all")
@@ -241,22 +235,8 @@ def register_quota_command(subparsers: argparse._SubParsersAction) -> None:
     quota_parser.add_argument(
         "--include-scheduler-detail",
         action="store_true",
-        help="Compatibility alias for `--include-detail scheduler`.",
-    )
-    quota_parser.add_argument(
-        "--include-todo-summary-detail",
-        action="store_true",
-        help="Compatibility alias for `--include-detail agent-todos`.",
-    )
-    quota_parser.add_argument(
-        "--include-user-todo-summary-detail",
-        action="store_true",
-        help="Compatibility alias for `--include-detail user-todos`.",
-    )
-    quota_parser.add_argument(
-        "--include-goal-boundary-detail",
-        action="store_true",
-        help="Compatibility alias for `--include-detail goal-boundary`.",
+        # Deprecated compatibility alias. Remove in the next breaking release.
+        help=argparse.SUPPRESS,
     )
     quota_parser.add_argument(
         "--codex-app-current-rrule",
@@ -434,29 +414,6 @@ def handle_quota_command(
         ):
             raise ValueError(
                 "--include-scheduler-detail is only valid with `quota should-run`"
-            )
-        if (
-            bool(getattr(args, "include_todo_summary_detail", False))
-            and args.quota_command != "should-run"
-        ):
-            raise ValueError(
-                "--include-todo-summary-detail is only valid with `quota should-run`"
-            )
-        if (
-            bool(getattr(args, "include_user_todo_summary_detail", False))
-            and args.quota_command != "should-run"
-        ):
-            raise ValueError(
-                "--include-user-todo-summary-detail is only valid with "
-                "`quota should-run`"
-            )
-        if (
-            bool(getattr(args, "include_goal_boundary_detail", False))
-            and args.quota_command != "should-run"
-        ):
-            raise ValueError(
-                "--include-goal-boundary-detail is only valid with "
-                "`quota should-run`"
             )
         raw_heartbeat_turn_id = getattr(args, "turn_instance_id", None)
         heartbeat_turn_id = normalize_turn_instance_id(raw_heartbeat_turn_id)

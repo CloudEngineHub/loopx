@@ -34,10 +34,10 @@ separate boundary through the real CLI entry point.
 
 `quota should-run` uses one repeatable cold-path selector:
 `--include-detail scheduler`, `agent-todos`, `user-todos`, or
-`goal-boundary`; `--include-detail all` expands every section. The older
-section-specific flags remain compatibility aliases, but emitted `detail_ref`
-commands and internal callers use the canonical selector. Unknown sections and
-selectors attached to another quota command fail before status collection.
+`goal-boundary`; `--include-detail all` expands every section. Public docs,
+emitted `detail_ref` commands, and internal callers use only this selector.
+Unknown sections and selectors attached to another quota command fail before
+status collection.
 
 The canonical emitted-output inventory and current characterization ceilings
 live in `loopx.control_plane.testing.cli_output_budget`. Those ceilings are

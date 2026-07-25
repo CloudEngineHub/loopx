@@ -24,6 +24,10 @@ Optional env:
                                        python3 -m loopx.benchmark_adapters.skillsbench_runner_profile capture
   SKILLSBENCH_LOCAL_CODEX_PROXY_HOST   Local proxy host, default 127.0.0.1
   SKILLSBENCH_LOCAL_CODEX_PROXY_PORT   Local proxy port, default 18180
+  SKILLSBENCH_LOCAL_CODEX_PROXY_COMMAND
+                                       Optional private foreground command that
+                                       the supervisor owns and restarts when
+                                       the local proxy endpoint is unavailable
   SKILLSBENCH_DOCKER_PROXY_HOST        Remote Docker bridge host for benchmark
                                        setup/verifier egress; default auto
   SKILLSBENCH_BENCHMARK_EGRESS_PROXY_MODE
@@ -35,12 +39,18 @@ Optional env:
   SKILLSBENCH_DOCKER_API_VERSION       Remote Docker daemon API version passed
                                        to Docker CLI/Compose; default auto
   SKILLSBENCH_DOCKER_APT_SOURCE_MODE   Staged Dockerfile apt sources: mirror
-                                       (default) or primary
+                                       or primary. When unset, proxy egress
+                                       selects primary and an explicit
+                                       no-proxy run selects mirror.
   SKILLSBENCH_DOCKER_APT_TRANSPORT_MODE
                                        Staged apt transport: default or
-                                       proxy-compatible
-  SKILLSBENCH_DOCKER_PIP_INDEX_MODE    Staged Dockerfile pip index: mirror
-                                       (default) or primary
+                                       proxy-compatible. When unset, proxy
+                                       egress selects proxy-compatible and an
+                                       explicit no-proxy run selects default.
+  SKILLSBENCH_DOCKER_PIP_INDEX_MODE    Staged Dockerfile pip index: mirror or
+                                       primary. When unset, proxy egress
+                                       selects primary and an explicit
+                                       no-proxy run selects mirror.
   SKILLSBENCH_DOCKER_PIP_BUILD_MODE    Staged Dockerfile pip build mode:
                                        isolated (default) or no-isolation
   SKILLSBENCH_ROUTE                    Route, default codex-cli-goal-baseline
@@ -240,9 +250,30 @@ allow_staged_bootstrap_repair_run="${SKILLSBENCH_ALLOW_STAGED_BOOTSTRAP_REPAIR_R
 setup_only_public_preflight="${SKILLSBENCH_SETUP_ONLY_PUBLIC_PREFLIGHT:-0}"
 benchmark_egress_proxy_mode="${SKILLSBENCH_BENCHMARK_EGRESS_PROXY_MODE:-require}"
 benchmark_egress_no_proxy="${SKILLSBENCH_BENCHMARK_EGRESS_NO_PROXY:-}"
-docker_apt_source_mode="${SKILLSBENCH_DOCKER_APT_SOURCE_MODE:-mirror}"
-docker_apt_transport_mode="${SKILLSBENCH_DOCKER_APT_TRANSPORT_MODE:-default}"
-docker_pip_index_mode="${SKILLSBENCH_DOCKER_PIP_INDEX_MODE:-mirror}"
+docker_apt_source_mode="${SKILLSBENCH_DOCKER_APT_SOURCE_MODE:-}"
+docker_apt_transport_mode="${SKILLSBENCH_DOCKER_APT_TRANSPORT_MODE:-}"
+docker_pip_index_mode="${SKILLSBENCH_DOCKER_PIP_INDEX_MODE:-}"
+if [[ -z "$docker_apt_source_mode" ]]; then
+  if [[ "$benchmark_egress_proxy_mode" == "off" ]]; then
+    docker_apt_source_mode="mirror"
+  else
+    docker_apt_source_mode="primary"
+  fi
+fi
+if [[ -z "$docker_apt_transport_mode" ]]; then
+  if [[ "$benchmark_egress_proxy_mode" == "off" ]]; then
+    docker_apt_transport_mode="default"
+  else
+    docker_apt_transport_mode="proxy-compatible"
+  fi
+fi
+if [[ -z "$docker_pip_index_mode" ]]; then
+  if [[ "$benchmark_egress_proxy_mode" == "off" ]]; then
+    docker_pip_index_mode="mirror"
+  else
+    docker_pip_index_mode="primary"
+  fi
+fi
 docker_pip_build_mode="${SKILLSBENCH_DOCKER_PIP_BUILD_MODE:-isolated}"
 product_mode_soft_verify_policy="${SKILLSBENCH_PRODUCT_MODE_SOFT_VERIFY_POLICY:-}"
 remote_command_file_bridge_probe_command="${SKILLSBENCH_REMOTE_COMMAND_FILE_BRIDGE_PROBE_COMMAND:-}"
@@ -318,6 +349,19 @@ fi
 remote_codex_bin_mode="path_lookup"
 if [[ -n "${SKILLSBENCH_REMOTE_CODEX_BIN:-}" ]]; then
   remote_codex_bin_mode="explicit"
+fi
+runner_connectivity_preflight="required"
+if [[ "$dry_run" == "false" ]]; then
+  if ! runner_connectivity_receipt="$(
+    PYTHONPATH="${repo_root}${PYTHONPATH:+:${PYTHONPATH}}" \
+      python3 -m loopx.benchmark_adapters.skillsbench_runner_profile \
+      probe-ssh --current-environment --timeout-seconds 10
+  )"; then
+    printf '%s\n' "$runner_connectivity_receipt" >&2
+    exit 3
+  fi
+  unset runner_connectivity_receipt
+  runner_connectivity_preflight="passed"
 fi
 exact_host_codex_sandbox_preflight="not_required"
 if [[ "$local_codex_split_control" == "1" ]]; then
@@ -447,6 +491,7 @@ fi
 batch_case_start_gap="${SKILLSBENCH_BATCH_CASE_START_GAP_SEC:-3}"
 local_proxy_host="${SKILLSBENCH_LOCAL_CODEX_PROXY_HOST:-127.0.0.1}"
 local_proxy_port="${SKILLSBENCH_LOCAL_CODEX_PROXY_PORT:-18180}"
+local_proxy_command="${SKILLSBENCH_LOCAL_CODEX_PROXY_COMMAND:-}"
 if [[ "$dry_run" == "false" ]] &&
   ! python3 - "$local_proxy_host" "$local_proxy_port" <<'PY'
 import socket
@@ -463,8 +508,10 @@ except (OSError, ValueError):
     raise SystemExit(1)
 PY
 then
-  echo "skillsbench_local_proxy_endpoint_unreachable" >&2
-  exit 2
+  if [[ -z "$local_proxy_command" ]]; then
+    echo "skillsbench_local_proxy_endpoint_unreachable" >&2
+    exit 2
+  fi
 fi
 docker_api_version="${SKILLSBENCH_DOCKER_API_VERSION:-auto}"
 if [[ -z "$docker_api_version" || "$docker_api_version" == "auto" ]]; then
@@ -750,6 +797,12 @@ supervisor_cmd=(
   --public-output-path "${public_dir}/supervisor.public.json"
 )
 
+if [[ -n "$local_proxy_command" ]]; then
+  supervisor_cmd+=(
+    --local-forward-managed-command "$local_proxy_command"
+  )
+fi
+
 if [[ "$local_codex_split_control" == "1" ]]; then
   supervisor_cmd+=(
     --codex-bridge
@@ -801,6 +854,8 @@ if [[ "$dry_run" == "true" ]]; then
   printf 'runner_profile_loaded=%s\n' "$runner_profile_loaded"
   printf 'runner_profile_path_recorded=false\n'
   printf 'runner_profile_values_recorded=false\n'
+  printf 'runner_connectivity_preflight=%s\n' \
+    "$runner_connectivity_preflight"
   printf 'local_codex_sandbox=%s\n' "$local_codex_sandbox"
   printf 'local_codex_exec_timeout_sec=%s\n' \
     "${local_codex_exec_timeout:-runner-default}"
@@ -829,6 +884,8 @@ if [[ "$dry_run" == "true" ]]; then
     "$([[ -n "$remote_command_file_bridge_agent_command" ]] && echo 1 || echo 0)"
   printf 'remote_command_file_bridge_agent_command_instrumented=%s\n' \
     "$remote_command_file_bridge_agent_command_instrumented"
+  printf 'local_codex_proxy_command_configured=%s\n' \
+    "$([[ -n "$local_proxy_command" ]] && echo 1 || echo 0)"
   printf 'loopx_turn_validation_command_configured=%s\n' \
     "$([[ -n "$loopx_turn_validation_command" ]] && echo 1 || echo 0)"
   printf 'loopx_turn_max_turns=%s\n' "$loopx_turn_max_turns"
@@ -845,6 +902,7 @@ if [[ "$dry_run" == "true" ]]; then
     [[ -n "$remote_command_file_bridge_probe_command" ]] ||
     [[ -n "$remote_command_file_bridge_solver_command" ]] ||
     [[ -n "$remote_command_file_bridge_agent_command" ]] ||
+    [[ -n "$local_proxy_command" ]] ||
     [[ -n "$loopx_turn_validation_command" ]] ||
     [[ -n "$benchmark_egress_no_proxy" ]]; then
     printf 'private_runner_command_values_redacted=true\n'
@@ -869,6 +927,8 @@ if [[ "$dry_run" == "true" ]]; then
       printf '%s ' --remote-command-file-bridge-agent-command
     [[ "$remote_command_file_bridge_agent_command_instrumented" == "1" ]] &&
       printf '%s ' --remote-command-file-bridge-agent-command-instrumented
+    [[ -n "$local_proxy_command" ]] &&
+      printf '%s ' --local-forward-managed-command
     [[ -n "$loopx_turn_validation_command" ]] &&
       printf '%s ' --loopx-turn-validation-command
     [[ -n "$benchmark_egress_no_proxy" ]] &&
@@ -927,6 +987,7 @@ docker_api_version=${docker_api_version}
 remote_codex_bin_mode=${remote_codex_bin_mode}
 local_codex_split_control=${local_codex_split_control}
 local_codex_provider=$([[ "$local_codex_split_control" == "1" ]] && echo reverse_channel || echo exact_host)
+runner_connectivity_preflight=${runner_connectivity_preflight}
 local_codex_sandbox=${local_codex_sandbox}
 codex_cli_goal_thread_prewarm=${codex_cli_goal_thread_prewarm}
 allow_staged_bootstrap_repair_run=${allow_staged_bootstrap_repair_run}

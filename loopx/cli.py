@@ -10,6 +10,14 @@ from .capabilities.content_ops.cli import (
     handle_content_ops_command,
     register_content_ops_commands,
 )
+from .capabilities.decision_context.cli import (
+    handle_decision_context_command,
+    register_decision_context_commands,
+)
+from .capabilities.material_lifecycle.cli import (
+    handle_material_lifecycle_command,
+    register_material_lifecycle_commands,
+)
 from .capabilities.issue_fix.cli import (
     handle_issue_fix_command,
     register_issue_fix_commands,
@@ -150,7 +158,15 @@ def output_format(args: argparse.Namespace, *local_dests: str) -> str:
         value = getattr(args, dest, None)
         if value:
             return str(value)
-    return str(args.format)
+    return str(getattr(args, "format", None) or "markdown")
+
+
+def resolve_global_output_format(args: argparse.Namespace) -> str:
+    if getattr(args, "format", None):
+        return str(args.format)
+    if args.command == "quota" and getattr(args, "quota_command", None) == "should-run":
+        return "json"
+    return "markdown"
 
 
 def user_supplied_registry(argv: list[str] | None) -> bool:
@@ -163,7 +179,7 @@ def build_parser() -> LoopXArgumentParser:
     parser.add_argument("--version", action="version", version=f"loopx {__version__}")
     parser.add_argument("--registry", default=str(default_registry_path()), help="Path to a project-local registry.")
     parser.add_argument("--runtime-root", help="Override registry common_runtime_root.")
-    parser.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    parser.add_argument("--format", choices=["markdown", "json"])
     sub = parser.add_subparsers(dest="command", required=True)
 
     register_version_command(sub, add_subcommand_format)
@@ -191,6 +207,10 @@ def build_parser() -> LoopXArgumentParser:
     register_extension_commands(sub, add_subcommand_format)
 
     register_content_ops_commands(sub, add_subcommand_format)
+
+    register_decision_context_commands(sub, add_subcommand_format)
+
+    register_material_lifecycle_commands(sub, add_subcommand_format)
 
     register_issue_fix_commands(sub, add_subcommand_format)
 
@@ -248,6 +268,7 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(raw_argv)
+    args.format = resolve_global_output_format(args)
     registry_path = Path(args.registry).expanduser()
     if (
         args.command
@@ -456,6 +477,22 @@ def main(argv: list[str] | None = None) -> int:
     )
     if reward_memory_result is not None:
         return reward_memory_result
+
+    decision_context_result = handle_decision_context_command(
+        args,
+        output_format=output_format,
+        print_payload=print_payload,
+    )
+    if decision_context_result is not None:
+        return decision_context_result
+
+    material_lifecycle_result = handle_material_lifecycle_command(
+        args,
+        output_format=output_format,
+        print_payload=print_payload,
+    )
+    if material_lifecycle_result is not None:
+        return material_lifecycle_result
 
     review_batch_result = handle_review_batch_command(
         args,

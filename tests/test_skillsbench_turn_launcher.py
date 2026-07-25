@@ -13,6 +13,7 @@ LAUNCHER = REPO_ROOT / "scripts" / "skillsbench-launch-goal-xhigh.sh"
 def _base_env(tmp_path: Path) -> dict[str, str]:
     env = os.environ.copy()
     env.pop("SKILLSBENCH_RUNNER_PROFILE", None)
+    env.pop("SKILLSBENCH_LOCAL_CODEX_PROXY_COMMAND", None)
     env.update(
         {
             "XDG_STATE_HOME": str(tmp_path / "state"),
@@ -45,6 +46,9 @@ def test_turn_launcher_wires_private_commands_without_echoing_values(
         "SKILLSBENCH_LOOPX_TURN_VALIDATION_COMMAND": (
             "private-validator-command sentinel-validator"
         ),
+        "SKILLSBENCH_LOCAL_CODEX_PROXY_COMMAND": (
+            "private-local-proxy-command sentinel-local-proxy"
+        ),
     }
     env.update(private_values)
     env.update(
@@ -74,6 +78,7 @@ def test_turn_launcher_wires_private_commands_without_echoing_values(
     assert "remote_command_file_bridge_solver_command_configured=1" in output
     assert "remote_command_file_bridge_agent_command_configured=1" in output
     assert "remote_command_file_bridge_agent_command_instrumented=1" in output
+    assert "local_codex_proxy_command_configured=1" in output
     assert "loopx_turn_validation_command_configured=1" in output
     assert "loopx_turn_max_turns=4" in output
     assert "loopx_turn_progress_exit_code=10" in output
@@ -82,12 +87,14 @@ def test_turn_launcher_wires_private_commands_without_echoing_values(
     assert "docker_proxy_host=" not in output
     assert env["SKILLSBENCH_DOCKER_PROXY_HOST"] not in output
     assert "private_runner_command_values_redacted=true" in output
+    assert "runner_connectivity_preflight=required" in output
     assert "exact_host_codex_sandbox_preflight=required" in output
     for arg_name in (
         "--remote-command-file-bridge-probe-command",
         "--remote-command-file-bridge-solver-command",
         "--remote-command-file-bridge-agent-command",
         "--remote-command-file-bridge-agent-command-instrumented",
+        "--local-forward-managed-command",
         "--loopx-turn-validation-command",
         "--loopx-turn-max-turns",
         "--loopx-turn-progress-exit-code",
@@ -134,12 +141,13 @@ def test_launcher_fails_before_batch_when_exact_host_sandbox_probe_fails(
     fake_ssh = fake_bin / "ssh"
     fake_ssh.write_text(
         "#!/bin/sh\n"
+        'if [ "$1" = "-G" ]; then exit 0; fi\n'
         f"count_file={call_count!s}\n"
         'count=0\n'
         'if [ -f "$count_file" ]; then count=$(cat "$count_file"); fi\n'
         'count=$((count + 1))\n'
         'printf "%s" "$count" > "$count_file"\n'
-        'if [ "$count" -eq 1 ]; then exit 0; fi\n'
+        'if [ "$count" -le 2 ]; then exit 0; fi\n'
         'exit 1\n',
         encoding="utf-8",
     )
@@ -168,7 +176,58 @@ def test_launcher_fails_before_batch_when_exact_host_sandbox_probe_fails(
         "schema_version": "skillsbench_exact_host_codex_sandbox_preflight_v0",
         "ssh_destination_recorded": False,
     }
-    assert call_count.read_text(encoding="utf-8") == "2"
+    assert call_count.read_text(encoding="utf-8") == "3"
+    assert "pid=" not in proc.stdout
+
+
+def test_launcher_fails_before_supervisor_when_runner_connectivity_is_not_ready(
+    tmp_path: Path,
+) -> None:
+    env = _base_env(tmp_path)
+    env["SKILLSBENCH_SSH_OPTIONS"] = "GSSAPIAuthentication=yes"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    call_count = tmp_path / "ssh-call-count"
+    fake_ssh = fake_bin / "ssh"
+    fake_klist = fake_bin / "klist"
+    fake_ssh.write_text(
+        "#!/bin/sh\n"
+        f"printf x >> {call_count!s}\n"
+        "exit 255\n",
+        encoding="utf-8",
+    )
+    fake_ssh.chmod(0o755)
+    fake_klist.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_klist.chmod(0o755)
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    proc = subprocess.run(
+        [str(LAUNCHER), "public-smoke-case", "connectivity-preflight"],
+        cwd=REPO_ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+
+    assert proc.returncode == 3, proc
+    assert json.loads(proc.stderr) == {
+        "benchmark_job_launched": False,
+        "gssapi_configured": True,
+        "local_gssapi_ticket_state": "present",
+        "ok": True,
+        "profile_values_recorded": False,
+        "raw_output_recorded": False,
+        "reachable": False,
+        "readiness_state": "remote_task_free_acceptance_failed",
+        "remote_task_free_acceptance": False,
+        "result": "transport_unavailable",
+        "schema_version": "skillsbench_runner_connectivity_probe_v0",
+        "task_free_connection_attempt_completed": True,
+        "task_material_read": False,
+    }
+    assert call_count.read_text(encoding="utf-8") == "x"
     assert "pid=" not in proc.stdout
 
 
@@ -462,6 +521,82 @@ def test_launcher_wires_bounded_proxy_compatible_apt_transport(
 
     assert "docker_apt_transport_mode=proxy-compatible" in proc.stdout
     assert "--docker-apt-transport-mode proxy-compatible" in proc.stdout
+
+
+def test_launcher_defaults_to_proxy_compatible_primary_sources_with_required_proxy(
+    tmp_path: Path,
+) -> None:
+    env = _base_env(tmp_path)
+
+    proc = subprocess.run(
+        [str(LAUNCHER), "--dry-run", "public-smoke-case", "default-proxy-apt"],
+        cwd=REPO_ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True,
+    )
+
+    assert "benchmark_egress_proxy_mode=require" in proc.stdout
+    assert "docker_apt_source_mode=primary" in proc.stdout
+    assert "docker_apt_transport_mode=proxy-compatible" in proc.stdout
+    assert "docker_pip_index_mode=primary" in proc.stdout
+    assert "--docker-apt-source-mode primary" in proc.stdout
+    assert "--docker-apt-transport-mode proxy-compatible" in proc.stdout
+    assert "--docker-pip-index-mode primary" in proc.stdout
+
+
+def test_launcher_defaults_to_mirror_sources_and_standard_apt_when_proxy_is_off(
+    tmp_path: Path,
+) -> None:
+    env = _base_env(tmp_path)
+    env["SKILLSBENCH_BENCHMARK_EGRESS_PROXY_MODE"] = "off"
+
+    proc = subprocess.run(
+        [str(LAUNCHER), "--dry-run", "public-smoke-case", "no-proxy-apt"],
+        cwd=REPO_ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True,
+    )
+
+    assert "benchmark_egress_proxy_mode=off" in proc.stdout
+    assert "docker_apt_source_mode=mirror" in proc.stdout
+    assert "docker_apt_transport_mode=default" in proc.stdout
+    assert "docker_pip_index_mode=mirror" in proc.stdout
+    assert "--docker-apt-source-mode mirror" in proc.stdout
+    assert "--docker-apt-transport-mode default" in proc.stdout
+    assert "--docker-pip-index-mode mirror" in proc.stdout
+
+
+def test_launcher_preserves_explicit_package_source_overrides_with_required_proxy(
+    tmp_path: Path,
+) -> None:
+    env = _base_env(tmp_path)
+    env["SKILLSBENCH_DOCKER_APT_SOURCE_MODE"] = "mirror"
+    env["SKILLSBENCH_DOCKER_APT_TRANSPORT_MODE"] = "default"
+    env["SKILLSBENCH_DOCKER_PIP_INDEX_MODE"] = "mirror"
+
+    proc = subprocess.run(
+        [str(LAUNCHER), "--dry-run", "public-smoke-case", "explicit-apt"],
+        cwd=REPO_ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True,
+    )
+
+    assert "benchmark_egress_proxy_mode=require" in proc.stdout
+    assert "docker_apt_source_mode=mirror" in proc.stdout
+    assert "docker_apt_transport_mode=default" in proc.stdout
+    assert "docker_pip_index_mode=mirror" in proc.stdout
+    assert "--docker-apt-source-mode mirror" in proc.stdout
+    assert "--docker-apt-transport-mode default" in proc.stdout
+    assert "--docker-pip-index-mode mirror" in proc.stdout
 
 
 def test_launcher_rejects_unbounded_apt_transport_mode(tmp_path: Path) -> None:

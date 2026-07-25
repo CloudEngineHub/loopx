@@ -8,8 +8,6 @@ import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
-import pytest
-
 from loopx.cli import main as cli_main
 from loopx.control_plane.scheduler.execution_context import SchedulerRuntimeProfile
 from loopx.control_plane.testing.cli_output_budget import (
@@ -719,6 +717,42 @@ def test_real_cli_output_stays_inside_the_characterized_baseline(
             assert formats["markdown"]["json_parseable"] is False
 
 
+def test_quota_should_run_no_format_uses_machine_contract_json(
+    tmp_path: Path,
+) -> None:
+    with _stable_budget_fixture_root(tmp_path / "quota-default-json") as stable_root:
+        project, runtime, registry_path, state_file = _write_fixture(
+            stable_root,
+            SCENARIOS[0],
+        )
+        explicit_json_command = _surface_commands(
+            project=project,
+            runtime=runtime,
+            registry_path=registry_path,
+            state_file=state_file,
+            output_format="json",
+        )["quota_should_run"]
+        no_format_command = list(explicit_json_command)
+        format_index = no_format_command.index("--format")
+        del no_format_command[format_index : format_index + 2]
+        explicit_markdown_command = _surface_commands(
+            project=project,
+            runtime=runtime,
+            registry_path=registry_path,
+            state_file=state_file,
+            output_format="markdown",
+        )["quota_should_run"]
+
+        no_format_exit_code, no_format_text = _invoke_cli(no_format_command)
+        markdown_exit_code, markdown_text = _invoke_cli(explicit_markdown_command)
+
+    assert no_format_exit_code == 0, no_format_text
+    assert json.loads(no_format_text)["goal_id"] == GOAL_ID
+    assert markdown_exit_code == 0, markdown_text
+    assert markdown_text.startswith("# LoopX Quota Should Run")
+    assert not markdown_text.lstrip().startswith("{")
+
+
 def test_quota_cli_keeps_full_agent_todo_diagnostics_on_explicit_cold_path(
     tmp_path: Path,
 ) -> None:
@@ -875,22 +909,11 @@ def test_quota_cli_keeps_goal_boundary_authority_on_explicit_cold_path(
         assert default_payload[key] == detail_payload[key]
 
 
-@pytest.mark.parametrize(
-    ("section", "legacy_flag"),
-    [
-        ("scheduler", "--include-scheduler-detail"),
-        ("agent-todos", "--include-todo-summary-detail"),
-        ("user-todos", "--include-user-todo-summary-detail"),
-        ("goal-boundary", "--include-goal-boundary-detail"),
-    ],
-)
-def test_quota_cli_legacy_detail_flags_match_canonical_selector(
+def test_quota_cli_deprecated_scheduler_detail_flag_matches_canonical_selector(
     tmp_path: Path,
-    section: str,
-    legacy_flag: str,
 ) -> None:
     with _stable_budget_fixture_root(
-        tmp_path / f"quota-detail-alias-{section}"
+        tmp_path / "quota-detail-alias-scheduler"
     ) as stable_root:
         project, runtime, registry_path, state_file = _write_fixture(
             stable_root,
@@ -906,10 +929,10 @@ def test_quota_cli_legacy_detail_flags_match_canonical_selector(
             output_format="json",
         )["quota_should_run"]
         canonical_exit_code, canonical_text = _invoke_cli(
-            default_command + ["--include-detail", section]
+            default_command + ["--include-detail", "scheduler"]
         )
         legacy_exit_code, legacy_text = _invoke_cli(
-            default_command + [legacy_flag]
+            default_command + ["--include-scheduler-detail"]
         )
 
     assert canonical_exit_code == 0, canonical_text
