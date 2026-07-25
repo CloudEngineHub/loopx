@@ -65,7 +65,7 @@ from .control_plane.quota.stall_repair import (
     standing_decision_authority_payload_from_status_item as _standing_decision_authority_payload_from_status_item,
 )
 from .control_plane.quota.decision_summary import (
-    goal_status_health_ok,
+    goal_status_health_ok as _goal_status_health_ok,
     quota_decision_agent_id,
 )
 from .control_plane.quota.goal_boundary import effective_available_capabilities as _effective_available_capabilities, goal_boundary as _goal_boundary, quota_execution_profile_summary as _quota_execution_profile_summary
@@ -1416,6 +1416,19 @@ def _apply_agent_monitor_only_precedence(
         payload.pop(key, None)
 
 
+def _build_quota_plan_for_goal(
+    status_payload: dict[str, Any],
+    *,
+    goal_id: str,
+) -> tuple[dict[str, Any], bool]:
+    plan = build_quota_plan(status_payload, mode="should-run")
+    return plan, _goal_status_health_ok(
+        status_payload,
+        goal_id=goal_id,
+        fallback=bool(plan.get("ok")),
+    )
+
+
 def build_quota_should_run(
     status_payload: dict[str, Any],
     *,
@@ -1430,11 +1443,9 @@ def build_quota_should_run(
         scheduler_execution_context
     )
     registry_goal = _registry_goal_by_id(status_payload).get(safe_goal_id) or {}
-    plan = build_quota_plan(status_payload, mode="should-run")
-    goal_health_ok = goal_status_health_ok(
+    plan, goal_health_ok = _build_quota_plan_for_goal(
         status_payload,
         goal_id=safe_goal_id,
-        fallback=bool(plan.get("ok")),
     )
     item = next((candidate for candidate in _quota_plan_items(plan) if candidate.get("goal_id") == safe_goal_id), None)
     health_items = plan.get("health_items") if isinstance(plan.get("health_items"), list) else []
