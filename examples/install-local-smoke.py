@@ -211,6 +211,7 @@ def main() -> int:
             in install.stdout
         ), install.stdout
         assert f"- skill: {codex_home / 'skills' / 'loopx-doc-registry'}" in install.stdout, install.stdout
+        assert f"- skill: {codex_home / 'skills' / 'loopx-material'}" in install.stdout, install.stdout
         assert f"- skill: {codex_home / 'skills' / 'loopx-pr-review'}" in install.stdout, install.stdout
         assert f"- skill: {codex_home / 'skills' / 'loopx-project'}" in install.stdout, install.stdout
         assert f"- skill: {codex_home / 'skills' / 'loopx-self-repair'}" in install.stdout, install.stdout
@@ -389,6 +390,18 @@ def main() -> int:
             "loopx --registry .loopx/registry.json register-authority-source",
         ):
             assert phrase in doc_registry_text, phrase
+        material_skill = codex_home / "skills" / "loopx-material" / "SKILL.md"
+        material_text = " ".join(material_skill.read_text(encoding="utf-8").split())
+        material_metadata = material_skill.parent / "agents" / "openai.yaml"
+        material_metadata_text = material_metadata.read_text(encoding="utf-8")
+        assert 'display_name: "LoopX Material"' in material_metadata_text
+        for phrase in (
+            "The skill is installed globally with LoopX",
+            "active only for a connected project's explicit goal-scoped Material Lifecycle work",
+            "Do not hide overflow in an unranked supporting index",
+            "Apply only when all are true",
+        ):
+            assert phrase in material_text, phrase
         self_repair_skill = codex_home / "skills" / "loopx-self-repair" / "SKILL.md"
         self_repair_text = " ".join(self_repair_skill.read_text(encoding="utf-8").split())
         for phrase in (
@@ -433,6 +446,7 @@ def main() -> int:
             "loopx-project",
             "loopx-pr-review",
             "loopx-doc-registry",
+            "loopx-material",
             "loopx-self-repair",
         ):
             implicit_metadata = codex_home / "skills" / implicit_skill_name / "agents" / "openai.yaml"
@@ -500,6 +514,8 @@ def main() -> int:
         assert doctor_payload["skills"]["loopx-pr-review"]["required_phrases"] is True, doctor_payload
         assert doctor_payload["skills"]["loopx-doc-registry"]["exists"] is True, doctor_payload
         assert doctor_payload["skills"]["loopx-doc-registry"]["required_phrases"] is True, doctor_payload
+        assert doctor_payload["skills"]["loopx-material"]["exists"] is True, doctor_payload
+        assert doctor_payload["skills"]["loopx-material"]["required_phrases"] is True, doctor_payload
         assert doctor_payload["skills"]["loopx-self-repair"]["exists"] is True, doctor_payload
         assert doctor_payload["skills"]["loopx-self-repair"]["required_phrases"] is True, doctor_payload
         provenance = doctor_payload["release_provenance"]
@@ -545,7 +561,7 @@ def main() -> int:
         assert "installed_skill_delivery_hints: `True`" in doctor_markdown, doctor_markdown
         assert (
             "installed_required_skills: "
-            "`loopx-doc-registry,loopx-pr-review,loopx-project,loopx-self-repair`"
+            "`loopx-doc-registry,loopx-material,loopx-pr-review,loopx-project,loopx-self-repair`"
             in doctor_markdown
         ), doctor_markdown
         assert "loopx_canary_realpath:" in doctor_markdown, doctor_markdown
@@ -589,6 +605,7 @@ def main() -> int:
                 "loopx-project": {"exists": True, "required_phrases": True},
                 "loopx-pr-review": {"exists": True, "required_phrases": True},
                 "loopx-doc-registry": {"exists": True, "required_phrases": True},
+                "loopx-material": {"exists": True, "required_phrases": True},
                 "loopx-self-repair": {"exists": True, "required_phrases": True},
             },
             now=datetime(2026, 1, 9, tzinfo=timezone.utc),
@@ -606,6 +623,7 @@ def main() -> int:
                 "loopx-project": {"exists": True, "required_phrases": True},
                 "loopx-pr-review": {"exists": True, "required_phrases": True},
                 "loopx-doc-registry": {"exists": True, "required_phrases": True},
+                "loopx-material": {"exists": True, "required_phrases": True},
                 "loopx-self-repair": {"exists": True, "required_phrases": True},
             },
             now=datetime(2026, 1, 9, tzinfo=timezone.utc),
@@ -621,6 +639,7 @@ def main() -> int:
                 "loopx-project": {"exists": True, "required_phrases": True},
                 "loopx-pr-review": {"exists": True, "required_phrases": True},
                 "loopx-doc-registry": {"exists": True, "required_phrases": True},
+                "loopx-material": {"exists": True, "required_phrases": True},
                 "loopx-self-repair": {"exists": True, "required_phrases": True},
             },
             release_manifest={
