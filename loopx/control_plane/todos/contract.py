@@ -12,7 +12,9 @@ from ...repository_identity import normalize_repository_identity
 
 TODO_TASK_PATTERN = re.compile(r"^\s*[-*]\s+\[([ xX-])\]\s+(.+?)\s*$")
 TODO_METADATA_PATTERN = re.compile(r"^\s*<!--\s*loopx:(?:todo\s+)?(?P<body>.*?)\s*-->\s*$")
-TODO_METADATA_TOKEN_PATTERN = re.compile(r"(?P<key>[a-z_][a-z0-9_-]*)=(?P<value>[^\s<>]+)")
+TODO_METADATA_TOKEN_PATTERN = re.compile(
+    r"(?<!\S)(?P<key>[a-z_][a-z0-9_]*)=(?P<value>[^\s<>]+)"
+)
 TODO_ACTION_KIND_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 TODO_ID_PATTERN = re.compile(r"^todo_[a-z0-9_-]{3,64}$")
 TODO_AGENT_CLAIM_PATTERN = re.compile(r"^[a-z][a-z0-9_.:@-]{0,79}$")
@@ -756,7 +758,7 @@ def parse_todo_metadata_tokens(line: str) -> list[tuple[str, str]] | None:
         return None
     return [
         (
-            token.group("key").replace("-", "_"),
+            token.group("key"),
             decode_metadata_value(token.group("value")),
         )
         for token in TODO_METADATA_TOKEN_PATTERN.finditer(match.group("body"))
@@ -803,7 +805,6 @@ def _normalize_optional_required_decision_scopes_for_write(
 class _TodoMetadataField:
     key: str
     read_normalizer: MetadataValueNormalizer
-    aliases: tuple[str, ...] = ()
     write_normalizer: MetadataValueNormalizer | None = None
     encoder: MetadataValueEncoder = str
     invalid_when: MetadataInvalidPredicate = bool
@@ -890,7 +891,6 @@ _TODO_METADATA_FIELD_SCHEMA = (
     _TodoMetadataField(
         "required_write_scopes",
         normalize_required_write_scopes,
-        aliases=("required_write_scope",),
         encoder=_metadata_csv,
         invalid_message=(
             "required_write_scopes must contain public-safe relative scope tokens"
@@ -899,7 +899,6 @@ _TODO_METADATA_FIELD_SCHEMA = (
     _TodoMetadataField(
         "required_capabilities",
         normalize_required_capabilities,
-        aliases=("required_capability",),
         encoder=_metadata_csv,
         invalid_message=(
             "required_capabilities must contain public-safe capability tokens"
@@ -908,7 +907,6 @@ _TODO_METADATA_FIELD_SCHEMA = (
     _TodoMetadataField(
         "target_capabilities",
         normalize_target_capabilities,
-        aliases=("target_capability",),
         encoder=_metadata_csv,
         invalid_message=(
             "target_capabilities must contain public-safe capability tokens"
@@ -917,7 +915,6 @@ _TODO_METADATA_FIELD_SCHEMA = (
     _TodoMetadataField(
         "explore_result_node_refs",
         normalize_explore_result_node_refs,
-        aliases=("explore_result_node_ref",),
         encoder=_metadata_csv,
         invalid_message=(
             "explore_result_node_refs must contain public-safe Explore node ids"
@@ -933,7 +930,6 @@ _TODO_METADATA_FIELD_SCHEMA = (
     _TodoMetadataField(
         "required_decision_scopes",
         normalize_todo_required_decision_scopes,
-        aliases=("required_decision_scope",),
         write_normalizer=_normalize_optional_required_decision_scopes_for_write,
         encoder=required_decision_scopes_metadata_value,
     ),
@@ -985,7 +981,6 @@ _TODO_METADATA_FIELD_SCHEMA = (
     _TodoMetadataField(
         "excluded_agents",
         normalize_todo_excluded_agents,
-        aliases=("excluded_agent",),
         write_normalizer=require_todo_excluded_agents,
         encoder=_metadata_csv,
     ),
@@ -1007,7 +1002,6 @@ _TODO_METADATA_FIELD_SCHEMA = (
     _TodoMetadataField(
         "successor_todo_ids",
         normalize_todo_id_list,
-        aliases=("successor_todo_id",),
         encoder=_metadata_csv,
         invalid_message=(
             "successor_todo_ids must contain public "
@@ -1056,9 +1050,7 @@ _TODO_METADATA_FIELD_SCHEMA = (
 )
 
 _TODO_METADATA_FIELD_BY_TOKEN = {
-    token: field
-    for field in _TODO_METADATA_FIELD_SCHEMA
-    for token in (field.key, *field.aliases)
+    field.key: field for field in _TODO_METADATA_FIELD_SCHEMA
 }
 
 

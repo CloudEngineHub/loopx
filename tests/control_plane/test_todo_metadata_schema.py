@@ -125,51 +125,32 @@ def test_todo_metadata_round_trip_preserves_canonical_values() -> None:
     }
 
 
-def test_todo_metadata_parser_accepts_legacy_aliases_and_canonicalizes_output() -> None:
+def test_todo_metadata_parser_ignores_noncanonical_field_names() -> None:
     parsed = parse_todo_metadata_line(
         "  <!-- loopx:todo "
-        "todo-id=todo_legacy001 "
-        "required-write-scope=loopx%2F** "
-        "required-capability=network "
-        "target-capability=quality_receipt "
-        "explore-result-node-ref=result.primary "
-        "required-decision-scope=direction:action:review "
-        "excluded-agent=codex-other "
-        "successor-todo-id=todo_next001 "
-        "continuation-policy=primary_review "
+        "todo_id=todo_canonical001 "
+        "required_write_scope=loopx%2F** "
+        "required-capabilities=network "
+        "target_capability=quality_receipt "
+        "explore_result_node_ref=result.primary "
+        "required_decision_scope=direction:action:review "
+        "excluded_agent=codex-other "
+        "successor_todo_id=todo_next001 "
+        "legacy-status=done "
+        "continuation_policy=same_agent_non_delivery "
         "-->"
     )
 
     assert parsed == {
-        "todo_id": "todo_legacy001",
-        "required_write_scopes": ["loopx/**"],
-        "required_capabilities": ["network"],
-        "target_capabilities": ["quality_receipt"],
-        "explore_result_node_refs": ["result.primary"],
-        "required_decision_scopes": [
-            {
-                "schema_version": "decision_scope_v0",
-                "kind": "direction",
-                "granularity": "action",
-                "scope_key": "review",
-            }
-        ],
-        "excluded_agents": ["codex-other"],
-        "successor_todo_ids": ["todo_next001"],
-        "removed_continuation_policy": "primary_review",
+        "todo_id": "todo_canonical001",
+        "continuation_policy": "same_agent_non_delivery",
     }
 
-    canonical = format_todo_metadata_line(**parsed)
-    assert canonical is not None
-    assert "required_write_scopes=" in canonical
-    assert "required_write_scope=" not in canonical
-    assert "removed_continuation_policy=primary_review" in canonical
 
-
-def test_todo_metadata_parser_tolerates_invalid_legacy_values() -> None:
+def test_todo_metadata_parser_skips_invalid_canonical_values() -> None:
     assert parse_todo_metadata_line(
         "  <!-- loopx:todo todo_id=todo_valid001 status=unknown "
-        "claimed_by=%2Fprivate required_capability=network -->"
+        "claimed_by=%2Fprivate required_capabilities=network -->"
     ) == {
         "todo_id": "todo_valid001",
         "required_capabilities": ["network"],
