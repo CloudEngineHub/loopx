@@ -350,7 +350,7 @@ def advance_one_turn(status, goal_id, agent_id, host):
     return execution
 ```
 
-真实 Turn transaction 使用固定 phase：
+真实 Turn transaction 使用预定义且顺序固定的可恢复事务阶段：
 
 ```text
 host_execute
@@ -362,7 +362,7 @@ host_execute
   -> scheduler_ack
 ```
 
-固定 phase 有两个作用：
+这组事务阶段有两个作用：
 
 1. **恢复**：journal 已经记录 `durable_writeback` 时，重启后不能再次执行外部 effect；
 2. **归因**：只有 validation 通过并写回成功，才允许 spend；scheduler apply 与 ACK 也有
