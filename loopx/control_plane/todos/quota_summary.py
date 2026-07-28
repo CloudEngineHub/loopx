@@ -164,7 +164,7 @@ def _terminal_closure_proof_is_valid(
     return bool(
         value.get("schema_version") == "todo_summary_v0"
         and isinstance(items, list)
-        and 0 < len(items) <= counts["total_count"]
+        and len(items) == counts["total_count"]
         and all(
             isinstance(item, dict)
             and item.get("status") == "done"
@@ -203,7 +203,6 @@ def _validated_todo_source_contract(
     }
     valid_counts = (
         all(count is not None for count in counts.values())
-        and bool(counts["total_count"])
         and counts["total_count"]
         == counts["open_count"] + counts["done_count"] + counts["deferred_count"]
     )

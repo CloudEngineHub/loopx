@@ -466,6 +466,10 @@ adapter_id: {goal_id}
 - Do not optimize for activity if no useful artifact or decision can be produced.
 {onboarding_block}
 
+## User Todo / Owner Review Reading Queue
+
+## Agent Todo
+
 ## Next Action
 
 - {next_action}

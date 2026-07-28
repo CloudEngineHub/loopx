@@ -98,7 +98,7 @@ def _terminal_todo_source_state(
     deferred = summary.get("deferred_count")
     if not (
         type(total) is int
-        and total > 0
+        and total >= 0
         and type(done) is int
         and done == total
         and _strict_zero(summary.get("open_count"))
