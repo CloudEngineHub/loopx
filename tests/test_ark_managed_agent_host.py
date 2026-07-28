@@ -14,12 +14,13 @@ from loopx.host_loop_activation import (
 )
 
 
-def _goal_prompt() -> dict:
+def _goal_prompt(*, available_capabilities: list[str] | None = None) -> dict:
     return build_heartbeat_prompt(
         goal_id="managed-agent-fixture",
         active_state=Path("/workspace/ACTIVE_GOAL_STATE.md"),
         thin=True,
         runtime_profile="ark_managed_agent_goal",
+        available_capabilities=available_capabilities,
     )
 
 
@@ -55,6 +56,12 @@ def test_goal_prompt_projects_goal_only_host_contract() -> None:
         "session_state_authoritative": False,
     }
     assert "--runtime-profile ark_managed_agent_goal" in payload["task_body"]
+
+
+def test_goal_prompt_projects_activation_capabilities_to_guard_and_spend() -> None:
+    task_body = _goal_prompt(available_capabilities=["network"])["task_body"]
+
+    assert task_body.count("--available-capability network") == 2
 
 
 def test_host_activation_submits_one_goal_without_turn_or_automation() -> None:

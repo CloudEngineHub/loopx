@@ -97,6 +97,32 @@ def test_codex_app_thin_prompt_embeds_profile_only_in_quota_command() -> None:
     assert prompt["interface_budget"]["within_budget"] is True
 
 
+@pytest.mark.parametrize(
+    "runtime_profile",
+    ("ark_managed_agent_goal", "codex_app_ssh_goal"),
+)
+def test_visible_goal_prompts_recheck_runtime_capabilities(
+    runtime_profile: str,
+) -> None:
+    prompt = build_heartbeat_prompt(
+        goal_id="fixture-goal",
+        thin=True,
+        runtime_profile=runtime_profile,
+    )
+    normalized = " ".join(prompt["task_body"].split())
+
+    capability_probe = "Before the first quota guard"
+    guard_command = prompt["quota_guard_command"]
+
+    assert capability_probe in normalized
+    assert "append matching `--available-capability <name>` flags" in normalized
+    assert "Reuse the same flags for quota spend" in normalized
+    assert normalized.index(capability_probe) < normalized.index(guard_command)
+    assert normalized.index(guard_command) < normalized.index(
+        "then run the resulting command"
+    )
+
+
 def test_opencode_activation_uses_bridge_tool_and_generic_cli_quota() -> None:
     packet = build_host_loop_activation_packet(
         agent_type="opencode",

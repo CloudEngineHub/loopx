@@ -53,6 +53,22 @@ heartbeat. It must fit the Codex `/goal` text limit, call `quota should-run`
 without a heartbeat turn receipt, and must not instruct the host to invoke
 `automation_update`, apply an RRULE, or synthesize `LOOPX_TURN`.
 
+Visible Goal activation captures the capabilities observed when the task body
+is generated, but that initial list is not exhaustive for a long-running
+session. On every continuation, the agent must verify newly relevant runtime
+capabilities at their real callsite before its first quota guard, append the
+matching `--available-capability` flags to that `quota should-run`, and reuse
+the same flags for `quota spend-slot`. Capability observations remain
+session-scoped: the agent must neither infer them from a previous run nor
+persist them as grants. This contract is shared by local visible Goal hosts and
+Ark Managed Agent Goal mode.
+
+An already activated visible Goal retains its original task body. Installing a
+newer LoopX release or passing onboarding/doctor readback does not rewrite that
+host-owned prompt. Prompt-contract changes take effect after the host
+regenerates and reactivates `/goal <task_body>`; registry state remains the
+continuation source of truth across that reactivation.
+
 Agent identity follows the same fail-closed rule. A goal with one registered
 agent may select that identity automatically. A goal with multiple registered
 agents and no `--agent-id` must project a concrete identity-selection gate with

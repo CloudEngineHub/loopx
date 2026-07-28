@@ -1114,8 +1114,13 @@ def _render_goal_task_body(
     return f"""Advance LoopX goal `{goal_id}` from `{active_state}` {host_preamble}
 {scope_block}
 
-At every continuation, inspect LoopX state/status and the repository. {prequota_block}Run
-`{quota_guard_command}` and follow its `interaction_contract`.
+At every continuation, inspect LoopX state/status and the repository. {prequota_block}Before
+the first quota guard, re-observe only runtime capabilities needed by the next
+step. Starting from `{quota_guard_command}`, append matching
+`--available-capability <name>` flags for capabilities verified at a real
+callsite, then run the resulting command and follow its `interaction_contract`.
+Reuse the same flags for quota spend; never infer them from past runs or persist
+them as grants.
 
 If `should_run=false`, do no delivery work and do not spend quota. Surface only a
 concrete user action/gate in Chinese when the contract requires `NOTIFY`; otherwise
