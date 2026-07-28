@@ -25,7 +25,6 @@ from loopx.skill_install_readback import (
 )
 from loopx.slash_command_install import materialize_loopx_entry_skill
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -150,7 +149,17 @@ def test_host_requires_host_managed_loopx_skill_delivery(monkeypatch) -> None:
     assert contract["host_readback_required"] is True
     assert contract["codex_skills_root_required"] is False
     assert contract["preferred_delivery"] == "fixed_install_script"
+    assert contract["onboarding_role"] == "read_only_verifier"
+    assert contract["onboarding_required_for_install"] is False
     assert contract["install_script"] == "scripts/install-local.sh"
+    assert (
+        contract["no_clone_install_command"] == "curl -fsSL "
+        "https://raw.githubusercontent.com/huangruiteng/loopx/main/"
+        "scripts/install-from-github.sh"
+        " | env LOOPX_SKILLS_DIR=./.agents/skills "
+        "LOOPX_ENTRY_HOST_SURFACE=ark-managed-agent "
+        "LOOPX_INSTALL_SLASH_COMMANDS=0 bash"
+    )
     assert contract["skills_dir_env"] == "LOOPX_SKILLS_DIR"
     assert contract["entry_host_surface_env"] == "LOOPX_ENTRY_HOST_SURFACE"
     assert contract["entry_host_surface"] == "ark-managed-agent"
