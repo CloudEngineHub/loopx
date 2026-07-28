@@ -88,10 +88,12 @@ canary-only install leaves the existing default skill root unchanged.
 
 The installer is the sole owner of filesystem mutation. The manifest records
 the materialized skill ids, source revision, and per-skill content digests so
-read-only host checks can verify delivery without becoming a second installer.
-Filesystem materialization is distinct from the host's runtime loaded-skill
-readback; the latter is still required before claiming that the skills were
-injected into an active agent context.
+onboarding and doctor can verify delivery read-only without becoming a second
+installer. Run both with the same `LOOPX_SKILLS_DIR`; they report the
+filesystem readback status and source revision. Filesystem materialization is
+distinct from the host's runtime loaded-skill readback; the latter is still
+required before claiming that the skills were injected into an active agent
+context.
 
 Local-development and cloud transports must send the exact same `task_body` as
 their goal prompt. They may differ in endpoint, authentication, session id, or
