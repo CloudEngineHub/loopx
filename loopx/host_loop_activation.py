@@ -17,6 +17,12 @@ from .project_prompt import (
 SCHEMA_VERSION = "loopx_host_loop_activation_v1"
 AGENT_TYPE_CATALOG_SCHEMA_VERSION = "loopx_agent_type_catalog_v0"
 IDENTITY_SELECTION_SCHEMA_VERSION = "loopx_host_loop_identity_selection_v0"
+HOST_MANAGED_SKILL_AGENT_TYPES = frozenset(
+    {
+        "ark-managed-agent",
+        "other-agent",
+    }
+)
 
 
 def scheduler_command_binding_for_agent_type(
@@ -35,6 +41,10 @@ def scheduler_command_binding_for_agent_type(
     if runtime_profile is not None:
         return {"runtime_profile": runtime_profile.value}
     return {}
+
+
+def agent_type_uses_host_managed_skills(agent_type: str) -> bool:
+    return normalize_agent_type(agent_type) in HOST_MANAGED_SKILL_AGENT_TYPES
 
 
 SUPPORTED_AGENT_TYPES = [

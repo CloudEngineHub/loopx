@@ -69,7 +69,19 @@ loopx heartbeat-prompt --thin --goal-id <GOAL_ID> --agent-id <AGENT_ID> \
 ```
 
 The same contract is available through first-class onboarding with
-`--agent-type ark-managed-agent`.
+`--agent-type ark-managed-agent`. Because this host does not use a
+Codex-specific skill directory, onboarding requires host-managed delivery and
+readback of the LoopX workflow skills from the same LoopX revision as the CLI.
+The fixed installer is shared with Codex; only its target root changes:
+
+```bash
+LOOPX_SKILLS_DIR=<PROJECT_WORKSPACE>/.agents/skills \
+  LOOPX_INSTALL_SLASH_COMMANDS=0 \
+  <LOOPX_CHECKOUT>/scripts/install-local.sh
+```
+
+The installer owns filesystem mutation. Onboarding and doctor only report the
+required skill ids and require a host loaded-skill readback.
 
 Local-development and cloud transports must send the exact same `task_body` as
 their goal prompt. They may differ in endpoint, authentication, session id, or
