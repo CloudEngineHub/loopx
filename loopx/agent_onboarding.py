@@ -27,7 +27,6 @@ from .skill_install_readback import (
     inspect_skill_install_readback,
 )
 
-
 SCHEMA_VERSION = "loopx_agent_onboarding_v0"
 HOST_SKILL_DELIVERY_SCHEMA_VERSION = "loopx_host_skill_delivery_v0"
 CHANGE_QUALITY_SKILL_ID = "loopx-change-quality"
@@ -172,7 +171,17 @@ def _skill_delivery_contract(
         **(
             {
                 "preferred_delivery": "fixed_install_script",
+                "onboarding_role": "read_only_verifier",
+                "onboarding_required_for_install": False,
                 "install_script": "scripts/install-local.sh",
+                "no_clone_install_command": (
+                    "curl -fsSL "
+                    "https://raw.githubusercontent.com/huangruiteng/loopx/main/"
+                    "scripts/install-from-github.sh"
+                    " | env "
+                    f"LOOPX_SKILLS_DIR={shell_arg(f'{project}/.agents/skills')} "
+                    "LOOPX_INSTALL_SLASH_COMMANDS=0 bash"
+                ),
                 "skills_dir_env": "LOOPX_SKILLS_DIR",
                 "target_layout": f"{project}/.agents/skills",
                 "fixed_installer_skill_ids": REQUIRED_HOST_SKILL_IDS,
@@ -496,6 +505,11 @@ def render_agent_onboarding_markdown(payload: dict[str, Any]) -> str:
                 "## Host-Managed Skill Delivery",
                 "",
                 f"- owner: `{skill_delivery.get('owner')}`",
+                f"- onboarding_role: `{skill_delivery.get('onboarding_role')}`",
+                (
+                    "- onboarding_required_for_install: "
+                    f"`{skill_delivery.get('onboarding_required_for_install')}`"
+                ),
                 f"- required_for_cli_health: `{skill_delivery.get('required_for_cli_health')}`",
                 f"- required_for_loopx_workflow: `{skill_delivery.get('required_for_loopx_workflow')}`",
                 f"- delivery_options: `{','.join(skill_delivery.get('delivery_options') or [])}`",
@@ -507,6 +521,15 @@ def render_agent_onboarding_markdown(payload: dict[str, Any]) -> str:
                 f"- source_contract: {skill_delivery.get('source_contract')}",
             ]
         )
+        if skill_delivery.get("no_clone_install_command"):
+            lines.extend(
+                [
+                    "",
+                    "```bash",
+                    str(skill_delivery["no_clone_install_command"]),
+                    "```",
+                ]
+            )
         filesystem_readback = skill_delivery.get("filesystem_readback")
         if isinstance(filesystem_readback, dict):
             lines.extend(
