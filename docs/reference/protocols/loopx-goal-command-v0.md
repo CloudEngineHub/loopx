@@ -55,19 +55,19 @@ without a heartbeat turn receipt, and must not instruct the host to invoke
 
 Visible Goal activation captures the capabilities observed when the task body
 is generated, but that initial list is not exhaustive for a long-running
-session. On every continuation, the agent must verify newly relevant runtime
-capabilities at their real callsite before its first quota guard, append the
-matching `--available-capability` flags to that `quota should-run`, and reuse
-the same flags for `quota spend-slot`. Capability observations remain
-session-scoped: the agent must neither infer them from a previous run nor
-persist them as grants. This contract is shared by local visible Goal hosts and
-Ark Managed Agent Goal mode.
+session. Dynamic capability guidance therefore belongs to the CLI decision
+packet, not the stable Goal prompt. When `quota should-run` finds a repairable
+runtime capability gap, `interaction_contract.cli_channel` returns a typed
+`runtime_capability_reentry_v0` packet. Each candidate requires a successful
+real-callsite observation before its exact re-entry command may declare
+`--available-capability`.
 
-An already activated visible Goal retains its original task body. Installing a
-newer LoopX release or passing onboarding/doctor readback does not rewrite that
-host-owned prompt. Prompt-contract changes take effect after the host
-regenerates and reactivates `/goal <task_body>`; registry state remains the
-continuation source of truth across that reactivation.
+The verified re-entry invocation becomes the capability envelope for that
+decision. LoopX then projects the same session-scoped capability flags into
+follow-up refresh, spend, monitor, and quota commands. It never persists those
+observations as durable grants, and owner-held capabilities such as credentials
+remain user gates. This contract is shared by local visible Goal hosts and Ark
+Managed Agent Goal mode without requiring prompt regeneration.
 
 Agent identity follows the same fail-closed rule. A goal with one registered
 agent may select that identity automatically. A goal with multiple registered
