@@ -56,6 +56,7 @@ def assert_untrusted_checkout_is_canary_only() -> None:
         skills_dir = Path(tmp) / "workspace" / ".agents" / "skills"
         env["LOOPX_INSTALL_SKILL"] = "1"
         env["LOOPX_SKILLS_DIR"] = str(skills_dir)
+        env["LOOPX_ENTRY_HOST_SURFACE"] = "ark-managed-agent"
         stale_lock = skills_dir / ".loopx-install-lock"
         stale_lock.mkdir(parents=True)
         (stale_lock / "pid").write_text("999999999\n", encoding="utf-8")
@@ -74,6 +75,7 @@ def assert_untrusted_checkout_is_canary_only() -> None:
         assert canary.resolve() == REPO_ROOT / "scripts" / "loopx", canary.resolve()
         assert not releases_dir.exists(), releases_dir
         expected_skill_ids = {
+            "loopx",
             "loopx-doc-registry",
             "loopx-pr-review",
             "loopx-project",
@@ -82,6 +84,9 @@ def assert_untrusted_checkout_is_canary_only() -> None:
         assert {
             path.parent.name for path in skills_dir.glob("*/SKILL.md")
         } == expected_skill_ids
+        loopx_entry = (skills_dir / "loopx" / "SKILL.md").read_text(encoding="utf-8")
+        assert "exact current host `ark-managed-agent`" in loopx_entry
+        assert "--host-surface ark-managed-agent" in loopx_entry
         assert not (skills_dir / "loopx-change-quality").exists()
         assert not (skills_dir / "loopx-material").exists()
         readback = json.loads(

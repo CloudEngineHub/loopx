@@ -115,8 +115,22 @@ def test_host_requires_host_managed_loopx_skill_delivery() -> None:
     assert contract["preferred_delivery"] == "fixed_install_script"
     assert contract["install_script"] == "scripts/install-local.sh"
     assert contract["skills_dir_env"] == "LOOPX_SKILLS_DIR"
+    assert contract["entry_host_surface_env"] == "LOOPX_ENTRY_HOST_SURFACE"
+    assert contract["entry_host_surface"] == "ark-managed-agent"
     assert contract["target_layout"] == "./.agents/skills"
+    assert contract["generated_skill_ids"] == ["loopx"]
+    assert "skills/loopx" not in contract["source_directories"]
     assert agent_type_uses_host_managed_skills("ark-managed-agent") is True
+
+
+def test_host_onboarding_starts_from_loopx_skill_before_goal_submission() -> None:
+    from loopx.agent_onboarding import _start_instruction
+
+    instruction = _start_instruction("ark-managed-agent")
+
+    assert instruction.startswith("Use `$loopx <task>` as the ordinary task entry")
+    assert "todo writeback" in instruction
+    assert "submit the generated Goal task body exactly once" in instruction
 
 
 def test_doctor_checks_host_readback_instead_of_codex_skill_root() -> None:
