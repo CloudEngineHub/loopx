@@ -92,6 +92,13 @@ def build_runtime_capability_reentry_packet(
         "schema_version": RUNTIME_CAPABILITY_REENTRY_SCHEMA_VERSION,
         "state": "verification_required",
         "source": "quota_should_run.capability_gate.repair_missing",
+        "delivery_contract": {
+            "primary_channel": "quota_tool_result",
+            "deferred_channel": "host_continuation_input",
+            "deferred_boundary": "before_next_model_turn",
+            "goal_prompt_mutated": False,
+            "in_flight_provider_request_mutated": False,
+        },
         "candidates": reentry_candidates,
         "inheritance_contract": {
             "source_invocation": "verified quota should-run reentry",

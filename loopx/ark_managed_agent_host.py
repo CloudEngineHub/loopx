@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from .control_plane.work_items.runtime_capability_reentry import (
+    RUNTIME_CAPABILITY_REENTRY_SCHEMA_VERSION,
+)
+
 
 ARK_MANAGED_AGENT_HOST = "ark-managed-agent"
 ARK_MANAGED_AGENT_HOST_CONTRACT_SCHEMA_VERSION = (
@@ -25,4 +29,20 @@ def build_ark_managed_agent_host_contract() -> dict[str, Any]:
         "goal_runtime_owns_continuation": True,
         "loopx_turn_driver_required": False,
         "session_state_authoritative": False,
+        "runtime_capability_reentry": {
+            "source_ref": (
+                "quota_should_run.interaction_contract.cli_channel."
+                "runtime_capability_reentry"
+            ),
+            "packet_schema_version": RUNTIME_CAPABILITY_REENTRY_SCHEMA_VERSION,
+            "delivery_channels": [
+                "quota_tool_result",
+                "host_continuation_input",
+            ],
+            "deferred_boundary": "before_next_model_turn",
+            "goal_prompt_mutated": False,
+            "prompt_regeneration_required": False,
+            "session_scoped": True,
+            "durable_grant_written": False,
+        },
     }

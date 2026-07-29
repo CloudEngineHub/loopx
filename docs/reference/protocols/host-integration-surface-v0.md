@@ -105,6 +105,22 @@ LoopX Turn driver is not required. Durable policy remains in current
 `quota should-run.interaction_contract`, active state, todos, vision, and
 writeback.
 
+Runtime capabilities discovered after activation do not regenerate or mutate
+the Goal prompt. A `quota should-run` decision may return a
+`runtime_capability_reentry_v0` packet at
+`interaction_contract.cli_channel.runtime_capability_reentry`. When the agent
+invokes quota directly, the packet arrives in that CLI tool result. When the
+host invokes quota outside the active model turn, it may deliver the same typed
+packet as host continuation input before the next model turn. Each concrete
+host transport may map that input to its native event or context mechanism. The
+host cannot mutate an already in-flight provider request.
+
+Every candidate still requires a successful real-callsite observation before
+the exact re-entry command may declare the capability. The resulting capability
+envelope is session-scoped and inherited by follow-up LoopX commands; it is not
+persisted as a durable grant. Local-development and cloud Goal transports must
+preserve this same packet and boundary contract.
+
 Issue-fix qualification on this host uses a staged evidence contract. A
 validated patch proves the worker path, while Goal satisfaction must be read
 from the host separately. See

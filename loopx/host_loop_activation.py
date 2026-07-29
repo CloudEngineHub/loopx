@@ -463,10 +463,19 @@ def _ark_managed_agent_activation(commands: dict[str, str]) -> dict[str, Any]:
             "Read task_body from the JSON payload.",
             "Submit that exact task_body once through either the local-development or cloud Goal transport.",
             "Let the Goal runtime own inner iterations; do not wrap them in LoopX Turn.",
+            (
+                "On continuation, deliver runtime_capability_reentry_v0 from the "
+                "quota tool result or host continuation input before the next "
+                "model turn; do not rewrite task_body."
+            ),
         ],
         "success_criteria": [
             "The selected transport submitted the generated task_body exactly once.",
             "The Goal runtime owns continuation while LoopX state remains authoritative.",
+            (
+                "Verified runtime capabilities re-enter through the typed "
+                "continuation packet without prompt regeneration or a durable grant."
+            ),
         ],
     }
 

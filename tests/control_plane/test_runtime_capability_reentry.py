@@ -61,6 +61,13 @@ def test_runtime_capability_gap_returns_verified_reentry_packet() -> None:
     reentry = contract["cli_channel"]["runtime_capability_reentry"]
     assert reentry["schema_version"] == "runtime_capability_reentry_v0"
     assert reentry["state"] == "verification_required"
+    assert reentry["delivery_contract"] == {
+        "primary_channel": "quota_tool_result",
+        "deferred_channel": "host_continuation_input",
+        "deferred_boundary": "before_next_model_turn",
+        "goal_prompt_mutated": False,
+        "in_flight_provider_request_mutated": False,
+    }
     assert reentry["inheritance_contract"] == {
         "source_invocation": "verified quota should-run reentry",
         "propagates_to": [

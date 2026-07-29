@@ -53,8 +53,26 @@ def test_goal_prompt_projects_goal_only_host_contract() -> None:
         "goal_runtime_owns_continuation": True,
         "loopx_turn_driver_required": False,
         "session_state_authoritative": False,
+        "runtime_capability_reentry": {
+            "source_ref": (
+                "quota_should_run.interaction_contract.cli_channel."
+                "runtime_capability_reentry"
+            ),
+            "packet_schema_version": "runtime_capability_reentry_v0",
+            "delivery_channels": [
+                "quota_tool_result",
+                "host_continuation_input",
+            ],
+            "deferred_boundary": "before_next_model_turn",
+            "goal_prompt_mutated": False,
+            "prompt_regeneration_required": False,
+            "session_scoped": True,
+            "durable_grant_written": False,
+        },
     }
     assert "--runtime-profile ark_managed_agent_goal" in payload["task_body"]
+    assert "runtime_capability_reentry_v0" not in payload["task_body"]
+    assert "host_continuation_input" not in payload["task_body"]
 
 
 def test_host_activation_submits_one_goal_without_turn_or_automation() -> None:
@@ -69,6 +87,11 @@ def test_host_activation_submits_one_goal_without_turn_or_automation() -> None:
     assert packet["host_surface"] == "ark_managed_agent_goal_mode"
     assert packet["host_mutation"]["transport_contract"] == "goal_prompt_v0"
     assert packet["host_mutation"]["prompt_field"] == "task_body"
+    assert any(
+        "runtime_capability_reentry_v0" in step
+        and "do not rewrite task_body" in step
+        for step in packet["activation_steps"]
+    )
     assert packet["commands"]["heartbeat_prompt"].endswith(
         "--runtime-profile ark_managed_agent_goal"
     )
