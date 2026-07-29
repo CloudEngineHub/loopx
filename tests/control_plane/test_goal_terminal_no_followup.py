@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from loopx.bootstrap import render_state_markdown
+from loopx.bootstrap import (
+    bootstrap_project,
+    render_state_markdown,
+    repair_missing_todo_source_sections,
+)
 from loopx.control_plane.goals.goal_frontier import (
     build_goal_frontier_projection_from_summaries,
     goal_frontier_is_terminal_no_followup,
@@ -76,6 +80,103 @@ def test_bootstrap_declares_both_todo_sources(tmp_path) -> None:
     assert parsed["agent_todos"]["source_proof"]["derived"] is True
 
 
+def test_existing_state_migration_preserves_recognized_legacy_source_heading() -> None:
+    state_text = """\
+## Owner Reading Queue
+
+## Next Action
+
+- Continue.
+"""
+
+    migrated, added_roles = repair_missing_todo_source_sections(state_text)
+
+    assert added_roles == ["agent"]
+    assert migrated.count("## Owner Reading Queue") == 1
+    assert "## User Todo / Owner Review Reading Queue" not in migrated
+    assert "## Agent Todo" in migrated
+
+
+def test_bootstrap_repairs_existing_state_todo_sources_in_place(tmp_path) -> None:
+    state_file = tmp_path / ".codex/goals/goal-terminal-test/ACTIVE_GOAL_STATE.md"
+    state_file.parent.mkdir(parents=True)
+    state_file.write_text(
+        """\
+# Active Goal State
+
+## Objective
+
+Preserve this existing state.
+
+## Next Action
+
+- Continue.
+""",
+        encoding="utf-8",
+    )
+
+    result = bootstrap_project(
+        project=tmp_path,
+        registry_path=tmp_path / ".loopx/registry.json",
+        runtime_root=tmp_path / ".loopx-runtime",
+        goal_id="goal-terminal-test",
+        objective="Do not replace the existing objective.",
+        domain="issue-fix",
+        role="primary",
+        parent_goal_id=None,
+        state_file=state_file,
+        goal_doc=None,
+        adapter_kind="issue_fix_workflow_v0",
+        adapter_status="connected",
+        next_probe=None,
+        spawn_allowed=False,
+        max_children=0,
+        allowed_domains=[],
+        write_scope=[],
+        force=False,
+        dry_run=False,
+        sync_global=False,
+    )
+
+    repaired = state_file.read_text(encoding="utf-8")
+    assert result["state_action"] == "kept-existing"
+    assert result["todo_source_migration"] == {
+        "schema_version": "todo_source_section_migration_v0",
+        "added_roles": ["user", "agent"],
+        "applied": True,
+    }
+    assert "Preserve this existing state." in repaired
+    assert "Do not replace the existing objective." not in repaired
+    assert "## User Todo / Owner Review Reading Queue" in repaired
+    assert "## Agent Todo" in repaired
+
+    second_result = bootstrap_project(
+        project=tmp_path,
+        registry_path=tmp_path / ".loopx/registry.json",
+        runtime_root=tmp_path / ".loopx-runtime",
+        goal_id="goal-terminal-test",
+        objective="Still do not replace the existing objective.",
+        domain="issue-fix",
+        role="primary",
+        parent_goal_id=None,
+        state_file=state_file,
+        goal_doc=None,
+        adapter_kind="issue_fix_workflow_v0",
+        adapter_status="connected",
+        next_probe=None,
+        spawn_allowed=False,
+        max_children=0,
+        allowed_domains=[],
+        write_scope=[],
+        force=False,
+        dry_run=False,
+        sync_global=False,
+    )
+
+    assert second_result["todo_source_migration"] is None
+    assert state_file.read_text(encoding="utf-8") == repaired
+
+
 def test_agent_only_no_followup_closes_explicit_empty_user_source() -> None:
     state_text = """\
 ## User Todo / Owner Review Reading Queue
@@ -108,6 +209,42 @@ def test_agent_only_no_followup_fails_closed_when_user_source_is_missing() -> No
 
     assert "terminal_state" not in projection
     assert goal_frontier_is_terminal_no_followup(projection=projection) is False
+
+
+def test_truncated_completed_source_uses_full_terminal_closure_proof() -> None:
+    state_text = "\n".join(
+        [
+            "## User Todo / Owner Review Reading Queue",
+            "",
+            "## Agent Todo",
+            "",
+            *[
+                (
+                    f"- [x] [P0] Completed item {index}.\n"
+                    f"  <!-- loopx:todo todo_id=todo_{index} status=done "
+                    f"task_class=advancement_task no_followup={'true' if index == 13 else 'false'} "
+                    "evidence=validated -->"
+                )
+                for index in range(1, 14)
+            ],
+        ]
+    )
+
+    parsed = parse_active_state_todos(state_text)
+    agent_source = parsed["agent_todos"]
+    agent_summary = summarize_user_todos_for_quota(agent_source)
+    projection = build_goal_frontier_projection_from_summaries(
+        goal_id="goal-terminal-test",
+        agent_id=None,
+        user_todo_summary=summarize_user_todos_for_quota(parsed["user_todos"]),
+        agent_todo_summary=agent_summary,
+        work_lane_contract=None,
+        replan_obligation=None,
+    )
+
+    assert len(agent_source["items"]) == 12
+    assert agent_source["total_count"] == 13
+    assert goal_frontier_is_terminal_no_followup(projection=projection) is True
 
 
 def test_no_followup_resolves_later_missing_vision_checkpoint() -> None:
