@@ -105,55 +105,18 @@ LoopX Turn driver is not required. Durable policy remains in current
 `quota should-run.interaction_contract`, active state, todos, vision, and
 writeback.
 
-Runtime capabilities discovered after activation do not regenerate or mutate
-the Goal prompt. A `quota should-run` decision may return a
-`runtime_capability_reentry_v0` packet at
-`interaction_contract.cli_channel.runtime_capability_reentry`. When the agent
-invokes quota directly, the packet arrives in that CLI tool result. When the
-host invokes quota outside the active model turn, it may deliver the same typed
-packet as host continuation input before the next model turn. Each concrete
-host transport may map that input to its native event or context mechanism. The
-host cannot mutate an already in-flight provider request.
-
-The JSON CLI also projects the same packet near the beginning of
-`quota should-run` as top-level `runtime_capability_reentry`. The nested
-interaction-contract field remains canonical; the early copy is a
-transport-safety projection so bounded tool-result capture does not truncate
-the action packet behind large diagnostics. Hosts may consume either copy, but
-must treat them as one packet rather than two capability grants.
+Runtime capabilities discovered after activation do not regenerate the Goal
+prompt. `quota should-run` returns the existing
+`runtime_capability_reentry_v0` packet in
+`interaction_contract.cli_channel.runtime_capability_reentry` and projects the
+same packet near the beginning of JSON output as
+`runtime_capability_reentry`. The early copy prevents bounded tool-result
+capture from hiding the canonical packet behind large diagnostics.
 
 Every candidate still requires a successful real-callsite observation before
-the exact re-entry command may declare the capability. The resulting capability
-envelope is session-scoped and inherited by follow-up LoopX commands; it is not
-persisted as a durable grant. Local-development and cloud Goal transports must
-preserve this same packet and boundary contract.
-
-After the host or agent verifies the real callsite and reruns `quota should-run`
-with `--available-capability`, the decision returns a
-`runtime_capability_envelope_v0`. The envelope contains the verified
-capabilities, exact repeatable `--available-capability` argv, and current
-`next_cli_actions`. Like the re-entry packet, the JSON CLI projects this
-verified envelope near the beginning of its output so a bounded tool-result
-transport does not hide inheritance behind diagnostics.
-
-A controller that invokes quota between model turns may pass either packet to
-`build_ark_managed_agent_capability_continuation_input`. The resulting
-`loopx_ark_managed_agent_capability_continuation_v0` object is ordinary host
-continuation input, not a Goal prompt mutation. A verified envelope's argv
-applies to later host-owned quota, refresh, spend, and monitor calls for that
-session. The host must discard it with the session and must not treat it as
-permission, policy, or a durable capability grant.
-
-The Managed Agent adapter may encode this object with
-`build_ark_managed_agent_capability_continuation_event_request`. The request
-uses the documented session-event ordering: one `user.message`, immediately
-followed by a runtime `system.message`. This dynamic system event carries the
-typed packet only at the next model-turn boundary; it does not rewrite the
-original Goal task body and cannot affect an in-flight provider request. Since
-runtime system messages remain in session history, the controller emits the
-event only once for each changed packet. When the agent invokes quota itself,
-the normal quota tool result remains the preferred path and no extra event is
-needed.
+the generated re-entry command may declare the capability. Follow-up
+`next_cli_actions` inherit verified session capabilities; LoopX does not
+persist the observation as a durable permission grant.
 
 Issue-fix qualification on this host uses a staged evidence contract. A
 validated patch proves the worker path, while Goal satisfaction must be read

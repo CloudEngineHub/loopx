@@ -31,10 +31,7 @@ from .primary_action import (
     protocol_first_candidate_action as _protocol_first_candidate_action,
     protocol_monitor_action as _protocol_monitor_action,
 )
-from .runtime_capability_reentry import (
-    build_runtime_capability_envelope,
-    build_runtime_capability_reentry_packet,
-)
+from .runtime_capability_reentry import build_runtime_capability_reentry_packet
 
 INTERACTION_CONTRACT_SCHEMA_VERSION = "loopx_interaction_contract_v0"
 INTERACTION_RESPONSE_PLAN_SCHEMA_VERSION = "interaction_response_plan_v0"
@@ -1055,15 +1052,14 @@ def _build_interaction_cli_channel(
         available_capabilities=available_capabilities,
         scheduler_execution_context=scheduler_execution_context,
     )
-    next_cli_actions = interaction_next_cli_actions(
-        payload,
-        mode=mode,
-        available_capabilities=available_capabilities,
-        scheduler_execution_context=scheduler_execution_context,
-        capability_reentry=capability_reentry,
-    )
     channel = {
-        "next_cli_actions": next_cli_actions,
+        "next_cli_actions": interaction_next_cli_actions(
+            payload,
+            mode=mode,
+            available_capabilities=available_capabilities,
+            scheduler_execution_context=scheduler_execution_context,
+            capability_reentry=capability_reentry,
+        ),
         "spend_allowed_now": False,
         "spend_after_validation": spend_after_validation,
         "spend_policy": _interaction_spend_policy(
@@ -1075,12 +1071,6 @@ def _build_interaction_cli_channel(
     }
     if capability_reentry is not None:
         channel["runtime_capability_reentry"] = capability_reentry
-    capability_envelope = build_runtime_capability_envelope(
-        available_capabilities=available_capabilities,
-        next_cli_actions=next_cli_actions,
-    )
-    if capability_envelope is not None:
-        channel["runtime_capability_envelope"] = capability_envelope
     return channel
 
 

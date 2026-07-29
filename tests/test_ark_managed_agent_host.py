@@ -1,18 +1,10 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
-
-import pytest
 
 from loopx.agent_onboarding import (
     REQUIRED_HOST_SKILL_IDS,
     _skill_delivery_contract,
-)
-from loopx.ark_managed_agent_host import (
-    ARK_MANAGED_AGENT_CAPABILITY_CONTINUATION_EVENT_MARKER,
-    build_ark_managed_agent_capability_continuation_event_request,
-    build_ark_managed_agent_capability_continuation_input,
 )
 from loopx.doctor import collect_doctor
 from loopx.heartbeat_prompt import build_heartbeat_prompt
@@ -66,38 +58,16 @@ def test_goal_prompt_projects_goal_only_host_contract() -> None:
                 "quota_should_run.interaction_contract.cli_channel."
                 "runtime_capability_reentry"
             ),
+            "cli_projection_ref": "quota_should_run.runtime_capability_reentry",
             "packet_schema_version": "runtime_capability_reentry_v0",
-            "verified_envelope_source_ref": (
-                "quota_should_run.interaction_contract.cli_channel."
-                "runtime_capability_envelope"
-            ),
-            "verified_envelope_schema_version": "runtime_capability_envelope_v0",
-            "continuation_input_schema_version": (
-                "loopx_ark_managed_agent_capability_continuation_v0"
-            ),
-            "delivery_channels": [
-                "quota_tool_result",
-                "host_continuation_input",
-            ],
-            "managed_agent_event_mapping": {
-                "endpoint": "POST /api/v3/sessions/{session_id}/events",
-                "event_types": [
-                    "user.message",
-                    "system.message",
-                ],
-                "system_message_position": "immediately_after_user_message",
-                "emit_policy": "once_per_changed_packet",
-            },
-            "deferred_boundary": "before_next_model_turn",
+            "delivery_channel": "quota_tool_result",
             "goal_prompt_mutated": False,
-            "prompt_regeneration_required": False,
             "session_scoped": True,
             "durable_grant_written": False,
         },
     }
     assert "--runtime-profile ark_managed_agent_goal" in payload["task_body"]
     assert "runtime_capability_reentry_v0" not in payload["task_body"]
-    assert "host_continuation_input" not in payload["task_body"]
     assert "Before the first quota guard" not in payload["task_body"]
     assert "--available-capability <name>" not in payload["task_body"]
 
@@ -115,9 +85,7 @@ def test_host_activation_submits_one_goal_without_turn_or_automation() -> None:
     assert packet["host_mutation"]["transport_contract"] == "goal_prompt_v0"
     assert packet["host_mutation"]["prompt_field"] == "task_body"
     assert any(
-        "runtime_capability_reentry_v0" in step
-        and "runtime_capability_envelope_v0" in step
-        and "do not rewrite task_body" in step
+        "runtime_capability_reentry_v0" in step and "do not rewrite task_body" in step
         for step in packet["activation_steps"]
     )
     assert packet["commands"]["heartbeat_prompt"].endswith(
@@ -125,115 +93,6 @@ def test_host_activation_submits_one_goal_without_turn_or_automation() -> None:
     )
     assert "automation_update" not in str(packet)
     assert "loopx turn run-once" not in str(packet).lower()
-
-
-def test_host_wraps_reentry_packet_as_between_turn_input() -> None:
-    reentry = {
-        "schema_version": "runtime_capability_reentry_v0",
-        "state": "verification_required",
-        "candidates": [{"capability": "network"}],
-    }
-
-    continuation = build_ark_managed_agent_capability_continuation_input(
-        {"runtime_capability_reentry": reentry}
-    )
-
-    assert continuation == {
-        "schema_version": "loopx_ark_managed_agent_capability_continuation_v0",
-        "channel": "host_continuation_input",
-        "delivery_boundary": "before_next_model_turn",
-        "goal_prompt_mutated": False,
-        "packet_kind": "runtime_capability_reentry",
-        "runtime_capability": reentry,
-    }
-
-
-def test_host_wraps_verified_envelope_from_canonical_nested_path() -> None:
-    envelope = {
-        "schema_version": "runtime_capability_envelope_v0",
-        "state": "verified",
-        "available_capabilities": ["network"],
-        "cli_args": ["--available-capability", "network"],
-    }
-
-    continuation = build_ark_managed_agent_capability_continuation_input(
-        {
-            "interaction_contract": {
-                "cli_channel": {
-                    "runtime_capability_envelope": envelope,
-                }
-            }
-        }
-    )
-
-    assert continuation is not None
-    assert continuation["packet_kind"] == "runtime_capability_envelope"
-    assert continuation["runtime_capability"] == envelope
-    assert continuation["goal_prompt_mutated"] is False
-
-
-def test_host_maps_continuation_to_managed_agent_event_request() -> None:
-    prompt_before = _goal_prompt()
-    envelope = {
-        "schema_version": "runtime_capability_envelope_v0",
-        "state": "verified",
-        "available_capabilities": ["network"],
-        "cli_args": ["--available-capability", "network"],
-    }
-
-    request = build_ark_managed_agent_capability_continuation_event_request(
-        {"runtime_capability_envelope": envelope}
-    )
-
-    assert request is not None
-    assert [event["type"] for event in request["events"]] == [
-        "user.message",
-        "system.message",
-    ]
-    user_text = request["events"][0]["content"][0]["text"]
-    assert "Continue the active Goal from durable state" in user_text
-    assert "not a permission grant or a replacement Goal" in user_text
-    system_text = request["events"][1]["content"][0]["text"]
-    marker, encoded = system_text.split("\n", maxsplit=1)
-    assert marker == ARK_MANAGED_AGENT_CAPABILITY_CONTINUATION_EVENT_MARKER
-    assert json.loads(encoded) == {
-        "schema_version": (
-            "loopx_ark_managed_agent_capability_continuation_v0"
-        ),
-        "channel": "host_continuation_input",
-        "delivery_boundary": "before_next_model_turn",
-        "goal_prompt_mutated": False,
-        "packet_kind": "runtime_capability_envelope",
-        "runtime_capability": envelope,
-    }
-    assert _goal_prompt()["task_body"] == prompt_before["task_body"]
-    assert ARK_MANAGED_AGENT_CAPABILITY_CONTINUATION_EVENT_MARKER not in (
-        prompt_before["task_body"]
-    )
-
-
-def test_host_omits_event_request_without_runtime_capability_packet() -> None:
-    assert (
-        build_ark_managed_agent_capability_continuation_event_request({})
-        is None
-    )
-
-
-def test_host_capability_continuation_fails_closed_on_wrong_schema() -> None:
-    with pytest.raises(
-        ValueError,
-        match=(
-            "runtime_capability_envelope must use "
-            "schema_version=runtime_capability_envelope_v0"
-        ),
-    ):
-        build_ark_managed_agent_capability_continuation_input(
-            {
-                "runtime_capability_envelope": {
-                    "schema_version": "runtime_capability_envelope_v9",
-                }
-            }
-        )
 
 
 def test_host_requires_host_managed_loopx_skill_delivery() -> None:
