@@ -42,6 +42,7 @@ START_GOAL_HOST_SURFACES = (
     "codex-cli-tui",
     "claude-code",
     "opencode",
+    "ark-managed-agent",
     "shell",
 )
 
@@ -252,6 +253,7 @@ def build_start_goal_host_surface_selection_packet(
         "codex-cli-tui": "terminal Codex TUI with visible /goal support",
         "claude-code": "Claude Code with native /loop",
         "opencode": "OpenCode LoopX goal bridge",
+        "ark-managed-agent": "Ark Managed Agent with one-shot Goal submission",
         "shell": "manual shell or an explicitly configured external scheduler",
     }
     choices: list[dict[str, Any]] = []
@@ -275,7 +277,7 @@ def build_start_goal_host_surface_selection_packet(
         )
     reason = (
         "host surface is required because Codex App automation, Codex App over SSH, "
-        "the Codex IDE plugin, and Codex CLI "
+        "the Codex IDE plugin, Codex CLI, and Ark Managed Agent "
         "have different continuation contracts"
     )
     gate = {
@@ -612,6 +614,7 @@ def _goal_start_contract(*, goal_text: str | None, connected: bool, agent_type: 
                 "codex-cli": "visible Codex CLI `/goal <task_body>`",
                 "claude-code": "Claude Code native `/loop` after `/loopx <task>` arms LoopX",
                 "opencode": "OpenCode `loopx_goal_activate`",
+                "ark-managed-agent": "Ark Managed Agent one-shot Goal submission",
                 "manual": "external scheduler or manual quota/status loop",
                 "other-agent": "custom host loop driver using the returned task body and quota guard",
             },
@@ -686,12 +689,13 @@ Goal id: {goal_id}.{agent_clause}
 
 Planning rules:
 1. Choose the planning profile: broad or fuzzy product direction uses 2-5 public-safe todos; clear bounded problems use a planner-sized ordered todo plan with enough steps to make the approach explicit.
-2. Plan before any `loopx todo add`; keep each item concise and avoid management-only filler.
+2. After connection/bootstrap, plan before any `loopx todo add`; keep each item concise and avoid management-only filler. For explicit goal start, write the first business todo from the supplied goal text before substantive task work.
 3. Every new todo starts with `[P0]`, `[P1]`, or `[P2]`; include at least one `[P0]` unless the first useful step is blocked by a user gate.
 4. If several todos share the same priority, their listed order is their relative priority. Preserve that exact order when writing them.
 5. Prefer executable Agent Todo items with `task_class=advancement_task`; use User Todo only for concrete owner decisions or private-material gates.
 6. After writing todos, run `loopx refresh-state --goal-id {goal_id}`, activate the host loop if it is missing, unknown, or stale (Codex App automation, Codex CLI `/goal <task_body>`, Claude Code `/loop`, OpenCode bridge, or a custom host-loop gate), then run its typed `quota_guard` and begin the first allowed bounded segment.
-7. If the goal is a GitHub issue/PR fix, first preview `loopx issue-fix workflow-plan --url <github-issue-or-pr-url> --repo-path <approved-repo> --repository-context-json <compact-context.json> --validation-label '<validation command>' --format json`; write only metadata classification plus the feasibility checkpoint. Repository context should pin current repo policy, architecture, change-scope, reproduction, and validation refs; memory and external experts remain advisory until verified against the pinned revision. After a compact public-safe observation, run `loopx issue-fix feasibility --url <github-issue-url> --reproduction-status <state> --scope-class <scope> --repository-context-json <compact-context.json> --goal-id {goal_id} --format json` and write only its selected route successor or no-follow-up. Keep private repro material, body/comment reads, arbitrary external comments, PR creation, merge, publish, destructive git, and production actions as explicit gates. After a PR exists and `external_review_request` or `publish` authority is active, call `loopx issue-fix reviewer-request --url <github-pr-url> --repo-path <approved-repo> --base-ref <base-ref> --execute --format json`; it should try the formal request first and, only on confirmed permission denial, post one reviewer-tagging fallback comment. Do not mark notification complete until the request or fallback comment is visible on the PR. Then call `loopx issue-fix pr-lifecycle --url <github-pr-url> --goal-id {goal_id} --format json`; use `grouped_monitor_projection` for one monitor per nonempty state bucket. Never create one monitor per PR. Keep PR actions one-shot and messages at one PR per message.
+7. Treat todo writeback as a transition invariant, not only setup or closeout. Before moving to a dependent step, persist any material scope, acceptance, or non-goal delta in the current todo evidence and the next executable todo, then refresh state and verify quota readback. Chat/model summaries are not durable state.
+8. If the goal is a GitHub issue/PR fix, preview `loopx issue-fix workflow-plan --url <github-issue-or-pr-url> --repo-path <approved-repo> --repository-context-json <compact-context.json> --validation-label '<validation command>' --format json`; keep only metadata classification plus the feasibility checkpoint. Repository context should pin current repo policy, architecture, change-scope, reproduction, and validation refs; memory and external experts remain advisory until verified against the pinned revision. After a compact public-safe observation, run `loopx issue-fix feasibility --url <github-issue-url> --reproduction-status <state> --scope-class <scope> --repository-context-json <compact-context.json> --goal-id {goal_id} --format json` and write only its selected route successor or no-follow-up. Keep private repro material, body/comment reads, arbitrary external comments, PR creation, merge, publish, destructive git, and production actions as explicit gates. After a PR exists and `external_review_request` or `publish` authority is active, call `loopx issue-fix reviewer-request --url <github-pr-url> --repo-path <approved-repo> --base-ref <base-ref> --execute --format json`; it should try the formal request first and, only on confirmed permission denial, post one reviewer-tagging fallback comment. Do not mark notification complete until the request or fallback comment is visible on the PR. Then call `loopx issue-fix pr-lifecycle --url <github-pr-url> --goal-id {goal_id} --format json`; use `grouped_monitor_projection` for one monitor per nonempty state bucket. Never create one monitor per PR. Keep PR actions one-shot and messages at one PR per message.
 """
 
 
@@ -836,6 +840,13 @@ def build_loopx_bootstrap_command_pack(
             + (
                 f" --agent-id {shell_arg(str(selected_agent_id))}"
                 if selected_agent_id
+                else ""
+            )
+            + f" --host-surface {shell_arg(host_surface)}"
+            + render_available_capability_args(available_capabilities)
+            + (
+                f" --goal-text {shell_arg(normalized_goal_text)}"
+                if normalized_goal_text
                 else ""
             )
         ),
@@ -1242,7 +1253,10 @@ def build_start_goal_guided_packet(
                 "id": "connect_if_needed",
                 "kind": "conditional_mutation",
                 "command": commands.get("goal_start_connect_if_needed"),
-                "purpose": "create or reuse project-local LoopX state only when no matching goal exists",
+                "purpose": (
+                    "create or reuse project-local LoopX state only when no matching goal exists, "
+                    "then continue directly to business todo planning before repository work"
+                ),
             },
             {
                 "id": "plan_ranked_todos",
@@ -1258,7 +1272,10 @@ def build_start_goal_guided_packet(
                     f"{shell_arg(str(command_pack.get('goal_id') or ''))} --role agent "
                     "--task-class advancement_task --action-kind <action_kind> --text '<[P0/P1/P2] ...>'"
                 ),
-                "purpose": "write todos in planner order so same-priority ordering stays deterministic",
+                "purpose": (
+                    "write business todos in planner order before substantive task work so "
+                    "same-priority ordering stays deterministic"
+                ),
             },
             {
                 "id": "refresh_state",
@@ -1530,7 +1547,7 @@ Then plan before writing todos. Preserve relative priority by write order:
 
 Write the planned todos with `loopx todo add` in the exact planned order. Same-priority items use that write order as the tie-breaker.
 
-For GitHub issue/PR fix goals, preview the issue-fix route before todo writeback:
+For GitHub issue/PR fix goals, preview the issue-fix route:
 
 ```bash
 {commands.get("issue_fix_workflow_plan_template", "")}

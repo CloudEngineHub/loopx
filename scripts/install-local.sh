@@ -17,6 +17,7 @@ Common environment variables:
   LOOPX_INSTALL_CANARY=0           Skip the loopx-canary executable.
   LOOPX_INSTALL_SKILL=0            Skip packaged workflow skills.
   LOOPX_SKILLS_DIR=/path           Install workflow skills into this host-native root.
+  LOOPX_ENTRY_HOST_SURFACE=...     Bind generated $loopx to an exact host (ark-managed-agent).
   LOOPX_INSTALL_SLASH_COMMANDS=0   Skip Codex and Claude command skills.
   LOOPX_INSTALL_OPENCODE=0         Install the OpenCode goal bridge surface.
   CODEX_HOME=/path                 Override the Codex home directory.
@@ -57,6 +58,11 @@ if [[ "${LOOPX_SKILLS_DIR+x}" == "x" ]]; then
   skills_dir_explicit=1
 fi
 skills_dir="${LOOPX_SKILLS_DIR:-$codex_home/skills}"
+entry_host_surface="${LOOPX_ENTRY_HOST_SURFACE:-}"
+if [[ -n "$entry_host_surface" && "$entry_host_surface" != "ark-managed-agent" ]]; then
+  echo "loopx installer error: unsupported LOOPX_ENTRY_HOST_SURFACE: $entry_host_surface" >&2
+  exit 2
+fi
 man_root="${LOOPX_MAN_ROOT:-$HOME/.local/share/man}"
 man_dir="${LOOPX_MAN_DIR:-$man_root/man1}"
 install_skill="${LOOPX_INSTALL_SKILL:-1}"
@@ -338,18 +344,27 @@ install_workflow_skills() {
     skill_line="${skill_line}- skill: $skill_target"$'\n'
   done < <(find "$skills_source" -mindepth 1 -maxdepth 1 -type d -print | sort)
 
+  installed_skill_ids+=("loopx")
+  skill_line="${skill_line}- generated skill: $skills_dir/loopx"$'\n'
   if [[ "${#installed_skill_ids[@]}" -gt 0 ]]; then
     LOOPX_SKILL_INSTALL_DIR="$skills_dir" \
       LOOPX_SKILL_INSTALL_SOURCE_ROOT="$source_root" \
       LOOPX_SKILL_INSTALL_IDS="$(printf '%s\n' "${installed_skill_ids[@]}")" \
       LOOPX_SKILL_INSTALLED_AT="$installed_at" \
+      LOOPX_SKILL_ENTRY_HOST_SURFACE="$entry_host_surface" \
       PYTHONPATH="$source_root${PYTHONPATH:+:$PYTHONPATH}" \
       "${LOOPX_PYTHON:-python3}" - <<'PY'
 import os
 from pathlib import Path
 
 from loopx.skill_install_readback import write_skill_install_readback
+from loopx.slash_command_install import materialize_loopx_entry_skill
 
+materialize_loopx_entry_skill(
+    skills_dir=Path(os.environ["LOOPX_SKILL_INSTALL_DIR"]),
+    execute=True,
+    host_surface=os.environ.get("LOOPX_SKILL_ENTRY_HOST_SURFACE") or None,
+)
 write_skill_install_readback(
     skills_dir=Path(os.environ["LOOPX_SKILL_INSTALL_DIR"]),
     skill_ids=os.environ["LOOPX_SKILL_INSTALL_IDS"].splitlines(),
