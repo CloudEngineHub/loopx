@@ -73,6 +73,8 @@ def test_goal_prompt_projects_goal_only_host_contract() -> None:
     assert "--runtime-profile ark_managed_agent_goal" in payload["task_body"]
     assert "runtime_capability_reentry_v0" not in payload["task_body"]
     assert "host_continuation_input" not in payload["task_body"]
+    assert "Before the first quota guard" not in payload["task_body"]
+    assert "--available-capability <name>" not in payload["task_body"]
 
 
 def test_host_activation_submits_one_goal_without_turn_or_automation() -> None:

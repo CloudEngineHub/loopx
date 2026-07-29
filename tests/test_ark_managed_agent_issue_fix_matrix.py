@@ -164,3 +164,5 @@ def test_runtime_capability_reenters_through_host_input_not_goal_prompt() -> Non
     assert "--available-capability network" in reentry["candidates"][0]["command"]
     assert "--available-capability network" not in prompt["task_body"]
     assert "runtime_capability_reentry_v0" not in prompt["task_body"]
+    assert "Before the first quota guard" not in prompt["task_body"]
+    assert "--available-capability <name>" not in prompt["task_body"]
