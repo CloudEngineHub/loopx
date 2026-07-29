@@ -115,6 +115,13 @@ packet as host continuation input before the next model turn. Each concrete
 host transport may map that input to its native event or context mechanism. The
 host cannot mutate an already in-flight provider request.
 
+The JSON CLI also projects the same packet near the beginning of
+`quota should-run` as top-level `runtime_capability_reentry`. The nested
+interaction-contract field remains canonical; the early copy is a
+transport-safety projection so bounded tool-result capture does not truncate
+the action packet behind large diagnostics. Hosts may consume either copy, but
+must treat them as one packet rather than two capability grants.
+
 Every candidate still requires a successful real-callsite observation before
 the exact re-entry command may declare the capability. The resulting capability
 envelope is session-scoped and inherited by follow-up LoopX commands; it is not
