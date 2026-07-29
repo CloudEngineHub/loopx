@@ -95,6 +95,12 @@ LoopX Turn driver is not required. Durable policy remains in current
 `quota should-run.interaction_contract`, active state, todos, vision, and
 writeback.
 
+Pause, replacement-session, and ambiguous-failure qualification is defined in
+[`ark-managed-agent-goal-continuity-qualification-v0`](ark-managed-agent-goal-continuity-qualification-v0.md).
+In particular, a surviving session id or a present Goal journal is not enough
+to claim recovery; the replacement host must reconstruct the LoopX frontier
+and the Goal runtime must prove journal rehydration without duplicate effects.
+
 ## Lifecycle Reads
 
 Host integrations should expose read methods that map directly to CLI reads:
