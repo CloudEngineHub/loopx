@@ -214,8 +214,9 @@ def _bootstrap_pack_command(
         "codex-cli": "codex-cli-tui",
         "claude-code": "claude-code",
         "opencode": "opencode",
+        "ark-managed-agent": "ark-managed-agent",
         "manual": "shell",
-        "other-agent": "worker-bridge",
+        "other-agent": "other-agent",
     }
     parts = [
         shell_arg(cli_bin),
@@ -225,7 +226,7 @@ def _bootstrap_pack_command(
         "--goal-id",
         shell_arg(goal_id),
         "--host-surface",
-        shell_arg(surface_by_type.get(agent_type, "worker-bridge")),
+        shell_arg(surface_by_type[agent_type]),
     ]
     if agent_id:
         parts.extend(["--agent-id", shell_arg(agent_id)])

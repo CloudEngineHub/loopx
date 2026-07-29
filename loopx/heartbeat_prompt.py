@@ -1126,10 +1126,10 @@ wait quietly. Scheduler hints are diagnostic here and must not mutate host
 automation.
 
 If `should_run=true`, choose the highest-priority in-scope unblocked agent todo.
-Honor claims/leases, blocker-push and recovery obligations. Complete one bounded,
-coherent delivery segment; validate it; write public-safe evidence, critic, and
-next action back to LoopX. A non-trivial completion needs a successor todo or an
-explicit no-follow-up rationale. After validated writeback, refresh the
+Honor claims/leases, blocker-push and recovery obligations. Before dependent work,
+persist material scope/acceptance/non-goal changes in current evidence and the next
+todo. Complete and validate one bounded, coherent segment. A non-trivial completion
+needs a successor todo or explicit no-follow-up rationale. Then refresh the
 accountable progress record before spending:
 `{progress_refresh_state_command}`. Then spend exactly once against that refresh:
 `{quota_spend_command}`.

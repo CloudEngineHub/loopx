@@ -423,6 +423,8 @@ def main() -> int:
         other_commands = other_agent_onboarding["commands"]
         assert "install_command_facade" not in other_commands
         assert "doctor --agent-type other-agent" in other_commands["doctor_or_install"]
+        assert "--host-surface other-agent" in other_commands["bootstrap_command_pack"]
+        assert "worker-bridge" not in other_commands["bootstrap_command_pack"]
         delivery = other_agent_onboarding["skill_delivery"]
         assert delivery["mode"] == "host_managed", delivery
         assert delivery["owner"] == "custom_agent_host", delivery

@@ -69,8 +69,8 @@ def test_host_materialization_can_bind_exact_managed_agent_surface(
     assert "--host-surface <exact-current-host>" not in skill_text
     assert "before substantive task work" in skill_text
     assert "has no `--priority` flag" in skill_text
-    assert "todo writeback as a transition invariant" in skill_text
-    assert "current todo evidence and the next executable todo" in skill_text
+    assert "Before dependent work, persist material scope" in skill_text
+    assert "current Todo evidence and the next executable Todo" in skill_text
     assert "Chat/model summaries are not durable state" in skill_text
 
 
