@@ -10,6 +10,9 @@ from loopx.capabilities.issue_fix.acceptance_loop import (
 from loopx.capabilities.issue_fix.feasibility import (
     build_issue_fix_feasibility_packet,
 )
+from loopx.ark_managed_agent_host import (
+    build_ark_managed_agent_capability_continuation_input,
+)
 from loopx.control_plane.scheduler.execution_context import (
     scheduler_execution_context_for_runtime_profile,
 )
@@ -162,7 +165,55 @@ def test_runtime_capability_reenters_through_host_input_not_goal_prompt() -> Non
     )
     assert reentry["candidates"][0]["capability"] == "network"
     assert "--available-capability network" in reentry["candidates"][0]["command"]
+    reentry_input = build_ark_managed_agent_capability_continuation_input(
+        {"interaction_contract": contract}
+    )
+    assert reentry_input is not None
+    assert reentry_input["packet_kind"] == "runtime_capability_reentry"
+    assert reentry_input["runtime_capability"] == reentry
+
+    verified_contract = build_interaction_contract(
+        {
+            **decision,
+            "effective_action": "bounded_delivery",
+            "execution_obligation": {
+                "must_attempt_work": True,
+                "delivery_allowed": True,
+            },
+            "capability_gate": {
+                "action": "run",
+                "repair_missing": [],
+                "owner_missing": [],
+                "resolution_bindings": [],
+                "runnable_candidates": [],
+            },
+        },
+        available_capabilities=["shell", "network"],
+        scheduler_execution_context=scheduler_execution_context_for_runtime_profile(
+            "ark_managed_agent_goal"
+        ),
+    )
+    envelope = verified_contract["cli_channel"]["runtime_capability_envelope"]
+    verified_input = build_ark_managed_agent_capability_continuation_input(
+        {"interaction_contract": verified_contract}
+    )
+    assert verified_input is not None
+    assert verified_input["packet_kind"] == "runtime_capability_envelope"
+    assert verified_input["runtime_capability"] == envelope
+    assert envelope["cli_args"] == [
+        "--available-capability",
+        "shell",
+        "--available-capability",
+        "network",
+    ]
+    assert all(
+        "--available-capability network" in action
+        for action in envelope["next_cli_actions"]
+        if action.startswith("loopx refresh-state")
+        or action.startswith("loopx quota spend-slot")
+    )
     assert "--available-capability network" not in prompt["task_body"]
     assert "runtime_capability_reentry_v0" not in prompt["task_body"]
+    assert "runtime_capability_envelope_v0" not in prompt["task_body"]
     assert "Before the first quota guard" not in prompt["task_body"]
     assert "--available-capability <name>" not in prompt["task_body"]

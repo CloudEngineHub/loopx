@@ -128,6 +128,22 @@ envelope is session-scoped and inherited by follow-up LoopX commands; it is not
 persisted as a durable grant. Local-development and cloud Goal transports must
 preserve this same packet and boundary contract.
 
+After the host or agent verifies the real callsite and reruns `quota should-run`
+with `--available-capability`, the decision returns a
+`runtime_capability_envelope_v0`. The envelope contains the verified
+capabilities, exact repeatable `--available-capability` argv, and current
+`next_cli_actions`. Like the re-entry packet, the JSON CLI projects this
+verified envelope near the beginning of its output so a bounded tool-result
+transport does not hide inheritance behind diagnostics.
+
+A controller that invokes quota between model turns may pass either packet to
+`build_ark_managed_agent_capability_continuation_input`. The resulting
+`loopx_ark_managed_agent_capability_continuation_v0` object is ordinary host
+continuation input, not a Goal or system prompt mutation. A verified envelope's
+argv applies to later host-owned quota, refresh, spend, and monitor calls for
+that session. The host must discard it with the session and must not treat it as
+permission, policy, or a durable capability grant.
+
 Issue-fix qualification on this host uses a staged evidence contract. A
 validated patch proves the worker path, while Goal satisfaction must be read
 from the host separately. See

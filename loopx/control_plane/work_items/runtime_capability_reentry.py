@@ -12,6 +12,61 @@ from ..scheduler.execution_context import (
 
 
 RUNTIME_CAPABILITY_REENTRY_SCHEMA_VERSION = "runtime_capability_reentry_v0"
+RUNTIME_CAPABILITY_ENVELOPE_SCHEMA_VERSION = "runtime_capability_envelope_v0"
+
+RUNTIME_CAPABILITY_INHERITANCE_TARGETS = (
+    "quota should-run",
+    "refresh-state",
+    "quota spend-slot",
+    "quota monitor-poll",
+)
+
+
+def build_runtime_capability_envelope(
+    *,
+    available_capabilities: Any,
+    next_cli_actions: Any,
+) -> dict[str, Any] | None:
+    """Project verified session capabilities for host-owned continuation."""
+
+    observed = runtime_capabilities_for_cli_projection(available_capabilities)
+    if not observed:
+        return None
+
+    cli_args = [
+        arg
+        for capability in observed
+        for arg in ("--available-capability", capability)
+    ]
+    actions = (
+        [
+            action
+            for action in next_cli_actions
+            if isinstance(action, str) and action.strip()
+        ]
+        if isinstance(next_cli_actions, list)
+        else []
+    )
+    return {
+        "schema_version": RUNTIME_CAPABILITY_ENVELOPE_SCHEMA_VERSION,
+        "state": "verified",
+        "source": "quota_should_run.available_capability",
+        "available_capabilities": observed,
+        "cli_args": cli_args,
+        "next_cli_actions": actions,
+        "delivery_contract": {
+            "primary_channel": "quota_tool_result",
+            "deferred_channel": "host_continuation_input",
+            "deferred_boundary": "before_next_model_turn",
+            "goal_prompt_mutated": False,
+            "in_flight_provider_request_mutated": False,
+        },
+        "inheritance_contract": {
+            "applies_to": list(RUNTIME_CAPABILITY_INHERITANCE_TARGETS),
+            "session_scoped": True,
+            "durable_grant_written": False,
+        },
+    }
 
 
 def build_runtime_capability_reentry_packet(

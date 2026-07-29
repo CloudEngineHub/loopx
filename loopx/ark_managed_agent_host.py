@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from .control_plane.work_items.runtime_capability_reentry import (
+    RUNTIME_CAPABILITY_ENVELOPE_SCHEMA_VERSION,
     RUNTIME_CAPABILITY_REENTRY_SCHEMA_VERSION,
 )
 
@@ -14,6 +16,56 @@ ARK_MANAGED_AGENT_HOST_CONTRACT_SCHEMA_VERSION = (
     "loopx_ark_managed_agent_goal_host_v0"
 )
 ARK_MANAGED_AGENT_PROMPT_FAMILY = "loopx_goal_prompt_v0"
+ARK_MANAGED_AGENT_CAPABILITY_CONTINUATION_SCHEMA_VERSION = (
+    "loopx_ark_managed_agent_capability_continuation_v0"
+)
+
+
+def _runtime_capability_packet(
+    quota_decision: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]] | None:
+    interaction = quota_decision.get("interaction_contract")
+    cli_channel = (
+        interaction.get("cli_channel")
+        if isinstance(interaction, Mapping)
+        else None
+    )
+    for field, schema_version in (
+        ("runtime_capability_reentry", RUNTIME_CAPABILITY_REENTRY_SCHEMA_VERSION),
+        ("runtime_capability_envelope", RUNTIME_CAPABILITY_ENVELOPE_SCHEMA_VERSION),
+    ):
+        packet = quota_decision.get(field)
+        if not isinstance(packet, Mapping) and isinstance(cli_channel, Mapping):
+            packet = cli_channel.get(field)
+        if not isinstance(packet, Mapping):
+            continue
+        if packet.get("schema_version") != schema_version:
+            raise ValueError(
+                f"{field} must use schema_version={schema_version}"
+            )
+        return field, dict(packet)
+    return None
+
+
+def build_ark_managed_agent_capability_continuation_input(
+    quota_decision: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Wrap one quota capability packet for between-turn host delivery."""
+
+    selected = _runtime_capability_packet(quota_decision)
+    if selected is None:
+        return None
+    packet_kind, packet = selected
+    return {
+        "schema_version": (
+            ARK_MANAGED_AGENT_CAPABILITY_CONTINUATION_SCHEMA_VERSION
+        ),
+        "channel": "host_continuation_input",
+        "delivery_boundary": "before_next_model_turn",
+        "goal_prompt_mutated": False,
+        "packet_kind": packet_kind,
+        "runtime_capability": packet,
+    }
 
 
 def build_ark_managed_agent_host_contract() -> dict[str, Any]:
@@ -35,6 +87,16 @@ def build_ark_managed_agent_host_contract() -> dict[str, Any]:
                 "runtime_capability_reentry"
             ),
             "packet_schema_version": RUNTIME_CAPABILITY_REENTRY_SCHEMA_VERSION,
+            "verified_envelope_source_ref": (
+                "quota_should_run.interaction_contract.cli_channel."
+                "runtime_capability_envelope"
+            ),
+            "verified_envelope_schema_version": (
+                RUNTIME_CAPABILITY_ENVELOPE_SCHEMA_VERSION
+            ),
+            "continuation_input_schema_version": (
+                ARK_MANAGED_AGENT_CAPABILITY_CONTINUATION_SCHEMA_VERSION
+            ),
             "delivery_channels": [
                 "quota_tool_result",
                 "host_continuation_input",

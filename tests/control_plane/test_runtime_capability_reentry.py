@@ -139,12 +139,74 @@ def test_verified_reentry_inherits_capability_into_followup_actions() -> None:
 
     assert "runtime_capability_reentry" not in contract["cli_channel"]
     actions = contract["cli_channel"]["next_cli_actions"]
+    envelope = contract["cli_channel"]["runtime_capability_envelope"]
+    assert envelope == {
+        "schema_version": "runtime_capability_envelope_v0",
+        "state": "verified",
+        "source": "quota_should_run.available_capability",
+        "available_capabilities": ["network"],
+        "cli_args": ["--available-capability", "network"],
+        "next_cli_actions": actions,
+        "delivery_contract": {
+            "primary_channel": "quota_tool_result",
+            "deferred_channel": "host_continuation_input",
+            "deferred_boundary": "before_next_model_turn",
+            "goal_prompt_mutated": False,
+            "in_flight_provider_request_mutated": False,
+        },
+        "inheritance_contract": {
+            "applies_to": [
+                "quota should-run",
+                "refresh-state",
+                "quota spend-slot",
+                "quota monitor-poll",
+            ],
+            "session_scoped": True,
+            "durable_grant_written": False,
+        },
+    }
     assert actions
     assert all(
         "--available-capability network" in action
         for action in actions
         if action.startswith("loopx refresh-state")
         or action.startswith("loopx quota spend-slot")
+    )
+
+
+def test_verified_capability_envelope_precedes_large_diagnostics() -> None:
+    contract = build_interaction_contract(
+        {
+            **_blocked_payload(missing=[]),
+            "effective_action": "bounded_delivery",
+            "execution_obligation": {
+                "must_attempt_work": True,
+                "delivery_allowed": True,
+            },
+        },
+        available_capabilities=["network"],
+        scheduler_execution_context=MANAGED_AGENT_CONTEXT,
+    )
+    envelope = contract["cli_channel"]["runtime_capability_envelope"]
+    projected = compact_quota_should_run_cli_payload(
+        {
+            "ok": True,
+            "status_health_ok": True,
+            "mode": "should-run",
+            "goal_id": GOAL_ID,
+            "decision": "run",
+            "should_run": True,
+            "large_diagnostic": "x" * 20_000,
+            "interaction_contract": contract,
+        }
+    )
+    rendered = json.dumps(projected, indent=2)
+
+    assert projected["runtime_capability_envelope"] == envelope
+    assert rendered.index('"runtime_capability_envelope"') < 512
+    assert rendered.index('"schema_version": "runtime_capability_envelope_v0"') < 1_024
+    assert rendered.index('"large_diagnostic"') > rendered.index(
+        '"runtime_capability_envelope"'
     )
 
 
@@ -207,3 +269,6 @@ def test_quota_cli_omits_reentry_projection_when_not_requested() -> None:
     )
 
     assert "runtime_capability_reentry" not in projected
+    assert projected["runtime_capability_envelope"]["available_capabilities"] == [
+        "network"
+    ]

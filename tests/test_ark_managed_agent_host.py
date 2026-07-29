@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from loopx.agent_onboarding import (
     REQUIRED_HOST_SKILL_IDS,
     _skill_delivery_contract,
+)
+from loopx.ark_managed_agent_host import (
+    build_ark_managed_agent_capability_continuation_input,
 )
 from loopx.doctor import collect_doctor
 from loopx.heartbeat_prompt import build_heartbeat_prompt
@@ -59,6 +64,14 @@ def test_goal_prompt_projects_goal_only_host_contract() -> None:
                 "runtime_capability_reentry"
             ),
             "packet_schema_version": "runtime_capability_reentry_v0",
+            "verified_envelope_source_ref": (
+                "quota_should_run.interaction_contract.cli_channel."
+                "runtime_capability_envelope"
+            ),
+            "verified_envelope_schema_version": "runtime_capability_envelope_v0",
+            "continuation_input_schema_version": (
+                "loopx_ark_managed_agent_capability_continuation_v0"
+            ),
             "delivery_channels": [
                 "quota_tool_result",
                 "host_continuation_input",
@@ -91,6 +104,7 @@ def test_host_activation_submits_one_goal_without_turn_or_automation() -> None:
     assert packet["host_mutation"]["prompt_field"] == "task_body"
     assert any(
         "runtime_capability_reentry_v0" in step
+        and "runtime_capability_envelope_v0" in step
         and "do not rewrite task_body" in step
         for step in packet["activation_steps"]
     )
@@ -99,6 +113,68 @@ def test_host_activation_submits_one_goal_without_turn_or_automation() -> None:
     )
     assert "automation_update" not in str(packet)
     assert "loopx turn run-once" not in str(packet).lower()
+
+
+def test_host_wraps_reentry_packet_as_between_turn_input() -> None:
+    reentry = {
+        "schema_version": "runtime_capability_reentry_v0",
+        "state": "verification_required",
+        "candidates": [{"capability": "network"}],
+    }
+
+    continuation = build_ark_managed_agent_capability_continuation_input(
+        {"runtime_capability_reentry": reentry}
+    )
+
+    assert continuation == {
+        "schema_version": "loopx_ark_managed_agent_capability_continuation_v0",
+        "channel": "host_continuation_input",
+        "delivery_boundary": "before_next_model_turn",
+        "goal_prompt_mutated": False,
+        "packet_kind": "runtime_capability_reentry",
+        "runtime_capability": reentry,
+    }
+
+
+def test_host_wraps_verified_envelope_from_canonical_nested_path() -> None:
+    envelope = {
+        "schema_version": "runtime_capability_envelope_v0",
+        "state": "verified",
+        "available_capabilities": ["network"],
+        "cli_args": ["--available-capability", "network"],
+    }
+
+    continuation = build_ark_managed_agent_capability_continuation_input(
+        {
+            "interaction_contract": {
+                "cli_channel": {
+                    "runtime_capability_envelope": envelope,
+                }
+            }
+        }
+    )
+
+    assert continuation is not None
+    assert continuation["packet_kind"] == "runtime_capability_envelope"
+    assert continuation["runtime_capability"] == envelope
+    assert continuation["goal_prompt_mutated"] is False
+
+
+def test_host_capability_continuation_fails_closed_on_wrong_schema() -> None:
+    with pytest.raises(
+        ValueError,
+        match=(
+            "runtime_capability_envelope must use "
+            "schema_version=runtime_capability_envelope_v0"
+        ),
+    ):
+        build_ark_managed_agent_capability_continuation_input(
+            {
+                "runtime_capability_envelope": {
+                    "schema_version": "runtime_capability_envelope_v9",
+                }
+            }
+        )
 
 
 def test_host_requires_host_managed_loopx_skill_delivery() -> None:
