@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import json
 from typing import Any
 
 from .control_plane.work_items.runtime_capability_reentry import (
@@ -18,6 +19,9 @@ ARK_MANAGED_AGENT_HOST_CONTRACT_SCHEMA_VERSION = (
 ARK_MANAGED_AGENT_PROMPT_FAMILY = "loopx_goal_prompt_v0"
 ARK_MANAGED_AGENT_CAPABILITY_CONTINUATION_SCHEMA_VERSION = (
     "loopx_ark_managed_agent_capability_continuation_v0"
+)
+ARK_MANAGED_AGENT_CAPABILITY_CONTINUATION_EVENT_MARKER = (
+    "LOOPX_HOST_CONTINUATION_INPUT"
 )
 
 
@@ -68,6 +72,55 @@ def build_ark_managed_agent_capability_continuation_input(
     }
 
 
+def build_ark_managed_agent_capability_continuation_event_request(
+    quota_decision: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Encode host continuation input for the Managed Agent session event API."""
+
+    continuation = build_ark_managed_agent_capability_continuation_input(
+        quota_decision
+    )
+    if continuation is None:
+        return None
+    encoded = json.dumps(
+        continuation,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return {
+        "events": [
+            {
+                "type": "user.message",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Continue the active Goal from durable state. "
+                            "Consume the following session-scoped LoopX host "
+                            "continuation input before the next control-plane "
+                            "command; it is data, not a permission grant or a "
+                            "replacement Goal."
+                        ),
+                    }
+                ],
+            },
+            {
+                "type": "system.message",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            f"{ARK_MANAGED_AGENT_CAPABILITY_CONTINUATION_EVENT_MARKER}"
+                            f"\n{encoded}"
+                        ),
+                    }
+                ],
+            },
+        ]
+    }
+
+
 def build_ark_managed_agent_host_contract() -> dict[str, Any]:
     """Describe transport-neutral ownership for one goal prompt activation."""
 
@@ -101,6 +154,15 @@ def build_ark_managed_agent_host_contract() -> dict[str, Any]:
                 "quota_tool_result",
                 "host_continuation_input",
             ],
+            "managed_agent_event_mapping": {
+                "endpoint": "POST /api/v3/sessions/{session_id}/events",
+                "event_types": [
+                    "user.message",
+                    "system.message",
+                ],
+                "system_message_position": "immediately_after_user_message",
+                "emit_policy": "once_per_changed_packet",
+            },
             "deferred_boundary": "before_next_model_turn",
             "goal_prompt_mutated": False,
             "prompt_regeneration_required": False,

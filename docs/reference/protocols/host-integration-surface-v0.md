@@ -139,10 +139,21 @@ transport does not hide inheritance behind diagnostics.
 A controller that invokes quota between model turns may pass either packet to
 `build_ark_managed_agent_capability_continuation_input`. The resulting
 `loopx_ark_managed_agent_capability_continuation_v0` object is ordinary host
-continuation input, not a Goal or system prompt mutation. A verified envelope's
-argv applies to later host-owned quota, refresh, spend, and monitor calls for
-that session. The host must discard it with the session and must not treat it as
+continuation input, not a Goal prompt mutation. A verified envelope's argv
+applies to later host-owned quota, refresh, spend, and monitor calls for that
+session. The host must discard it with the session and must not treat it as
 permission, policy, or a durable capability grant.
+
+The Managed Agent adapter may encode this object with
+`build_ark_managed_agent_capability_continuation_event_request`. The request
+uses the documented session-event ordering: one `user.message`, immediately
+followed by a runtime `system.message`. This dynamic system event carries the
+typed packet only at the next model-turn boundary; it does not rewrite the
+original Goal task body and cannot affect an in-flight provider request. Since
+runtime system messages remain in session history, the controller emits the
+event only once for each changed packet. When the agent invokes quota itself,
+the normal quota tool result remains the preferred path and no extra event is
+needed.
 
 Issue-fix qualification on this host uses a staged evidence contract. A
 validated patch proves the worker path, while Goal satisfaction must be read
