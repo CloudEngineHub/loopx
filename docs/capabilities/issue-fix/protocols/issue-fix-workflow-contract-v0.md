@@ -21,7 +21,11 @@ open PRs, merge, publish, or run destructive git without an explicit gate.
    `issue_fix_candidate_preflight_input_v0`, reconcile prior issue-fix domain
    state, all-state numeric PR references, and current-revision-verified
    semantic implementation PR evidence before projecting patch-planning work.
-   The provider-neutral seam performs no searches itself. It returns
+   Each PR evidence field is an issue-specific query receipt carrying
+   `repo`, `issue_ref`, `query_scope`, `complete`, `truncated`, and `rows`.
+   Empty rows are valid only for complete, non-truncated receipts; capped
+   aggregate indexes may generate candidates but cannot prove absence. The
+   provider-neutral seam performs no searches itself. It returns
    `proceed`, `reuse_existing_pr`, `comment_only`, or `skip`; non-proceed routes
    suppress new classification/feasibility todos and preserve any existing
    agentic-recall receipt instead of opening another recall window. Terminal

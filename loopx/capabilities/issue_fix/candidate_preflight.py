@@ -14,6 +14,10 @@ ISSUE_FIX_CANDIDATE_PREFLIGHT_SCHEMA_VERSION = "issue_fix_candidate_preflight_v0
 _TERMINAL_DOMAIN_STATES = {"closed", "done", "resolved", "superseded", "terminal"}
 _IMPLEMENTATION_RELATIONS = {"implementation", "implements", "fix_candidate"}
 _REQUIRED_EVIDENCE_FIELDS = ("numeric_pr_evidence", "semantic_pr_evidence")
+_EVIDENCE_QUERY_SCOPES = {
+    "numeric_pr_evidence": "issue_specific_all_states",
+    "semantic_pr_evidence": "issue_specific_current_revision",
+}
 
 
 def candidate_preflight_input_contract() -> dict[str, Any]:
@@ -23,6 +27,9 @@ def candidate_preflight_input_contract() -> dict[str, Any]:
         "schema_version": ISSUE_FIX_CANDIDATE_PREFLIGHT_INPUT_SCHEMA_VERSION,
         "required_before_implementation": True,
         "required_evidence_fields": list(_REQUIRED_EVIDENCE_FIELDS),
+        "evidence_receipt_rule": (
+            "issue-specific complete non-truncated query receipts only"
+        ),
         "semantic_evidence_rule": "current_revision_verified candidates only",
         "decision_rule": "only proceed may start a new implementation",
     }
@@ -101,6 +108,30 @@ def _matching_pr_rows(
     return matches
 
 
+def _evidence_rows(
+    raw: object,
+    *,
+    field: str,
+    repo: str,
+    issue_ref: str,
+) -> Sequence[object]:
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"{field} must be a complete evidence receipt")
+    receipt_repo = str(raw.get("repo") or "").strip()
+    receipt_issue = _normalise_issue_ref(repo, raw.get("issue_ref"))
+    if receipt_repo.casefold() != repo.casefold() or receipt_issue != issue_ref:
+        raise ValueError(f"{field} receipt must match repo and issue_ref")
+    expected_scope = _EVIDENCE_QUERY_SCOPES[field]
+    if raw.get("query_scope") != expected_scope:
+        raise ValueError(f"{field} query_scope must be {expected_scope}")
+    if raw.get("complete") is not True or raw.get("truncated") is not False:
+        raise ValueError(f"{field} receipt must be complete and non-truncated")
+    rows = raw.get("rows")
+    if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+        raise TypeError(f"{field}.rows must be a list")
+    return rows
+
+
 def _domain_projection(
     raw: object,
     *,
@@ -171,18 +202,31 @@ def build_issue_fix_candidate_preflight_packet(
         repo=canonical_repo,
         issue_ref=canonical_issue_ref,
     )
-    numeric = _matching_pr_rows(
-        payload.get("numeric_pr_evidence"),
-        repo=canonical_repo,
-        issue_ref=canonical_issue_ref,
-        semantic=False,
-    )
-    semantic = _matching_pr_rows(
-        payload.get("semantic_pr_evidence"),
-        repo=canonical_repo,
-        issue_ref=canonical_issue_ref,
-        semantic=True,
-    )
+    numeric: list[dict[str, Any]] = []
+    semantic: list[dict[str, Any]] = []
+    if configured:
+        numeric = _matching_pr_rows(
+            _evidence_rows(
+                payload.get("numeric_pr_evidence"),
+                field="numeric_pr_evidence",
+                repo=canonical_repo,
+                issue_ref=canonical_issue_ref,
+            ),
+            repo=canonical_repo,
+            issue_ref=canonical_issue_ref,
+            semantic=False,
+        )
+        semantic = _matching_pr_rows(
+            _evidence_rows(
+                payload.get("semantic_pr_evidence"),
+                field="semantic_pr_evidence",
+                repo=canonical_repo,
+                issue_ref=canonical_issue_ref,
+            ),
+            repo=canonical_repo,
+            issue_ref=canonical_issue_ref,
+            semantic=True,
+        )
     existing_prs = numeric + [
         row for row in semantic if row["pr_ref"] not in {item["pr_ref"] for item in numeric}
     ]
@@ -240,8 +284,8 @@ def build_issue_fix_candidate_preflight_packet(
             "domain_route": domain.get("route") if domain else None,
             "numeric_pr_matches": numeric,
             "semantic_pr_matches": semantic,
-            "all_state_numeric_checked": "numeric_pr_evidence" in payload,
-            "semantic_implementation_checked": "semantic_pr_evidence" in payload,
+            "all_state_numeric_checked": configured,
+            "semantic_implementation_checked": configured,
         },
         "agentic_recall": {
             "receipt_status": receipt_status or None,
