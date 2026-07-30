@@ -15,6 +15,16 @@ from .repository_context import (
 )
 
 ISSUE_FIX_WORKFLOW_PLAN_PACKET_SCHEMA_VERSION = "issue_fix_workflow_plan_packet_v0"
+ISSUE_FIX_QUALITY_GATE_PLAN_SCHEMA_VERSION = "issue_fix_quality_gate_plan_v0"
+ISSUE_FIX_QUALITY_GATE_ACTION_KIND = "issue_fix_pre_pr_quality_gate"
+_ISSUE_FIX_QUALITY_GATE_PREPARE_COMMAND = (
+    "loopx change-quality prepare --goal-id <goal-id> "
+    "--repo-path <worktree> --base-ref origin/main --format json"
+)
+_ISSUE_FIX_QUALITY_GATE_RECORD_COMMAND = (
+    "loopx change-quality record --goal-id <goal-id> "
+    "--repo-path <worktree> --result-json <result.json> --format json"
+)
 ISSUE_FIX_GOAL_CANDIDATE_DISCOVERY_COMMAND_TEMPLATE = (
     "gh issue list --repo "
     '"$(gh repo view --json nameWithOwner --jq .nameWithOwner)" '
@@ -191,6 +201,72 @@ def _resolution_route_candidates(
             ),
         },
     ]
+
+
+def _quality_gate_plan(
+    *,
+    repo_label: str,
+    issue_label: str,
+    enabled: bool,
+) -> dict[str, Any]:
+    """Project a typed pre-PR quality gate checkpoint.
+
+    This is a contract-only projection: it never reads a registry, never calls
+    ``loopx change-quality``, and never runs git diffs.  It only describes the
+    command shape and todo preview that a downstream executor may use after it
+    has independently confirmed change-quality policy for a specific goal and
+    worktree.
+
+    Two states:
+
+    * ``not_configured`` — default callers without a runnable proceed candidate
+      see an empty gate and no new todo.
+    * ``projected`` — an admitted proceed candidate projects a P1 todo preview,
+      prepare/record command previews, and a scope-fingerprint requirement.
+
+    ``completed`` is intentionally absent from this preview-only builder; the
+    real gate is advanced by a downstream executor that owns the change-quality
+    receipt.
+    """
+    base = {
+        "schema_version": ISSUE_FIX_QUALITY_GATE_PLAN_SCHEMA_VERSION,
+        "external_writes_performed": False,
+        "registry_read_performed": False,
+    }
+    if not enabled:
+        return {
+            **base,
+            "status": "not_configured",
+            "gate_required": False,
+            "todo_preview": None,
+            "command_preview": None,
+            "quality_policy_projected": False,
+        }
+    todo_preview = _todo_preview(
+        planner_order=0,
+        role="agent",
+        priority="P1",
+        task_class="advancement_task",
+        action_kind=ISSUE_FIX_QUALITY_GATE_ACTION_KIND,
+        text=(
+            f"[P1] Run change-quality prepare for {repo_label} {issue_label} "
+            "on the final diff before opening the PR; review reuse and "
+            "simplification findings, record the receipt, and only proceed "
+            "when the scope fingerprint matches."
+        ),
+        depends_on=["issue_fix_validated_fix_artifact_v0"],
+        next_command_preview=_ISSUE_FIX_QUALITY_GATE_PREPARE_COMMAND,
+    )
+    return {
+        **base,
+        "status": "projected",
+        "gate_required": True,
+        "todo_preview": todo_preview,
+        "command_preview": _ISSUE_FIX_QUALITY_GATE_PREPARE_COMMAND,
+        "result_record_command_preview": _ISSUE_FIX_QUALITY_GATE_RECORD_COMMAND,
+        "quality_policy_projected": True,
+        "record_requires_matching_scope_fingerprint": True,
+    }
 
 
 def _post_pr_lifecycle_monitor_plan() -> dict[str, Any]:
@@ -557,6 +633,19 @@ def build_issue_fix_workflow_plan_packet(
     ]
     if branch_plan["status"] == "needs_approved_repo_context":
         readiness_blockers.insert(0, "approved_repo_context_missing")
+
+    quality_gate_enabled = (
+        preflight_decision.get("candidate_runnable") is True
+        and preflight_decision.get("route") == "proceed"
+    )
+    quality_gate = _quality_gate_plan(
+        repo_label=repo_label,
+        issue_label=issue_label,
+        enabled=bool(quality_gate_enabled),
+    )
+    if quality_gate_enabled:
+        readiness_blockers.append("quality_gate_not_run")
+
     review_packet_preview = {
         "schema_version": "issue_fix_pr_review_packet_v0",
         "ready": False,
@@ -672,7 +761,8 @@ def build_issue_fix_workflow_plan_packet(
         "agent_can_continue": True,
         "top_agent_todo": agent_todos[0],
         "top_gate": user_gates[0] if user_gates else None,
-        "next_safe_action": preflight_next_action or (
+        "next_safe_action": preflight_next_action
+        or (
             (
                 "inspect current repository evidence for "
                 f"{', '.join(unresolved_context)}; ground what is available and "
@@ -705,9 +795,7 @@ def build_issue_fix_workflow_plan_packet(
         "repository_context_input_contract": repository_context_input_contract(),
         "repository_context": repository_context,
         "candidate_preflight": candidate_preflight,
-        "candidate_fix_workflow_allowed": preflight_decision.get(
-            "candidate_runnable"
-        )
+        "candidate_fix_workflow_allowed": preflight_decision.get("candidate_runnable")
         is True,
         "first_screen": first_screen,
         "branch_plan": branch_plan,
@@ -716,6 +804,7 @@ def build_issue_fix_workflow_plan_packet(
         "post_pr_lifecycle_monitor_plan": post_pr_monitor,
         "ordered_loopx_todo_writeback_preview": ordered_previews,
         "validation_plan": validation_plan,
+        "quality_gate_plan": quality_gate,
         "review_packet_preview": review_packet_preview,
         "external_reads_performed": bool(
             metadata_packet["external_reads_performed"]
@@ -828,9 +917,13 @@ def validate_issue_fix_workflow_plan_packet(
             preflight_projection.get("schema_version")
             != "issue_fix_candidate_preflight_domain_state_projection_v0"
         ):
-            errors.append("candidate_preflight domain_state_projection has wrong schema")
+            errors.append(
+                "candidate_preflight domain_state_projection has wrong schema"
+            )
         if preflight_projection.get("stream") != "candidate-preflight":
-            errors.append("candidate_preflight domain_state_projection has wrong stream")
+            errors.append(
+                "candidate_preflight domain_state_projection has wrong stream"
+            )
         if preflight_projection.get("write_performed") is not False:
             errors.append(
                 "workflow-plan builder must leave candidate preflight write pending"
@@ -936,6 +1029,42 @@ def validate_issue_fix_workflow_plan_packet(
     if post_pr.get("raw_check_logs_captured") is not False:
         errors.append("post PR lifecycle plan must not capture raw check logs")
 
+    quality_gate = packet.get("quality_gate_plan")
+    if not isinstance(quality_gate, Mapping):
+        errors.append("quality_gate_plan is required")
+        quality_gate = {}
+    if quality_gate.get("schema_version") != (
+        ISSUE_FIX_QUALITY_GATE_PLAN_SCHEMA_VERSION
+    ):
+        errors.append("quality gate plan has wrong schema")
+    if quality_gate.get("status") not in {
+        "not_configured",
+        "projected",
+    }:
+        errors.append("quality gate plan has invalid status")
+    if quality_gate.get("external_writes_performed") is not False:
+        errors.append("quality gate plan must not perform external writes")
+    if quality_gate.get("registry_read_performed") is not False:
+        errors.append("quality gate plan must not read registry")
+    if quality_gate.get("status") == "projected":
+        if quality_gate.get("gate_required") is not True:
+            errors.append("projected quality gate must declare gate_required=True")
+        if quality_gate.get("todo_preview") is None:
+            errors.append("projected quality gate must include a todo preview")
+        if quality_gate.get("command_preview") is None:
+            errors.append("projected quality gate must include a command preview")
+        if quality_gate.get("record_requires_matching_scope_fingerprint") is not True:
+            errors.append(
+                "projected quality gate must require matching scope fingerprint"
+            )
+    elif quality_gate.get("status") == "not_configured":
+        if quality_gate.get("gate_required") is not False:
+            errors.append(
+                "not_configured quality gate must declare gate_required=False"
+            )
+        if quality_gate.get("todo_preview") is not None:
+            errors.append("not_configured quality gate must not include a todo preview")
+
     previews = packet.get("ordered_loopx_todo_writeback_preview")
     if not isinstance(previews, Sequence) or isinstance(previews, (str, bytes)):
         errors.append("ordered_loopx_todo_writeback_preview must be a list")
@@ -967,8 +1096,7 @@ def validate_issue_fix_workflow_plan_packet(
             "issue_fix_branch_validation",
         }
         if any(
-            isinstance(preview, Mapping)
-            and preview.get("action_kind") in forbidden
+            isinstance(preview, Mapping) and preview.get("action_kind") in forbidden
             for preview in previews
         ):
             errors.append("deduped candidate must not project new patch-planning todos")
