@@ -15,6 +15,7 @@ from loopx.bootstrap_command_pack import (
 )
 from loopx.capabilities.issue_fix.candidate_preflight import (
     build_issue_fix_candidate_preflight_packet,
+    candidate_preflight_input_contract,
 )
 from loopx.cli import main as cli_main
 
@@ -188,19 +189,7 @@ def test_issue_fix_goal_projects_capability_guard_without_todo_fields(
         "admission_command_key": "issue_fix_feasibility_template",
         "candidate_authority": "public_open_tracker_issue",
         "authority_refresh_required": "current issue body and latest comments",
-        "candidate_preflight": {
-            "schema_version": "issue_fix_candidate_preflight_input_v0",
-            "required_before_implementation": True,
-            "required_evidence_fields": [
-                "numeric_pr_evidence",
-                "semantic_pr_evidence",
-            ],
-            "evidence_receipt_rule": (
-                "issue-specific complete non-truncated query receipts only"
-            ),
-            "semantic_evidence_rule": "current_revision_verified candidates only",
-            "decision_rule": "only proceed may start a new implementation",
-        },
+        "candidate_preflight": candidate_preflight_input_contract(),
         "implementation_admission": {
             "status": "qualification_required",
             "state_owner": "issue_fix",
@@ -309,9 +298,9 @@ def test_candidate_preflight_rejects_unqualified_negative_evidence() -> None:
         generated_at="2026-07-30T00:00:00Z",
     )
     assert packet["decision"]["route"] == "proceed"
+    assert packet["input_contract"] == candidate_preflight_input_contract()
 
     invalid_inputs = [
-        {**complete, "numeric_pr_evidence": []},
         {
             **complete,
             "numeric_pr_evidence": {
@@ -339,6 +328,45 @@ def test_candidate_preflight_rejects_unqualified_negative_evidence() -> None:
             pass
         else:
             raise AssertionError("unqualified negative evidence must fail closed")
+
+    try:
+        build_issue_fix_candidate_preflight_packet(
+            repo="volcengine/OpenViking",
+            issue_ref="#3005",
+            input_payload={**complete, "numeric_pr_evidence": []},
+            generated_at="2026-07-30T00:00:00Z",
+        )
+    except TypeError as error:
+        assert "one evidence receipt object, not a list" in str(error)
+        assert "issue_specific_all_states" in str(error)
+    else:
+        raise AssertionError("receipt lists must fail with an actionable error")
+
+
+def test_candidate_preflight_contract_describes_receipt_shapes() -> None:
+    contract = candidate_preflight_input_contract()
+    receipts = contract["evidence_receipts"]
+
+    assert {
+        field: receipt["query_scope"] for field, receipt in receipts.items()
+    } == {
+        "numeric_pr_evidence": "issue_specific_all_states",
+        "semantic_pr_evidence": "issue_specific_current_revision",
+    }
+    for receipt in receipts.values():
+        assert receipt["cardinality"] == "one_receipt_object"
+        assert receipt["required_fields"] == [
+            "repo",
+            "issue_ref",
+            "query_scope",
+            "complete",
+            "truncated",
+            "rows",
+        ]
+        assert (
+            receipt["negative_result_rule"]
+            == "rows may be empty only when complete=true and truncated=false"
+        )
 
 
 def test_non_issue_goal_does_not_select_capability_route(tmp_path: Path) -> None:

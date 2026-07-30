@@ -23,6 +23,9 @@ open PRs, merge, publish, or run destructive git without an explicit gate.
    semantic implementation PR evidence before projecting patch-planning work.
    Each PR evidence field is an issue-specific query receipt carrying
    `repo`, `issue_ref`, `query_scope`, `complete`, `truncated`, and `rows`.
+   Each field accepts one receipt object, not a list:
+   `numeric_pr_evidence.query_scope` is `issue_specific_all_states`, while
+   `semantic_pr_evidence.query_scope` is `issue_specific_current_revision`.
    Empty rows are valid only for complete, non-truncated receipts; capped
    aggregate indexes may generate candidates but cannot prove absence. The
    provider-neutral seam performs no searches itself. It returns

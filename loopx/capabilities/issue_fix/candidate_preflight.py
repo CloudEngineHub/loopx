@@ -27,6 +27,24 @@ def candidate_preflight_input_contract() -> dict[str, Any]:
         "schema_version": ISSUE_FIX_CANDIDATE_PREFLIGHT_INPUT_SCHEMA_VERSION,
         "required_before_implementation": True,
         "required_evidence_fields": list(_REQUIRED_EVIDENCE_FIELDS),
+        "evidence_receipts": {
+            field: {
+                "cardinality": "one_receipt_object",
+                "required_fields": [
+                    "repo",
+                    "issue_ref",
+                    "query_scope",
+                    "complete",
+                    "truncated",
+                    "rows",
+                ],
+                "query_scope": query_scope,
+                "negative_result_rule": (
+                    "rows may be empty only when complete=true and truncated=false"
+                ),
+            }
+            for field, query_scope in _EVIDENCE_QUERY_SCOPES.items()
+        },
         "evidence_receipt_rule": (
             "issue-specific complete non-truncated query receipts only"
         ),
@@ -116,7 +134,10 @@ def _evidence_rows(
     issue_ref: str,
 ) -> Sequence[object]:
     if not isinstance(raw, Mapping):
-        raise TypeError(f"{field} must be a complete evidence receipt")
+        raise TypeError(
+            f"{field} must be one evidence receipt object, not a list; "
+            f"required query_scope is {_EVIDENCE_QUERY_SCOPES[field]}"
+        )
     receipt_repo = str(raw.get("repo") or "").strip()
     receipt_issue = _normalise_issue_ref(repo, raw.get("issue_ref"))
     if receipt_repo.casefold() != repo.casefold() or receipt_issue != issue_ref:
@@ -273,6 +294,7 @@ def build_issue_fix_candidate_preflight_packet(
         "generated_at": generated_at,
         "repo": canonical_repo,
         "issue_ref": canonical_issue_ref,
+        "input_contract": candidate_preflight_input_contract(),
         "decision": {
             "route": route,
             "candidate_runnable": candidate_runnable,
