@@ -554,18 +554,16 @@ def _goal_start_bootstrap_command(
     cli_bin: str,
 ) -> str:
     objective = goal_text or "<exact /loopx goal text>"
-    lines = [
-        f"cd {shell_arg(project)}",
-        f"{shell_arg(cli_bin)} bootstrap \\",
-        "  --project . \\",
-        f"  --goal-id {shell_arg(goal_id)} \\",
-        f"  --objective {shell_arg(objective)} \\",
-        f"  --adapter-kind {shell_arg(DEFAULT_HANDOFF_ADAPTER_KIND)} \\",
-        f"  --adapter-status {shell_arg(DEFAULT_HANDOFF_ADAPTER_STATUS)} \\",
-        "  --no-onboarding-scan \\",
-        "  --codex-app-heartbeat ask",
-    ]
-    return "\n".join(lines)
+    return (
+        f"cd {shell_arg(project)} && {shell_arg(cli_bin)} bootstrap"
+        " --project ."
+        f" --goal-id {shell_arg(goal_id)}"
+        f" --objective {shell_arg(objective)}"
+        f" --adapter-kind {shell_arg(DEFAULT_HANDOFF_ADAPTER_KIND)}"
+        f" --adapter-status {shell_arg(DEFAULT_HANDOFF_ADAPTER_STATUS)}"
+        " --no-onboarding-scan"
+        " --codex-app-heartbeat ask"
+    )
 
 
 def _selected_goal_capability_route(goal_text: str | None) -> dict[str, Any] | None:
