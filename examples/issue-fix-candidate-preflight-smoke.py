@@ -22,6 +22,20 @@ from loopx.capabilities.issue_fix.workflow_plan import (  # noqa: E402
 )
 
 
+def evidence_receipt(
+    query_scope: str,
+    rows: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "repo": "volcengine/OpenViking",
+        "issue_ref": "#3005",
+        "query_scope": query_scope,
+        "complete": True,
+        "truncated": False,
+        "rows": rows,
+    }
+
+
 def fixture() -> dict[str, object]:
     return {
         "schema_version": "issue_fix_candidate_preflight_input_v0",
@@ -31,18 +45,24 @@ def fixture() -> dict[str, object]:
             "route": "comment_only",
             "status": "open",
         },
-        "numeric_pr_evidence": [],
-        "semantic_pr_evidence": [
-            {
-                "repo": "volcengine/OpenViking",
-                "pr_ref": "pull_2999",
-                "state": "OPEN",
-                "url": "https://github.com/volcengine/OpenViking/pull/2999",
-                "related_issue_refs": ["#3005"],
-                "relation": "implementation",
-                "current_revision_verified": True,
-            }
-        ],
+        "numeric_pr_evidence": evidence_receipt(
+            "issue_specific_all_states",
+            [],
+        ),
+        "semantic_pr_evidence": evidence_receipt(
+            "issue_specific_current_revision",
+            [
+                {
+                    "repo": "volcengine/OpenViking",
+                    "pr_ref": "pull_2999",
+                    "state": "OPEN",
+                    "url": "https://github.com/volcengine/OpenViking/pull/2999",
+                    "related_issue_refs": ["#3005"],
+                    "relation": "implementation",
+                    "current_revision_verified": True,
+                }
+            ],
+        ),
         "agentic_recall_receipt": {
             "status": "completed_no_influence",
             "call_count": 2,
@@ -123,15 +143,18 @@ def main() -> int:
 
     merged_and_open = fixture()
     merged_and_open["domain_state"] = None
-    merged_and_open["numeric_pr_evidence"] = [
-        {
-            "repo": "volcengine/OpenViking",
-            "pr_ref": "pull_2998",
-            "state": "MERGED",
-            "url": "https://github.com/volcengine/OpenViking/pull/2998",
-            "closing_issue_refs": ["#3005"],
-        }
-    ]
+    merged_and_open["numeric_pr_evidence"] = evidence_receipt(
+        "issue_specific_all_states",
+        [
+            {
+                "repo": "volcengine/OpenViking",
+                "pr_ref": "pull_2998",
+                "state": "MERGED",
+                "url": "https://github.com/volcengine/OpenViking/pull/2998",
+                "closing_issue_refs": ["#3005"],
+            }
+        ],
+    )
     terminal_implementation = build_issue_fix_candidate_preflight_packet(
         repo="volcengine/OpenViking",
         issue_ref="#3005",
@@ -147,7 +170,9 @@ def main() -> int:
 
     unverified = fixture()
     unverified["domain_state"] = None
-    unverified["semantic_pr_evidence"][0]["current_revision_verified"] = False
+    unverified["semantic_pr_evidence"]["rows"][0][
+        "current_revision_verified"
+    ] = False
     fail_open = build_issue_fix_candidate_preflight_packet(
         repo="volcengine/OpenViking",
         issue_ref="#3005",
@@ -189,8 +214,7 @@ def main() -> int:
             cwd=ROOT,
             check=True,
             text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
     cli = json.loads(result.stdout)
     assert cli["ok"] is True, cli

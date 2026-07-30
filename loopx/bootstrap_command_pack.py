@@ -1557,6 +1557,7 @@ def render_start_goal_guided_markdown(payload: dict[str, Any]) -> str:
                     "   - preflight: refresh "
                     f"{step.get('authority_refresh_required')}; "
                     f"provide {required_evidence}; "
+                    f"{preflight.get('evidence_receipt_rule')}; "
                     f"{preflight.get('decision_rule')}"
                 )
             step_lines.extend(

@@ -195,6 +195,9 @@ def test_issue_fix_goal_projects_capability_guard_without_todo_fields(
                 "numeric_pr_evidence",
                 "semantic_pr_evidence",
             ],
+            "evidence_receipt_rule": (
+                "issue-specific complete non-truncated query receipts only"
+            ),
             "semantic_evidence_rule": "current_revision_verified candidates only",
             "decision_rule": "only proceed may start a new implementation",
         },
@@ -241,6 +244,7 @@ def test_issue_fix_goal_projects_capability_guard_without_todo_fields(
     assert "authority: open public issue; source clues are evidence only" in rendered
     assert "discover: `gh issue list " in rendered
     assert "numeric_pr_evidence + semantic_pr_evidence" in rendered
+    assert "issue-specific complete non-truncated query receipts only" in rendered
     assert "only proceed may start a new implementation" in rendered
     assert "loopx issue-fix workflow-plan " in rendered
     assert "loopx issue-fix feasibility " in rendered
@@ -280,6 +284,61 @@ def test_configured_candidate_preflight_requires_prior_work_evidence() -> None:
         assert "numeric_pr_evidence" in str(error)
     else:
         raise AssertionError("configured preflight must require prior-work evidence")
+
+
+def test_candidate_preflight_rejects_unqualified_negative_evidence() -> None:
+    def receipt(query_scope: str) -> dict[str, Any]:
+        return {
+            "repo": "volcengine/OpenViking",
+            "issue_ref": "#3005",
+            "query_scope": query_scope,
+            "complete": True,
+            "truncated": False,
+            "rows": [],
+        }
+
+    complete = {
+        "schema_version": "issue_fix_candidate_preflight_input_v0",
+        "numeric_pr_evidence": receipt("issue_specific_all_states"),
+        "semantic_pr_evidence": receipt("issue_specific_current_revision"),
+    }
+    packet = build_issue_fix_candidate_preflight_packet(
+        repo="volcengine/OpenViking",
+        issue_ref="#3005",
+        input_payload=complete,
+        generated_at="2026-07-30T00:00:00Z",
+    )
+    assert packet["decision"]["route"] == "proceed"
+
+    invalid_inputs = [
+        {**complete, "numeric_pr_evidence": []},
+        {
+            **complete,
+            "numeric_pr_evidence": {
+                **complete["numeric_pr_evidence"],
+                "truncated": True,
+            },
+        },
+        {
+            **complete,
+            "semantic_pr_evidence": {
+                **complete["semantic_pr_evidence"],
+                "query_scope": "aggregate_recent_pull_requests",
+            },
+        },
+    ]
+    for payload in invalid_inputs:
+        try:
+            build_issue_fix_candidate_preflight_packet(
+                repo="volcengine/OpenViking",
+                issue_ref="#3005",
+                input_payload=payload,
+                generated_at="2026-07-30T00:00:00Z",
+            )
+        except (TypeError, ValueError):
+            pass
+        else:
+            raise AssertionError("unqualified negative evidence must fail closed")
 
 
 def test_non_issue_goal_does_not_select_capability_route(tmp_path: Path) -> None:
