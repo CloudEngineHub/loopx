@@ -624,10 +624,19 @@ def test_ark_managed_agent_plans_todos_before_one_shot_goal_activation(
     assert "--available-capability network" in inspect_command
     assert f"--goal-text '{GOAL_TEXT}'" in inspect_command
     connect_command = connect_step["command"]
-    assert "\n" not in connect_command
-    assert f"cd {shlex.quote(str(project))} && loopx bootstrap" in connect_command
+    assert "\n" in connect_command
     assert f"--objective {shlex.quote(GOAL_TEXT)}" in connect_command
-    assert connect_command in payload["message"]
+    actionable_connect_command = (
+        f"cd {shlex.quote(str(project))} && loopx bootstrap"
+        " --project ."
+        f" --goal-id {GOAL_ID}"
+        f" --objective {shlex.quote(GOAL_TEXT)}"
+        " --adapter-kind read_only_project_map_v0"
+        " --adapter-status connected-read-only"
+        " --no-onboarding-scan"
+        " --codex-app-heartbeat ask"
+    )
+    assert actionable_connect_command in payload["message"]
     assert "preview the issue-fix route before todo writeback" not in payload["message"]
     assert activation["agent_type"] == "ark-managed-agent"
     assert activation["host_surface"] == "ark_managed_agent_goal_mode"
