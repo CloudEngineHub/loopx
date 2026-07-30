@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from loopx.host_loop_activation import (
 )
 from loopx.skill_install_readback import (
     PACKAGED_HOST_SKILL_IDS,
+    SKILL_INSTALL_READBACK_FILENAME,
     inspect_skill_install_readback,
     write_skill_install_readback,
 )
@@ -245,6 +247,61 @@ def test_skill_readback_rejects_content_changed_after_install(tmp_path: Path) ->
     assert readback["ready"] is False
     assert readback["status"] == "skill_digest_mismatch"
     assert readback["digest_mismatches"] == [REQUIRED_HOST_SKILL_IDS[0]]
+
+
+def test_skill_readback_rejects_a_different_cli_source_revision(
+    tmp_path: Path,
+) -> None:
+    skills_dir = tmp_path / ".agents" / "skills"
+    _materialize_workflow_skills(skills_dir)
+    manifest_path = skills_dir / SKILL_INSTALL_READBACK_FILENAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["source"]["revision"] = "0" * 40
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    readback = inspect_skill_install_readback(
+        skills_dir=skills_dir,
+        required_skill_ids=REQUIRED_HOST_SKILL_IDS,
+        source_root=REPO_ROOT,
+    )
+
+    assert readback["ready"] is False
+    assert readback["status"] == "source_revision_mismatch"
+    assert readback["source_revision_matches"] is False
+
+
+def test_skill_readback_records_the_resolved_archive_revision(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    skills_dir = tmp_path / ".agents" / "skills"
+    _materialize_workflow_skills(skills_dir)
+    archive_root = tmp_path / "archive"
+    archive_root.mkdir()
+    resolved_commit = "a" * 40
+    monkeypatch.setenv("LOOPX_RESOLVED_SOURCE_GIT_COMMIT", resolved_commit)
+    write_skill_install_readback(
+        skills_dir=skills_dir,
+        skill_ids=REQUIRED_HOST_SKILL_IDS,
+        source_root=archive_root,
+    )
+    (archive_root / "release.json").write_text(
+        json.dumps({"source": {"git_commit": resolved_commit}}) + "\n",
+        encoding="utf-8",
+    )
+
+    readback = inspect_skill_install_readback(
+        skills_dir=skills_dir,
+        required_skill_ids=REQUIRED_HOST_SKILL_IDS,
+        source_root=archive_root,
+    )
+
+    assert readback["ready"] is True
+    assert readback["source_revision"] == resolved_commit
+    assert readback["source_revision_matches"] is True
 
 
 def _write_continuity_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:

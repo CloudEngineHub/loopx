@@ -726,6 +726,7 @@ def collect_doctor(
         inspect_skill_install_readback(
             skills_dir=configured_host_skills_dir(os.environ),
             required_skill_ids=ARK_MANAGED_AGENT_REQUIRED_SKILL_IDS,
+            source_root=Path(__file__).resolve().parents[1],
         )
         if canonical_agent_type == "ark-managed-agent"
         else None

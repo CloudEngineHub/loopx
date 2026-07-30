@@ -146,6 +146,7 @@ def _skill_delivery_contract(
         inspect_skill_install_readback(
             skills_dir=host_skills_dir,
             required_skill_ids=REQUIRED_HOST_SKILL_IDS,
+            source_root=Path(__file__).resolve().parents[1],
         )
         if ark_managed_agent
         else None
@@ -551,6 +552,10 @@ def render_agent_onboarding_markdown(payload: dict[str, Any]) -> str:
                     f"- filesystem_readback_ready: `{filesystem_readback.get('ready')}`",
                     f"- filesystem_readback_skills_dir: `{filesystem_readback.get('skills_dir')}`",
                     f"- filesystem_readback_source_revision: `{filesystem_readback.get('source_revision')}`",
+                    (
+                        "- filesystem_readback_source_revision_matches: "
+                        f"`{filesystem_readback.get('source_revision_matches')}`"
+                    ),
                     (
                         "- filesystem_readback_materialized_skill_ids: "
                         f"`{','.join(filesystem_readback.get('materialized_skill_ids') or [])}`"
