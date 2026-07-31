@@ -165,6 +165,38 @@ def test_merge_conflict_keeps_previous_integration_head(tmp_path: Path) -> None:
     assert failed["integration_unchanged"] is True
     assert _git(repo, "rev-parse", "codex/local-integration") == old_head
 
+    _git(repo, "switch", "-c", "manual-resolution", "main")
+    _git(repo, "merge", "--no-ff", "--no-edit", "feature-a")
+    merge = subprocess.run(
+        ["git", "-C", str(repo), "merge", "--no-ff", "--no-edit", "fix-b"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert merge.returncode != 0
+    (repo / "shared.txt").write_text("resolved\n", encoding="utf-8")
+    _git(repo, "add", "shared.txt")
+    _git(repo, "commit", "--no-edit")
+    resolved_head = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "switch", "main")
+
+    with pytest.raises(IntegrationBranchError, match="does not contain source"):
+        sync_integration_branch(repo_path=repo, candidate_ref="main")
+
+    preview = sync_integration_branch(repo_path=repo, candidate_ref=resolved_head)
+    assert preview["status"] == "preview_ready"
+    assert preview["candidate_source"] == "supplied"
+
+    synced = sync_integration_branch(
+        repo_path=repo,
+        candidate_ref=resolved_head,
+        execute=True,
+    )
+    assert synced["status"] == "synced"
+    assert synced["candidate_sha"] == resolved_head
+    assert synced["status_packet"]["plan"]["last_sync"]["candidate_source"] == "supplied"
+    assert integration_branch_status(repo_path=repo)["status"] == "in_sync"
+
 
 def test_dirty_checked_out_integration_worktree_fails_closed(
     tmp_path: Path,

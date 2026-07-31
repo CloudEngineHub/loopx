@@ -448,10 +448,42 @@ def _assert_inputs_unchanged(
             )
 
 
+def _resolve_supplied_candidate(
+    repo: Path,
+    *,
+    candidate_ref: str,
+    resolved: Mapping[str, Any],
+) -> str:
+    candidate_sha = _resolve_commit(repo, candidate_ref)
+    required_inputs = [
+        ("base", resolved["base"]["ref"], resolved["base"]["sha"]),
+        *[
+            ("source", source["ref"], source["sha"])
+            for source in resolved["sources"]
+        ],
+    ]
+    for kind, ref, sha in required_inputs:
+        result = _git(
+            repo,
+            "merge-base",
+            "--is-ancestor",
+            str(sha),
+            candidate_sha,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise IntegrationBranchError(
+                f"supplied candidate `{candidate_ref}` does not contain "
+                f"{kind} `{ref}` at `{sha}`"
+            )
+    return candidate_sha
+
+
 def sync_integration_branch(
     *,
     repo_path: str | Path,
     plan_file: str | Path | None = None,
+    candidate_ref: str | None = None,
     execute: bool = False,
 ) -> dict[str, Any]:
     repo = _repository_root(repo_path)
@@ -476,17 +508,25 @@ def sync_integration_branch(
     resolved = status["resolved"]
     branch = str(status["plan"]["integration_branch"])
 
-    candidate_sha, failure = _build_candidate(repo, resolved)
-    if failure is not None:
-        return {
-            "ok": False,
-            "schema_version": SYNC_SCHEMA_VERSION,
-            **failure,
-            "executed": False,
-            "updated": False,
-            "integration_unchanged": True,
-            "status_packet": status,
-        }
+    candidate_source = "supplied" if candidate_ref is not None else "built"
+    if candidate_ref is not None:
+        candidate_sha = _resolve_supplied_candidate(
+            repo,
+            candidate_ref=candidate_ref,
+            resolved=resolved,
+        )
+    else:
+        candidate_sha, failure = _build_candidate(repo, resolved)
+        if failure is not None:
+            return {
+                "ok": False,
+                "schema_version": SYNC_SCHEMA_VERSION,
+                **failure,
+                "executed": False,
+                "updated": False,
+                "integration_unchanged": True,
+                "status_packet": status,
+            }
     assert candidate_sha is not None
     candidate_tree_sha = _resolve_tree(repo, candidate_sha)
     if not execute:
@@ -498,8 +538,11 @@ def sync_integration_branch(
             "updated": False,
             "candidate_sha": candidate_sha,
             "candidate_tree_sha": candidate_tree_sha,
+            "candidate_source": candidate_source,
             "status_packet": status,
-            "write_boundary": "temporary detached worktree only; integration and source refs unchanged",
+            "write_boundary": (
+                "candidate commit read only; integration and source refs unchanged"
+            ),
         }
 
     _assert_inputs_unchanged(
@@ -519,6 +562,7 @@ def sync_integration_branch(
         "base_sha": resolved["base"]["sha"],
         "integration_sha": candidate_sha,
         "candidate_tree_sha": candidate_tree_sha,
+        "candidate_source": candidate_source,
         "sources": [
             {"ref": source["ref"], "sha": source["sha"]}
             for source in resolved["sources"]
@@ -538,6 +582,7 @@ def sync_integration_branch(
         "updated": True,
         "candidate_sha": candidate_sha,
         "candidate_tree_sha": candidate_tree_sha,
+        "candidate_source": candidate_source,
         "status_packet": refreshed,
         "write_boundary": (
             "local integration branch and ignored sync receipt only; "

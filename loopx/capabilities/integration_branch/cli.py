@@ -70,6 +70,13 @@ def register_integration_branch_commands(
     )
     add_subcommand_format(sync)
     _add_common_arguments(sync)
+    sync.add_argument(
+        "--candidate-ref",
+        help=(
+            "Use a manually resolved candidate commit after verifying it contains "
+            "the configured base and every exact source head."
+        ),
+    )
     sync.add_argument("--execute", action="store_true")
 
 
@@ -101,6 +108,7 @@ def handle_integration_branch_command(
             payload = sync_integration_branch(
                 repo_path=args.repo_path,
                 plan_file=args.plan_file,
+                candidate_ref=args.candidate_ref,
                 execute=args.execute,
             )
     except IntegrationBranchError as exc:

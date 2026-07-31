@@ -60,6 +60,27 @@ Execute requires a clean checked-out integration worktree. A dirty worktree,
 merge conflict, missing ref, or concurrent plan/input/integration movement
 fails closed before candidate publication.
 
+When ordered source heads require an intentional manual conflict resolution,
+build and validate that commit outside LoopX, then let LoopX verify and adopt
+it through the same receipt boundary:
+
+```bash
+loopx integration-branch sync \
+  --repo-path . \
+  --candidate-ref <resolved-commit> \
+  --format json
+loopx integration-branch sync \
+  --repo-path . \
+  --candidate-ref <resolved-commit> \
+  --execute \
+  --format json
+```
+
+The supplied commit must contain the configured base and every exact source
+SHA as ancestors. LoopX does not choose or generate the resolution; it only
+verifies the immutable result before the normal local publication and
+readback flow.
+
 ## Boundary
 
 The capability is deliberately local:
