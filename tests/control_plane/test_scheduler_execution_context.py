@@ -110,6 +110,42 @@ def _active_payload() -> dict:
     }
 
 
+def _monitor_wait_payload() -> dict:
+    payload = _active_payload()
+    payload.update(
+        {
+            "should_run": False,
+            "effective_action": "monitor_quiet_skip",
+            "heartbeat_recommendation": {
+                "recommended_mode": "monitor_quiet_until_material_transition",
+                "spend_policy": "no spend for quiet monitor waits",
+            },
+            "execution_obligation": {
+                "must_attempt_work": False,
+                "spend_policy": "no spend for quiet monitor waits",
+            },
+            "interaction_contract": {
+                "schema_version": "loopx_interaction_contract_v0",
+                "mode": "monitor_quiet_skip",
+                "user_channel": {
+                    "action_required": False,
+                    "notify": "DONT_NOTIFY",
+                },
+                "agent_channel": {
+                    "must_attempt": False,
+                    "delivery_allowed": False,
+                    "quiet_noop_allowed": True,
+                },
+                "cli_channel": {
+                    "next_cli_actions": [],
+                    "spend_allowed_now": False,
+                },
+            },
+        }
+    )
+    return payload
+
+
 @pytest.mark.parametrize(
     ("host_surface", "scheduler_owner", "execution_mode"),
     list(product(HostSurface, SchedulerOwner, ExecutionMode)),
@@ -202,6 +238,29 @@ def test_codex_app_runtime_profile_preserves_host_backoff() -> None:
     )
     assert hint["codex_app"]["stateful_backoff"]["apply_needed"] is True
     assert hint["cold_path_detail"]["execution_phase"]["apply_needed"] is True
+
+
+def test_codex_app_ssh_monitor_wait_blocks_only_host_goal_after_limit() -> None:
+    context = scheduler_execution_context_for_runtime_profile(
+        SchedulerRuntimeProfile.CODEX_APP_SSH_VISIBLE
+    )
+    hint = build_scheduler_hint(
+        _monitor_wait_payload(),
+        include_detail=True,
+        scheduler_execution_context=context,
+    )
+
+    unchanged = hint["unchanged_poll"]
+    assert unchanged["limits"]["codex_app_ssh_goal"] == 3
+    assert unchanged["after_limits"]["codex_app_ssh_goal"] == (
+        "block_host_goal_keep_loopx"
+    )
+    host_detail = hint["cold_path_detail"]["codex_app_ssh_goal"]
+    assert host_detail["loopx_goal_state"] == "remains_active"
+    assert host_detail["resume_trigger"] == (
+        "explicit_host_resume_or_material_transition"
+    )
+    assert host_detail["no_spend_for_block"] is True
 
 
 @pytest.mark.parametrize(

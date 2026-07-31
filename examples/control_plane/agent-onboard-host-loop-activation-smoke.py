@@ -93,6 +93,10 @@ def main() -> int:
     assert codex_app["activation_method"] == "create_or_update_codex_app_automation", codex_app
     assert codex_app_ssh["activation_method"] == "set_visible_goal", codex_app_ssh
     assert codex_app_ssh["host_surface"] == "codex_app_ssh_visible_goal_mode", codex_app_ssh
+    assert any(
+        "blocks only the host Goal" in criterion
+        for criterion in codex_app_ssh["success_criteria"]
+    ), codex_app_ssh
     assert "--runtime-profile codex_app_ssh_goal" in (
         codex_app_ssh["commands"]["heartbeat_prompt"]
     ), codex_app_ssh
@@ -375,6 +379,32 @@ def main() -> int:
         assert "not a heartbeat automation" in app_ssh_prompt["task_body"], app_ssh_prompt
         assert "host_action=" not in app_ssh_prompt["task_body"], app_ssh_prompt
         assert "automation_update stop" not in app_ssh_prompt["task_body"], app_ssh_prompt
+        assert "block this host Goal" in app_ssh_prompt["task_body"], app_ssh_prompt
+        assert "completing the registered LoopX goal" in (
+            app_ssh_prompt["task_body"]
+        ), app_ssh_prompt
+        app_ssh_quota_argv = shlex.split(app_ssh_prompt["quota_guard_command"])
+        app_ssh_quota_argv[0] = cli_bin
+        app_ssh_quota_argv = [
+            str(home) + arg[len("$HOME") :] if arg.startswith("$HOME/") else arg
+            for arg in app_ssh_quota_argv
+        ]
+        app_ssh_quota_run = subprocess.run(
+            app_ssh_quota_argv,
+            cwd=REPO_ROOT,
+            env={**os.environ, "HOME": str(home)},
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        app_ssh_quota = json.loads(app_ssh_quota_run.stdout)
+        execution_context = app_ssh_quota["scheduler_hint"]["execution_context"]
+        assert execution_context["source"] == (
+            "runtime_profile:codex_app_ssh_goal"
+        ), app_ssh_quota
+        assert "codex_app_ssh_goal" not in (
+            app_ssh_quota["scheduler_hint"]["unchanged_poll"]["limits"]
+        ), app_ssh_quota
 
         cli_onboarding = build_agent_onboarding_packet(
             project=project,
