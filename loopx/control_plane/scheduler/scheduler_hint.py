@@ -18,6 +18,7 @@ from .arbitration import (
 )
 from .execution_context import (
     SchedulerExecutionContextResolution,
+    SchedulerRuntimeProfile,
     apply_scheduler_execution_context,
     resolve_scheduler_execution_context,
 )
@@ -65,6 +66,7 @@ SCHEDULER_IDENTITY_KEYS = (
     "recommended_action",
 )
 MONITOR_WAIT_IDENTITY_KEYS = SCHEDULER_IDENTITY_KEYS[:-1]
+CODEX_APP_SSH_GOAL_RUNTIME_KEY = SchedulerRuntimeProfile.CODEX_APP_SSH_VISIBLE.value
 
 build_codex_app_scheduler_ack_event = scheduler_ack.build_codex_app_scheduler_ack_event
 build_scheduler_ack_plan = scheduler_ack.build_scheduler_ack_plan
@@ -611,6 +613,18 @@ class _SchedulerHintBuilder:
             "final_quota_replan_check": final_replan_check,
             "no_spend_for_exit": True,
         }
+        codex_app_ssh_goal = {
+            "unchanged_poll_limit": cli_limit,
+            "after_limit": (
+                "block_host_goal_keep_loopx"
+                if cli_limit is not None
+                else "continue"
+            ),
+            "final_quota_replan_check": final_replan_check,
+            "loopx_goal_state": "remains_active",
+            "resume_trigger": "explicit_host_resume_or_material_transition",
+            "no_spend_for_block": True,
+        }
         claude_code_loop = {
             "unchanged_poll_limit": claude_limit,
             "after_limit": "stop_loop" if claude_limit is not None else "continue",
@@ -808,6 +822,30 @@ class _SchedulerHintBuilder:
                 # Bind the host proof to the originating identity.
                 host_match_observed=True,
             )
+        unchanged_poll_limits = {
+            "local_scheduler": cli_limit,
+            "codex_cli_tui": cli_limit,
+            "claude_code_loop": claude_limit,
+        }
+        unchanged_poll_after_limits = {
+            "local_scheduler": local_scheduler["after_limit"],
+            "codex_cli_tui": codex_cli_tui["after_limit"],
+            "claude_code_loop": claude_code_loop["after_limit"],
+        }
+        detail_contains = [
+            "local_scheduler",
+            "codex_cli_tui",
+            "claude_code_loop",
+            "final_quota_replan_check",
+            "reset_policy_detail",
+            "stateful_backoff_detail",
+        ]
+        if cli_limit is not None:
+            unchanged_poll_limits[CODEX_APP_SSH_GOAL_RUNTIME_KEY] = cli_limit
+            unchanged_poll_after_limits[CODEX_APP_SSH_GOAL_RUNTIME_KEY] = (
+                codex_app_ssh_goal["after_limit"]
+            )
+            detail_contains.insert(2, CODEX_APP_SSH_GOAL_RUNTIME_KEY)
         scheduler_hint = {
             "schema_version": SCHEDULER_HINT_SCHEMA_VERSION,
             "source": "quota.should-run",
@@ -818,16 +856,8 @@ class _SchedulerHintBuilder:
             "spend_policy": self.spend_policy,
             "codex_app": codex_app,
             "unchanged_poll": {
-                "limits": {
-                    "local_scheduler": cli_limit,
-                    "codex_cli_tui": cli_limit,
-                    "claude_code_loop": claude_limit,
-                },
-                "after_limits": {
-                    "local_scheduler": local_scheduler["after_limit"],
-                    "codex_cli_tui": codex_cli_tui["after_limit"],
-                    "claude_code_loop": claude_code_loop["after_limit"],
-                },
+                "limits": unchanged_poll_limits,
+                "after_limits": unchanged_poll_after_limits,
                 "final_quota_replan_check_enabled": final_replan_check["enabled"],
                 "final_quota_replan_check_action": (
                     final_replan_check["action"]
@@ -848,14 +878,7 @@ class _SchedulerHintBuilder:
                     "unchanged_poll",
                     "reset_policy",
                 ],
-                "contains": [
-                    "local_scheduler",
-                    "codex_cli_tui",
-                    "claude_code_loop",
-                    "final_quota_replan_check",
-                    "reset_policy_detail",
-                    "stateful_backoff_detail",
-                ],
+                "contains": detail_contains,
             },
         }
         notification_cooldown = _user_gate_notification_cooldown(
@@ -873,6 +896,7 @@ class _SchedulerHintBuilder:
                 "source": "quota.should-run",
                 "local_scheduler": local_scheduler,
                 "codex_cli_tui": codex_cli_tui,
+                CODEX_APP_SSH_GOAL_RUNTIME_KEY: codex_app_ssh_goal,
                 "claude_code_loop": claude_code_loop,
                 "final_quota_replan_check": final_replan_check,
                 "reset_policy_detail": reset_policy_detail,
@@ -936,6 +960,7 @@ def build_scheduler_hint(
             "unchanged_poll": {
                 "local_scheduler": "stop_until_context_repaired",
                 "codex_cli_tui": "stop_until_context_repaired",
+                CODEX_APP_SSH_GOAL_RUNTIME_KEY: "stop_until_context_repaired",
                 "claude_code_loop": "stop_until_context_repaired",
                 "final_quota_replan_check_enabled": False,
                 "spend_policy": "no quota spend for scheduler context repair",
@@ -995,6 +1020,7 @@ def build_scheduler_hint(
                 "unchanged_poll": {
                     "local_scheduler": "stop",
                     "codex_cli_tui": "exit",
+                    CODEX_APP_SSH_GOAL_RUNTIME_KEY: "complete_host_goal",
                     "claude_code_loop": "stop",
                     "final_quota_replan_check_enabled": False,
                     "spend_policy": "no quota spend for terminal loop stop",

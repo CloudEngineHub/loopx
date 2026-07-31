@@ -64,6 +64,13 @@ RUNTIME_EXECUTION_ROUTING_RULE = (
     "Normal turns use CLI `interaction_contract`; use `loopx-project` for "
     "lifecycle/registry and `loopx-self-repair` for runtime/projection drift."
 )
+VISIBLE_GOAL_UNCHANGED_WAIT_RULE = """
+
+Scheduler hints must not mutate host automation here, but their matching
+`scheduler_hint.unchanged_poll` host limit is executable. For
+`codex_app_ssh_goal`, rerun quota once at the limit; if it is still unchanged,
+block this host Goal without spending or completing the registered LoopX goal.
+Resume it only for explicit user input or a material transition."""
 INTERFACE_BUDGET_CHARS = {
     "full": 12_000,
     "compact": 6_200,
@@ -1097,6 +1104,7 @@ def render_visible_goal_task_body(
         material_queue_rule=material_queue_rule,
         permission_rule=permission_rule,
         agent_scope_instruction=agent_scope_instruction,
+        host_wait_rule=VISIBLE_GOAL_UNCHANGED_WAIT_RULE,
     )
 
 
@@ -1113,6 +1121,7 @@ def _render_goal_task_body(
     material_queue_rule: str,
     permission_rule: str,
     agent_scope_instruction: str,
+    host_wait_rule: str,
 ) -> str:
     scope_block = f"\n{agent_scope_instruction}\n" if agent_scope_instruction else ""
     prequota_block = (
@@ -1130,8 +1139,7 @@ At every continuation, inspect LoopX state/status and the repository. {prequota_
 
 If `should_run=false`, do no delivery work and do not spend quota. Surface only a
 concrete user action/gate in Chinese when the contract requires `NOTIFY`; otherwise
-wait quietly. Scheduler hints are diagnostic here and must not mutate host
-automation.
+wait quietly.{host_wait_rule}
 
 If `should_run=true`, choose the highest-priority in-scope unblocked agent todo.
 Honor claims/leases, blocker-push and recovery obligations. Before dependent work,
@@ -1202,6 +1210,7 @@ def render_ark_managed_agent_goal_task_body(
         material_queue_rule=material_queue_rule,
         permission_rule=permission_rule,
         agent_scope_instruction=agent_scope_instruction,
+        host_wait_rule="",
     )
 
 
