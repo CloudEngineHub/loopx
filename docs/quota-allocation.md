@@ -643,11 +643,13 @@ of an error string.
       "limits": {
         "local_scheduler": 3,
         "codex_cli_tui": 3,
+        "codex_app_ssh_goal": 3,
         "claude_code_loop": 3
       },
       "after_limits": {
         "local_scheduler": "stop_tick_loop",
         "codex_cli_tui": "exit_goal_loop",
+        "codex_app_ssh_goal": "block_host_goal_keep_loopx",
         "claude_code_loop": "stop_loop"
       },
       "final_quota_replan_check_enabled": true,
@@ -667,6 +669,7 @@ of an error string.
       "contains": [
         "local_scheduler",
         "codex_cli_tui",
+        "codex_app_ssh_goal",
         "claude_code_loop",
         "final_quota_replan_check",
         "reset_policy_detail",
@@ -930,7 +933,7 @@ reset token/identity is not persisted, `apply_needed=false`, `ack_needed=true`,
 and the bound `ack_hint.cli_args` records that exact readback without a no-op
 host write. Missing or mismatched readback still requires `automation_update`;
 LoopX never edits the App manifest directly.
-For Codex CLI TUI and Claude Code loops, the default hot path reads
+For Codex App SSH Goal, Codex CLI TUI, and Claude Code loops, the default hot path reads
 `scheduler_hint.unchanged_poll.limits.<runtime>`. A value of `3` means the third
 unchanged poll triggers the compact final quota/replan check named by
 `scheduler_hint.unchanged_poll.final_quota_replan_check_action`; if the rerun is
@@ -939,12 +942,16 @@ still unchanged, the loop applies
 older per-runtime detail objects must opt in with
 `quota should-run --include-detail scheduler` and read
 `scheduler_hint.cold_path_detail.local_scheduler`,
-`scheduler_hint.cold_path_detail.codex_cli_tui`, or
+`scheduler_hint.cold_path_detail.codex_cli_tui`,
+`scheduler_hint.cold_path_detail.codex_app_ssh_goal`, or
 `scheduler_hint.cold_path_detail.claude_code_loop`. That opt-in is diagnostic
 and migration support only: a host or agent that forgets
 `--include-detail scheduler` must still retain the core scheduling abilities by
 reading the default hot-path fields named in
 `scheduler_hint.detail_ref.hot_path_runtime_fields`.
+For `codex_app_ssh_goal`, the after-limit action blocks only the current host
+Goal. The registered LoopX goal stays active and may resume on explicit user
+input or a material transition; the final check and host block do not spend.
 The response also includes `execution_obligation`, which is the compatibility
 field that separates worker execution from user-facing notification.
 `heartbeat_recommendation.notify` answers "should this heartbeat interrupt the
