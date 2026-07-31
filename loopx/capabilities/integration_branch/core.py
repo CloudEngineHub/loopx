@@ -68,6 +68,11 @@ def _resolve_optional_commit(repo: Path, ref: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def _resolve_tree(repo: Path, commit_sha: str) -> str:
+    result = _git(repo, "rev-parse", "--verify", f"{commit_sha}^{{tree}}")
+    return result.stdout.strip()
+
+
 def _validate_branch_name(repo: Path, branch: str) -> str:
     normalized = branch.strip()
     if not normalized:
@@ -452,13 +457,19 @@ def sync_integration_branch(
     repo = _repository_root(repo_path)
     status = integration_branch_status(repo_path=repo, plan_file=plan_file)
     if not status["sync_required"]:
+        integration_sha = status["resolved"]["integration"]["sha"]
         return {
             "ok": True,
             "schema_version": SYNC_SCHEMA_VERSION,
             "status": "already_in_sync",
             "executed": execute,
             "updated": False,
-            "candidate_sha": status["resolved"]["integration"]["sha"],
+            "candidate_sha": integration_sha,
+            "candidate_tree_sha": (
+                _resolve_tree(repo, integration_sha)
+                if isinstance(integration_sha, str)
+                else None
+            ),
             "status_packet": status,
         }
 
@@ -477,6 +488,7 @@ def sync_integration_branch(
             "status_packet": status,
         }
     assert candidate_sha is not None
+    candidate_tree_sha = _resolve_tree(repo, candidate_sha)
     if not execute:
         return {
             "ok": True,
@@ -485,6 +497,7 @@ def sync_integration_branch(
             "executed": False,
             "updated": False,
             "candidate_sha": candidate_sha,
+            "candidate_tree_sha": candidate_tree_sha,
             "status_packet": status,
             "write_boundary": "temporary detached worktree only; integration and source refs unchanged",
         }
@@ -505,6 +518,7 @@ def sync_integration_branch(
     plan["last_sync"] = {
         "base_sha": resolved["base"]["sha"],
         "integration_sha": candidate_sha,
+        "candidate_tree_sha": candidate_tree_sha,
         "sources": [
             {"ref": source["ref"], "sha": source["sha"]}
             for source in resolved["sources"]
@@ -523,6 +537,7 @@ def sync_integration_branch(
         "executed": True,
         "updated": True,
         "candidate_sha": candidate_sha,
+        "candidate_tree_sha": candidate_tree_sha,
         "status_packet": refreshed,
         "write_boundary": (
             "local integration branch and ignored sync receipt only; "

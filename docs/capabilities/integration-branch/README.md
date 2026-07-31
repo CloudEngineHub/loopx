@@ -51,9 +51,14 @@ from the resolved base SHA. Preview removes its temporary worktree without
 changing refs. Execute updates the local integration branch only after every
 merge succeeds, then writes and rereads the receipt.
 
-If the integration branch is checked out, its worktree must be clean. A dirty
-worktree, merge conflict, missing ref, or concurrent plan/input/integration
-movement fails closed before candidate publication.
+Rebuilding merge commits can change `candidate_sha` timestamps between preview
+and execute. Compare `candidate_tree_sha` for stable content identity; execute
+also records it in the receipt.
+
+Preview remains read-only even when the integration branch worktree is dirty.
+Execute requires a clean checked-out integration worktree. A dirty worktree,
+merge conflict, missing ref, or concurrent plan/input/integration movement
+fails closed before candidate publication.
 
 ## Boundary
 

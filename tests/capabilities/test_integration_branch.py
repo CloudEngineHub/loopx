@@ -105,6 +105,11 @@ def test_sync_detects_review_updates_and_rebuilds_exact_heads(
     assert _git(repo, "branch", "--list", "codex/local-integration") == ""
 
     synced = sync_integration_branch(repo_path=repo, execute=True)
+    assert synced["candidate_tree_sha"] == preview["candidate_tree_sha"]
+    assert (
+        synced["status_packet"]["plan"]["last_sync"]["candidate_tree_sha"]
+        == preview["candidate_tree_sha"]
+    )
     first_integration_head = str(synced["candidate_sha"])
     assert synced["status"] == "synced"
     assert integration_branch_status(repo_path=repo)["status"] == "in_sync"
