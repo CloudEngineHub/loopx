@@ -174,6 +174,10 @@ def test_dirty_checked_out_integration_worktree_fails_closed(
     _git(repo, "switch", "codex/local-integration")
     (repo / "shared.txt").write_text("dirty\n", encoding="utf-8")
 
+    preview = sync_integration_branch(repo_path=repo)
+    assert preview["status"] == "preview_ready"
+    assert preview["updated"] is False
+
     with pytest.raises(IntegrationBranchError, match="worktree is dirty"):
         sync_integration_branch(repo_path=repo, execute=True)
 

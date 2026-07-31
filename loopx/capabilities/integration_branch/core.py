@@ -464,11 +464,6 @@ def sync_integration_branch(
 
     resolved = status["resolved"]
     branch = str(status["plan"]["integration_branch"])
-    checked_out_path = _worktree_for_branch(repo, branch)
-    if checked_out_path is not None and not _clean_worktree(checked_out_path):
-        raise IntegrationBranchError(
-            f"integration branch worktree is dirty: {checked_out_path}"
-        )
 
     candidate_sha, failure = _build_candidate(repo, resolved)
     if failure is not None:
