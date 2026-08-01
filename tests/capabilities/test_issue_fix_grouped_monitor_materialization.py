@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -106,12 +107,15 @@ def test_grouped_monitor_materialization_is_one_per_bucket_and_retires_empty_buc
     assert created["write_performed"] is True
     assert created["active_bucket_count"] == 1
     assert created["active_member_count"] == 2
-    assert created["next_due_at"] == "2026-08-02T00:30:00+08:00"
+    assert datetime.fromisoformat(created["next_due_at"]).timestamp() == (
+        datetime.fromisoformat("2026-08-01T16:30:00+00:00").timestamp()
+    )
     active = state.read_text(encoding="utf-8")
     assert active.count("task_class=continuous_monitor") == 1
     assert "target_key=github-pr-state-huangruiteng--loopx-checks-pending" in active
     assert "cadence=30m" in active
-    assert "next_due_at=2026-08-02T00:30:00%2B08:00" in active
+    encoded_next_due_at = created["next_due_at"].replace("+", "%2B")
+    assert f"next_due_at={encoded_next_due_at}" in active
 
     unchanged = materialize_issue_fix_grouped_monitors(
         registry_path=registry,
