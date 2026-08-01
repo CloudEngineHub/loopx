@@ -20,6 +20,7 @@ from .control_plane.agents.workspace_guard import capture_delivery_workspace
 from .control_plane.work_items.repair_delta import (
     REPAIR_DELTA_KIND_CHOICES as REPAIR_DELTA_KIND_CHOICES,
     normalize_repair_delta_kinds,
+    repair_delta_kinds_have_frontier_delta,
     validate_repair_delta_claims,
 )
 from .control_plane.work_items.autonomous_replan_ack import (
@@ -257,7 +258,7 @@ def build_repair_delta_contract(
     contract = {
         "schema_version": REPAIR_DELTA_CONTRACT_SCHEMA_VERSION,
         "required": True,
-        "delta_present": bool(delta_kinds),
+        "delta_present": repair_delta_kinds_have_frontier_delta(delta_kinds),
         "delta_kinds": delta_kinds,
         "auto_evidence": evidence,
         "accepted_without_delta": False,
@@ -1111,6 +1112,7 @@ def refresh_state_run(
         action, recommended_action_source = derive_recommended_action_with_source(state_text)
     validate_local_control_text("recommended_action", action)
     repair_delta_contract: dict[str, Any] | None = None
+    validated_repair_delta_kinds: list[str] = []
     requested_classification = classification
     effective_autonomous_replan_recorded = bool(autonomous_replan_recorded)
     if autonomous_replan_recorded:
@@ -1122,6 +1124,9 @@ def refresh_state_run(
             state_text=state_text,
             agent_id=normalized_agent_id or None,
             dry_run=dry_run,
+        )
+        validated_repair_delta_kinds = list(
+            repair_delta_contract.get("delta_kinds") or []
         )
         if not repair_delta_contract["delta_present"]:
             classification = _noop_classification_for(classification)
@@ -1136,7 +1141,7 @@ def refresh_state_run(
         delivery_outcome=normalized_delivery_outcome,
         autonomous_replan_recorded=bool(autonomous_replan_recorded),
         active_state_next_action_update=active_state_next_action_update,
-        repair_delta_kinds=normalized_repair_delta_kinds,
+        repair_delta_kinds=validated_repair_delta_kinds,
     )
     delivery_workspace = None
     if normalized_delivery_outcome in ACCOUNTABLE_DELIVERY_OUTCOMES:

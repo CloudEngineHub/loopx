@@ -379,9 +379,15 @@ a `replan_noop` and must not clear the obligation.
 `refresh-state` does not treat a caller-supplied delta kind as proof. A
 `runnable_todo_set` claim must resolve to a scoped open advancement todo. A
 `watch_lane_continuation` claim must resolve to a scoped monitor with a target,
-cadence, next due time, and expiry or resume condition, and it cannot settle a
-`repeat_until_closed` vision. Rejected claims remain visible in the repair delta
-contract and the acknowledgement is a no-op when no verified delta remains.
+parseable cadence and next due time, plus an unexpired expiry or unresolved
+resume condition; it cannot settle a `repeat_until_closed` vision. Todo scope
+uses the canonical claim, exclusion, and removed-continuation predicate.
+`successor_or_supersede` must resolve a completed Todo to an existing scoped
+open advancement successor, while `no_followup` must resolve the canonical
+terminal closure proof. Every frontier-clearing delta kind requires an evidence
+resolver; kinds without one cannot form ACK evidence. Rejected claims remain
+visible in the repair delta contract and the acknowledgement is a no-op when no
+verified frontier delta remains.
 
 ### Bad Case: ACK Hidden By Scheduler Accounting
 

@@ -559,6 +559,52 @@ def assert_replan_ack_without_delta_is_noop() -> None:
         assert guard["heartbeat_recommendation"]["recommended_mode"] == "autonomous_replan_required", guard
 
 
+def assert_bare_successor_claim_does_not_clear_replan() -> None:
+    with tempfile.TemporaryDirectory(prefix="loopx-autonomous-replan-") as tmp:
+        registry_path, runtime = write_fixture(
+            Path(tmp),
+            include_replan_signals=False,
+            periodic_run_count=20,
+        )
+        refresh = run_cli(
+            "refresh-state",
+            "--goal-id",
+            GOAL_ID,
+            "--classification",
+            "autonomous_replan_recorded",
+            "--autonomous-replan-recorded",
+            "--repair-delta-kind",
+            "successor_or_supersede",
+            registry_path=registry_path,
+            runtime=runtime,
+        )
+
+        assert refresh["classification"] == "replan_noop", refresh
+        delta = refresh["repair_delta_contract"]
+        assert delta["delta_present"] is False, delta
+        assert delta["delta_kinds"] == [], delta
+        assert delta["rejected_claims"] == [
+            {
+                "kind": "successor_or_supersede",
+                "reason": "no completed todo links a scoped open advancement successor",
+            }
+        ], delta
+        assert refresh["vision_checkpoint"]["decision"] == "missing_required", refresh
+
+        guard = run_cli(
+            "quota",
+            "should-run",
+            "--goal-id",
+            GOAL_ID,
+            registry_path=registry_path,
+            runtime=runtime,
+        )
+        assert guard["autonomous_replan_obligation"]["required"] is True, guard
+        assert guard["heartbeat_recommendation"]["recommended_mode"] == (
+            "autonomous_replan_required"
+        ), guard
+
+
 def assert_watch_replan_ack_requires_bounded_state_evidence() -> None:
     with tempfile.TemporaryDirectory(prefix="loopx-autonomous-replan-") as tmp:
         registry_path, runtime = write_fixture(
@@ -654,6 +700,7 @@ def main() -> int:
     assert_validated_classification_without_ack_does_not_clear_replan()
     assert_refresh_state_structured_ack_clears_replan()
     assert_replan_ack_without_delta_is_noop()
+    assert_bare_successor_claim_does_not_clear_replan()
     assert_watch_replan_ack_requires_bounded_state_evidence()
     assert_no_replan_obligation_without_signal()
     print("autonomous-replan-obligation-smoke ok")
