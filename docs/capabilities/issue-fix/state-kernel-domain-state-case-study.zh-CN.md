@@ -229,7 +229,8 @@ lifecycle bucket 聚合，Kernel 只调度非空 bucket 的一个 monitor；真�
 advancement todo。`pr-lifecycle --execute-transition --goal-id <goal> --claimed-by <agent>`
 通过通用 Todo API 完成这笔物化事务；`--monitor-cadence` 控制调度周期，缺省为 `30m`。
 相同 bucket membership 的安静重放保持幂等，后续 cadence 推进由 monitor poll lane 负责，而不是
-反复执行 PR lifecycle transition。
+反复执行 PR lifecycle transition。给出公开 PR URL 时，`--execute-transition` 会自动读取紧凑的
+公开 metadata；只有确定性 fixture 才需要显式传 `--metadata-json`。
 
 ### 6. Terminal closeout 与继续运行
 

@@ -88,8 +88,6 @@ def build_issue_fix_goal_command_templates(
         "issue_fix_pr_lifecycle_template": (
             f"{cli} issue-fix pr-lifecycle "
             "--url <github-pr-url> "
-            "--project <approved-repo> "
-            "--fetch-metadata "
             f"--goal-id {goal} "
             f"--claimed-by {agent} "
             "--execute-transition "

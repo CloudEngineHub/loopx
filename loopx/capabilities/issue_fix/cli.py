@@ -1244,6 +1244,10 @@ def handle_issue_fix_command(
                 raise ValueError(
                     "--fetch-metadata cannot be combined with --metadata-json"
                 )
+            fetch_metadata = bool(
+                args.fetch_metadata
+                or (args.execute_transition and args.url and not args.metadata_json)
+            )
             if args.execute_transition and args.no_write_domain_state:
                 raise ValueError(
                     "--execute-transition cannot be combined with --no-write-domain-state"
@@ -1262,7 +1266,7 @@ def handle_issue_fix_command(
                 provider_payload=_load_json_object(args.metadata_json)
                 if args.metadata_json
                 else None,
-                fetch_metadata=args.fetch_metadata,
+                fetch_metadata=fetch_metadata,
                 fetch_timeout_seconds=args.fetch_timeout_seconds,
                 maintainer_correction_input=(
                     _load_json_object(args.maintainer_correction_json)

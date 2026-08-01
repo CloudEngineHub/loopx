@@ -5,6 +5,9 @@ import io
 import json
 from pathlib import Path
 
+import pytest
+
+from loopx.capabilities.issue_fix import pr_lifecycle
 from loopx.capabilities.issue_fix.pr_lifecycle import (
     build_issue_fix_pr_lifecycle_monitor_packet,
 )
@@ -257,3 +260,57 @@ def test_pr_lifecycle_execute_materializes_pending_monitor_and_keeps_goal_runnab
     assert active.count("task_class=continuous_monitor") == 1
     assert "target_key=github-pr-state-huangruiteng--loopx-checks-pending" in active
     assert "task_class=advancement_task" in active
+
+
+def test_pr_lifecycle_execute_fetches_public_metadata_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, state, registry = _fixture(tmp_path)
+
+    def fake_fetch(reference: dict, *, timeout_seconds: int) -> dict:
+        assert reference["repo"] == "huangruiteng/loopx"
+        assert timeout_seconds == 10
+        return {
+            "state": "OPEN",
+            "reviewDecision": "REVIEW_REQUIRED",
+            "mergeStateStatus": "CLEAN",
+            "statusCheckRollup": [{"name": "integration", "status": "IN_PROGRESS"}],
+        }
+
+    monkeypatch.setattr(
+        pr_lifecycle,
+        "fetch_github_pr_lifecycle_payload",
+        fake_fetch,
+    )
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        assert (
+            cli_main(
+                [
+                    "--registry",
+                    str(registry),
+                    "--format",
+                    "json",
+                    "issue-fix",
+                    "pr-lifecycle",
+                    "--url",
+                    "https://github.com/huangruiteng/loopx/pull/101",
+                    "--goal-id",
+                    GOAL_ID,
+                    "--project",
+                    str(project),
+                    "--claimed-by",
+                    AGENT_ID,
+                    "--execute-transition",
+                    "--generated-at",
+                    "2026-08-01T16:00:00Z",
+                ]
+            )
+            == 0
+        )
+
+    payload = json.loads(output.getvalue())
+    assert payload["ok"] is True
+    assert payload["external_reads_performed"] is True
+    assert state.read_text(encoding="utf-8").count("task_class=continuous_monitor") == 1

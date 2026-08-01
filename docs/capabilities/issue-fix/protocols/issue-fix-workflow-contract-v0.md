@@ -131,6 +131,8 @@ open PRs, merge, publish, or run destructive git without an explicit gate.
    the schedule and defaults to `30m`. A quiet replay with unchanged bucket
    membership is idempotent. The monitor poll lane, rather than repeated PR
    lifecycle execution, owns later cadence advancement.
+   With a public PR URL, `--execute-transition` fetches compact public metadata
+   automatically unless `--metadata-json` supplies a deterministic fixture.
 11. **Gate handling:** surface concrete gates instead of silently blocking. Safe
    metadata-only triage, public-code search, and focused smoke drafting may
    continue when those gates do not cover the selected action.

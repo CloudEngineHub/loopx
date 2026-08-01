@@ -231,8 +231,6 @@ def test_goal_text_invocation_plans_ranked_todos_before_activation() -> None:
         assert "--url <github-pr-url>" in pr_lifecycle_template
         assert "--goal-id" in pr_lifecycle_template
         assert str(payload["goal_id"]) in pr_lifecycle_template
-        assert "--project <approved-repo>" in pr_lifecycle_template
-        assert "--fetch-metadata" in pr_lifecycle_template
         assert "--claimed-by codex-test-agent" in pr_lifecycle_template
         assert "--execute-transition" in pr_lifecycle_template
         assert "issue_fix_reviewer_request_template" in commands
