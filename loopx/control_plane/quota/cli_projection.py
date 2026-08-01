@@ -89,6 +89,27 @@ _RUNTIME_CAPABILITY_PREFIX_FIELDS = (
     "decision",
     "should_run",
 )
+_RETAINED_MONITOR_POLL_SELECTED_TODO_FIELDS = (
+    "schema_version",
+    "todo_id",
+    "status",
+    "task_class",
+    "action_kind",
+    "claimed_by",
+    "selected_by",
+)
+
+
+def _compact_monitor_poll_decision(decision: dict[str, Any]) -> dict[str, Any]:
+    compact = compact_quota_decision(decision)
+    selected_todo = decision.get("selected_todo")
+    if isinstance(selected_todo, dict):
+        compact["selected_todo"] = {
+            key: selected_todo[key]
+            for key in _RETAINED_MONITOR_POLL_SELECTED_TODO_FIELDS
+            if key in selected_todo
+        }
+    return compact
 
 
 def compact_quota_monitor_poll_cli_payload(
@@ -111,7 +132,7 @@ def compact_quota_monitor_poll_cli_payload(
     for phase in ("before", "after"):
         full_decision = payload.get(phase)
         if isinstance(full_decision, dict):
-            compact_decision = compact_quota_decision(full_decision)
+            compact_decision = _compact_monitor_poll_decision(full_decision)
             projected[phase] = compact_decision
             decision_summary[phase] = compact_decision
             omitted_fields[phase] = max(0, len(full_decision) - len(compact_decision))

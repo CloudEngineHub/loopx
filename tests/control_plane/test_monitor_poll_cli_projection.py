@@ -30,7 +30,16 @@ def _decision(*, effective_action: str, should_run: bool) -> dict[str, object]:
             "spent_slots": 2,
             "allowed_slots": 48,
         },
-        "selected_todo": {"todo_id": "todo_monitor"},
+        "selected_todo": {
+            "schema_version": "quota_selected_todo_v0",
+            "todo_id": "todo_monitor",
+            "status": "open",
+            "task_class": "continuous_monitor",
+            "action_kind": "pr_review_monitor",
+            "claimed_by": "agent-a",
+            "selected_by": "current_agent_claimed_todo",
+            "text": "Monitor a verbose external target without copying this text.",
+        },
         "work_lane_contract": {
             "obligation": "attempt_due_monitor",
             "diagnostic": "x" * 60_000,
@@ -78,6 +87,15 @@ def test_monitor_poll_default_projection_is_bounded_and_semantically_aligned(
 
     assert projected["before"] == projected["decision_summary"]["before"]
     assert projected["before"]["effective_action"] == "monitor_quiet_skip"
+    assert projected["before"]["selected_todo"] == {
+        "schema_version": "quota_selected_todo_v0",
+        "todo_id": "todo_monitor",
+        "status": "open",
+        "task_class": "continuous_monitor",
+        "action_kind": "pr_review_monitor",
+        "claimed_by": "agent-a",
+        "selected_by": "current_agent_claimed_todo",
+    }
     assert "work_lane_contract" not in projected["before"]
     if has_after:
         assert projected["after"] == projected["decision_summary"]["after"]
