@@ -1,4 +1,5 @@
 from loopx.control_plane.work_items.interaction_contract import build_interaction_contract
+from loopx.control_plane.quota.turn_envelope import build_turn_envelope
 
 
 def _payload(*, should_run: bool) -> dict:
@@ -44,3 +45,18 @@ def test_delivery_without_task_repository_keeps_default_hot_path_compact() -> No
     contract = build_interaction_contract(payload)
 
     assert "delivery_workspace_causality" not in contract["cli_channel"]
+
+
+def test_turn_envelope_preserves_workspace_causality() -> None:
+    payload = _payload(should_run=True)
+    payload["interaction_contract"] = build_interaction_contract(payload)
+
+    envelope = build_turn_envelope(payload)
+
+    assert envelope["writeback"]["delivery_workspace_causality"] == {
+        "schema_version": "delivery_workspace_causality_v0",
+        "refresh": "delivery_workspace; otherwise --delivery-workspace-path",
+        "spend": "recorded_delivery_workspace",
+        "mismatch": "fail_closed",
+    }
+    assert envelope["action_signature"]["matches"] is True
