@@ -249,13 +249,31 @@ provider 的打包和生命周期，不是另一个控制面 owner。详见
 
 第一次有用的 Loop 不依赖全部可选能力。只有工作真正需要时再开启这些路径。
 
+启用进阶能力前，先只读查看当前目标的能力目录：
+
+```bash
+loopx configure-goal --goal-id <goal-id>
+```
+
+不带 `--execute` 时，它只报告当前/默认状态、适用条件、边界和可复制命令，
+不会修改项目状态。
+
 ### Preset 与 Auto Research
 
 安全 preset 覆盖 Daily Triage、Changelog Draft 和 PR Watch。更高级的 CI /
 Dependency Sweeper 需要明确授权、隔离 worktree、verifier、quota/cost gate 和人工
 review。Auto Research 通过 proposer、executor、evaluator/promoter 协作，同时保持
 quota 和证据可见。详见
+[入门 Preset 指南](docs/product/beginner-loop-presets.md)和
 [Auto Research Command Path](docs/guides/auto-research-command-path.md)。
+
+```bash
+loopx preset list
+loopx preset show daily-triage
+```
+
+查看 preset 是只读操作。对已连接的周期性目标，可运行
+`loopx ready-score --goal-id <goal-id> --agent-id <agent-id>`，检查它是否适合重复运行。
 
 ### Governed Turn
 
@@ -383,23 +401,21 @@ LoopX 还在早期，最需要真实长程 agent 项目里的反馈：控制面�
 - 中文用户与贡献者可以加入飞书开发群；加入微信群请添加微信 `huangrt00`，
   好友申请备注 `LoopX`。
 
-<table>
-  <tr>
-    <td align="center" width="280">
-      <img src="docs/assets/loopx-lark-developer-group.png" alt="LoopX 开发群二维码" width="240"><br>
-      飞书开发群
-    </td>
-    <td align="center" width="280">
-      <img src="docs/assets/loopx-wechat-contact.png" alt="LoopX 微信联系人二维码" width="240"><br>
-      微信：<code>huangrt00</code><br>
-      添加好友，备注 LoopX 后邀请入群
-    </td>
-    <td align="center" width="160">
-      <img src="docs/assets/loopx-logo.png" alt="LoopX 标志" width="96"><br>
-      LoopX 项目标志
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <a href="docs/assets/loopx-lark-developer-group.png"><img src="docs/assets/loopx-lark-developer-group.png" alt="LoopX 开发群二维码" width="320"></a><br>
+  <strong>飞书开发群</strong>
+</p>
+
+<p align="center">
+  <a href="docs/assets/loopx-wechat-contact.png"><img src="docs/assets/loopx-wechat-contact.png" alt="LoopX 微信联系人二维码" width="280"></a><br>
+  <strong>微信：<code>huangrt00</code></strong><br>
+  添加好友，备注 LoopX 后邀请入群
+</p>
+
+<p align="center">
+  <img src="docs/assets/loopx-logo.png" alt="LoopX 标志" width="96"><br>
+  LoopX 项目标志
+</p>
 
 ## 贡献
 

@@ -22,6 +22,7 @@ def main() -> int:
     readme_zh = read("README.zh-CN.md")
     demo = read("docs/product/cross-runtime-impl-review-demo.md")
     product_index = read("docs/product/README.md")
+    getting_started = read("docs/guides/getting-started.md")
     compact_readme = compact(readme)
     compact_demo = compact(demo)
 
@@ -55,6 +56,11 @@ def main() -> int:
         '<a id="capability-surface"></a>',
         '<a id="community--feedback"></a>',
         "The v0.4.x line is an early but usable local control plane",
+        "docs/assets/loopx-lark-developer-group.png",
+        "docs/assets/loopx-wechat-contact.png",
+        "WeChat: <code>huangrt00</code>",
+        "loopx configure-goal --goal-id <goal-id>",
+        "loopx preset show daily-triage",
     ]:
         assert required in readme, required
 
@@ -62,6 +68,11 @@ def main() -> int:
         '<a id="快速开始"></a>',
         '<a id="看几个例子"></a>',
         "`0.4.x` 已经是一套可用、但仍处于早期的长程 Agent 本地控制面",
+        "docs/assets/loopx-lark-developer-group.png",
+        "docs/assets/loopx-wechat-contact.png",
+        "微信：<code>huangrt00</code>",
+        "loopx configure-goal --goal-id <goal-id>",
+        "loopx preset show daily-triage",
     ]:
         assert required in readme_zh, required
 
@@ -103,6 +114,9 @@ def main() -> int:
 
     assert "Cross-runtime implement/review demo" in product_index
     assert "cross-runtime-impl-review-demo.md" in product_index
+    assert "### Recover History Index Collisions" in getting_started
+    assert "history rebuild-index-collisions" in getting_started
+    assert "--review-plan-json reviewed-plan.json" in getting_started
 
     print("readme-demo-surface-smoke ok")
     return 0

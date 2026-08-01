@@ -265,12 +265,32 @@ owner. See [Architecture](docs/architecture.md) and
 The first useful loop does not require every optional surface. Add these only
 when the work needs them.
 
+Inspect the current goal's read-only capability catalog before enabling an
+advanced path:
+
+```bash
+loopx configure-goal --goal-id <goal-id>
+```
+
+Without `--execute`, this reports current/default state, fit, boundaries, and
+copyable commands without changing project state.
+
 ### Presets and Auto Research
 
 Safe presets cover daily triage, changelog drafts, and PR watching. The
 one-command research path coordinates proposer, executor, and
 evaluator/promoter roles while keeping quota and evidence visible. See the
+[beginner preset guide](docs/product/beginner-loop-presets.md) and
 [Auto Research command path](docs/guides/auto-research-command-path.md).
+
+```bash
+loopx preset list
+loopx preset show daily-triage
+```
+
+Preset inspection is read-only. For a connected recurring goal,
+`loopx ready-score --goal-id <goal-id> --agent-id <agent-id>` reports whether
+the loop is ready to run repeatedly.
 
 ### Governed Turns
 
@@ -419,23 +439,21 @@ gates or handoffs disappeared from view.
   To join the WeChat group, add `huangrt00` and include `LoopX` in the friend
   request.
 
-<table>
-  <tr>
-    <td align="center" width="280">
-      <img src="docs/assets/loopx-lark-developer-group.png" alt="LoopX Lark developer group QR code" width="240"><br>
-      Lark developer group
-    </td>
-    <td align="center" width="280">
-      <img src="docs/assets/loopx-wechat-contact.png" alt="LoopX WeChat contact QR code" width="240"><br>
-      WeChat: <code>huangrt00</code><br>
-      Mention LoopX for a group invitation
-    </td>
-    <td align="center" width="160">
-      <img src="docs/assets/loopx-logo.png" alt="LoopX logo" width="96"><br>
-      LoopX project mark
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <a href="docs/assets/loopx-lark-developer-group.png"><img src="docs/assets/loopx-lark-developer-group.png" alt="LoopX Lark developer group QR code" width="320"></a><br>
+  <strong>Lark developer group</strong>
+</p>
+
+<p align="center">
+  <a href="docs/assets/loopx-wechat-contact.png"><img src="docs/assets/loopx-wechat-contact.png" alt="LoopX WeChat contact QR code" width="280"></a><br>
+  <strong>WeChat: <code>huangrt00</code></strong><br>
+  Mention LoopX for a group invitation
+</p>
+
+<p align="center">
+  <img src="docs/assets/loopx-logo.png" alt="LoopX logo" width="96"><br>
+  LoopX project mark
+</p>
 
 ## Contributing
 
