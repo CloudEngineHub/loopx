@@ -654,7 +654,8 @@ def latest_promotion_readiness_event(runtime_root: Path, goal_id: str | None = N
             "reason": "promotion readiness ledger does not exist",
         }
 
-    matches: list[dict[str, Any]] = []
+    runtime_matches: list[dict[str, Any]] = []
+    legacy_matches: list[dict[str, Any]] = []
     indexes: list[tuple[Path, str | None, str]] = []
     if runtime_index.is_file():
         indexes.append((runtime_index, None, "runtime_release_ledger"))
@@ -683,7 +684,10 @@ def latest_promotion_readiness_event(runtime_root: Path, goal_id: str | None = N
                 continue
             json_path = Path(str(item.get("json_path") or ""))
             markdown_path = Path(str(item.get("markdown_path") or ""))
-            matches.append(
+            target_matches = (
+                runtime_matches if source == "runtime_release_ledger" else legacy_matches
+            )
+            target_matches.append(
                 {
                     "available": True,
                     "source": source,
@@ -702,6 +706,7 @@ def latest_promotion_readiness_event(runtime_root: Path, goal_id: str | None = N
                 }
             )
 
+    matches = runtime_matches or legacy_matches
     if not matches:
         return {
             "available": False,

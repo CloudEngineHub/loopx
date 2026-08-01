@@ -65,8 +65,12 @@ def build_promotion_readiness_summary(
     if runtime_root is not None:
         full_scan_latest = latest_promotion_readiness_event(runtime_root)
         full_scan_generated_at = parse_timestamp(full_scan_latest.get("generated_at"))
+        runtime_release_authority = (
+            full_scan_latest.get("source") == "runtime_release_ledger"
+        )
         if full_scan_latest.get("available") and (
-            latest_at is None
+            runtime_release_authority
+            or latest_at is None
             or (
                 full_scan_generated_at is not None
                 and full_scan_generated_at > latest_at

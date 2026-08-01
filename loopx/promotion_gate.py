@@ -145,7 +145,11 @@ def build_promotion_gate(
     runtime_root_override: str | None,
 ) -> dict[str, Any]:
     registry = load_registry(registry_path)
-    runtime_root = resolve_runtime_root(registry, runtime_root_override)
+    runtime_root = resolve_runtime_root(
+        registry,
+        runtime_root_override,
+        registry_path=registry_path,
+    )
     readiness = add_promotion_readiness_freshness(
         latest_promotion_readiness_event(runtime_root)
     )

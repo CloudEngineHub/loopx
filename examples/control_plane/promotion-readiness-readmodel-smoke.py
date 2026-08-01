@@ -197,6 +197,32 @@ def main() -> None:
         assert global_release["dashboard_readiness"] == "passed", global_release
         assert global_release["generated_at"] == runtime_generated_at, global_release
 
+        newer_legacy_at = now.isoformat()
+        write_indexed_readiness_run(
+            runtime_root,
+            goal_id="project-a",
+            generated_at=newer_legacy_at,
+        )
+        newer_sampled_history = {
+            "runs": [
+                {
+                    **sampled_history["runs"][0],
+                    "generated_at": newer_legacy_at,
+                }
+            ]
+        }
+        runtime_authoritative = assert_parity(
+            newer_sampled_history,
+            runtime_root=runtime_root,
+            goal_id_filter="project-a",
+        )
+        assert runtime_authoritative["source"] == "runtime_release_ledger", (
+            runtime_authoritative
+        )
+        assert runtime_authoritative["generated_at"] == runtime_generated_at, (
+            runtime_authoritative
+        )
+
         missing = assert_parity({"runs": []}, runtime_root=runtime_root / "empty", goal_id_filter="missing")
         assert missing["available"] is False, missing
         assert missing["source"] == "run_history", missing

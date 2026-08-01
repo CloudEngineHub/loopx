@@ -2188,7 +2188,8 @@ leaderboard claim.
 
 `promotion_readiness_summary` is an optional release-control projection over the
 runtime release ledger, with legacy Goal run-history events retained as a
-read-compatible fallback. It finds the latest
+read-compatible fallback only when the runtime ledger has no valid readiness
+event. It finds the latest
 `canary_promotion_readiness_smoke_group` event and reports whether that evidence
 is fresh enough to trust before promoting a live checkout into the default local
 release snapshot. New evidence is runtime-scoped because release readiness is

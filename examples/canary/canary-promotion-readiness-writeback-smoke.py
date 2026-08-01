@@ -20,12 +20,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from loopx.promotion_gate import (
+from loopx.promotion_gate import (  # noqa: E402
     PROMOTION_READINESS_CLASSIFICATION,
     PROMOTION_READINESS_DELIVERY_BATCH_SCALE,
     PROMOTION_READINESS_DELIVERY_OUTCOME,
     PROMOTION_READINESS_RECOMMENDED_ACTION,
     PROMOTION_READINESS_RUNTIME_DIR,
+    build_promotion_gate,
+    record_promotion_readiness,
 )
 
 INSTALL_SCRIPT = REPO_ROOT / "scripts" / "install-local.sh"
@@ -202,6 +204,41 @@ def main() -> int:
         assert readiness["source"] == "runtime_release_ledger", readiness
         assert readiness["evidence_scope"] == "runtime_release", readiness
         assert readiness["dashboard_readiness"] == "passed", readiness
+
+        relative_project = root / "relative-project"
+        relative_registry = relative_project / ".loopx" / "registry.json"
+        relative_registry.parent.mkdir(parents=True)
+        relative_registry.write_text(
+            json.dumps(
+                {
+                    "common_runtime_root": ".runtime",
+                    "goals": [],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        relative_write = record_promotion_readiness(
+            registry_path=relative_registry,
+            runtime_root_override=None,
+            dashboard_readiness="passed",
+            execute=True,
+        )
+        expected_relative_runtime = (relative_project / ".runtime").resolve()
+        assert Path(relative_write["runtime_root"]) == expected_relative_runtime, (
+            relative_write
+        )
+        relative_gate = build_promotion_gate(
+            registry_path=relative_registry,
+            runtime_root_override=None,
+        )
+        assert Path(relative_gate["runtime_root"]) == expected_relative_runtime, (
+            relative_gate
+        )
+        assert relative_gate["gate_state"] == "ready", relative_gate
+        assert relative_gate["readiness"]["source"] == "runtime_release_ledger", (
+            relative_gate
+        )
 
     print("canary-promotion-readiness-writeback-smoke ok")
     return 0
