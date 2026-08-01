@@ -589,6 +589,10 @@ def _selected_goal_capability_route(goal_text: str | None) -> dict[str, Any] | N
             "candidate_receipt_stream": "candidate-preflight",
             "feasibility_required_for_route": "proceed",
             "durable_reentry_fields": ["action_kind", "target_key"],
+            "durable_reentry_match": {
+                "action_kind_prefix": "issue_fix_",
+                "target_key_prefix": "issue-fix:",
+            },
         },
         "activation_condition": (
             "after selecting a public issue candidate and before substantive "
