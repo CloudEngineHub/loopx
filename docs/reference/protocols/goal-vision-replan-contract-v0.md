@@ -376,6 +376,13 @@ A valid replan writes at least one bounded delta:
 An acknowledgement without a vision, todo, acceptance, or no-follow-up delta is
 a `replan_noop` and must not clear the obligation.
 
+`refresh-state` does not treat a caller-supplied delta kind as proof. A
+`runnable_todo_set` claim must resolve to a scoped open advancement todo. A
+`watch_lane_continuation` claim must resolve to a scoped monitor with a target,
+cadence, next due time, and expiry or resume condition, and it cannot settle a
+`repeat_until_closed` vision. Rejected claims remain visible in the repair delta
+contract and the acknowledgement is a no-op when no verified delta remains.
+
 ### Bad Case: ACK Hidden By Scheduler Accounting
 
 Observed failure: a monitor-only lane correctly projected
