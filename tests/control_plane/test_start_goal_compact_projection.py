@@ -197,6 +197,10 @@ def test_issue_fix_goal_projects_capability_guard_without_todo_fields(
             "candidate_receipt_stream": "candidate-preflight",
             "feasibility_required_for_route": "proceed",
             "durable_reentry_fields": ["action_kind", "target_key"],
+            "durable_reentry_match": {
+                "action_kind_prefix": "issue_fix_",
+                "target_key_prefix": "issue-fix:",
+            },
         },
         "activation_condition": (
             "after selecting a public issue candidate and before substantive "

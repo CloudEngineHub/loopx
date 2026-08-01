@@ -162,6 +162,11 @@ Later turns re-enter through `quota should-run.selected_todo`, which preserves
 the successor's `action_kind` and `target_key`; they do not call `start-goal`
 again or infer admission from stale prompt context.
 
+Host adapters validate that handoff with the route's typed
+`implementation_admission.durable_reentry_match` contract. The contract names
+the capability-owned `action_kind` and `target_key` prefixes, so a generic Todo
+that merely has both fields cannot impersonate completed capability admission.
+
 The guided transaction's `command_cwd_source` points to the packet's resolved
 `project`; hosts execute its project-relative commands from that exact root.
 
