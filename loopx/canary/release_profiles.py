@@ -20,7 +20,7 @@ RELEASE_PROMOTION_PROFILE: dict[str, Any] = {
         {
             "command": "python3 examples/canary/canary-promotion-readiness-smoke.py",
             "tier": "default",
-            "reason": "checks promotion readiness from compact run history",
+            "reason": "checks promotion readiness from the runtime release ledger",
         },
         {
             "command": "python3 examples/release/exact-release-commit-qualification-smoke.py",
