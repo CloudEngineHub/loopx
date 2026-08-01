@@ -26,7 +26,12 @@ def _write_run_index(runtime: Path, records: list[dict[str, Any]]) -> None:
     )
 
 
-def _preview(runtime: Path, *, agent_id: str | None = None) -> dict[str, Any]:
+def _preview(
+    runtime: Path,
+    *,
+    agent_id: str | None = None,
+    before_overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     quota = {
         "compute": 1.0,
         "window_hours": 24,
@@ -43,6 +48,7 @@ def _preview(runtime: Path, *, agent_id: str | None = None) -> dict[str, Any]:
         "safe_bypass_allowed": False,
         "quota": quota,
     }
+    before.update(before_overrides or {})
     status = {
         "runtime_root": str(runtime),
         "attention_queue": {"items": [{"goal_id": GOAL_ID}]},
@@ -116,6 +122,66 @@ def test_unchanged_monitor_poll_is_not_accountable_delivery(tmp_path: Path) -> N
     _write_run_index(runtime, [_poll("2026-01-01T00:00:00+00:00", material=False)])
 
     assert _preview(runtime)["ok"] is False
+
+
+def test_operator_gate_safe_bypass_rejects_no_accountable_writeback(
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "runtime"
+
+    preview = _preview(
+        runtime,
+        before_overrides={
+            "state": "operator_gate",
+            "safe_bypass_allowed": True,
+        },
+    )
+
+    assert preview["ok"] is False
+    assert "requires a latest unspent accountable delivery writeback" in preview[
+        "reason"
+    ]
+
+
+def test_operator_gate_safe_bypass_accepts_accountable_writeback(
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "runtime"
+    _write_run_index(
+        runtime,
+        [
+            _run(
+                "2026-01-01T00:01:00+00:00",
+                classification="validated_fallback",
+                delivery_outcome="outcome_progress",
+            )
+        ],
+    )
+
+    preview = _preview(
+        runtime,
+        before_overrides={
+            "state": "operator_gate",
+            "safe_bypass_allowed": True,
+        },
+    )
+
+    assert preview["ok"] is True
+    assert preview["safe_bypass_spend"] is True
+    assert preview["delivery_run_classification"] == "validated_fallback"
+    event = build_quota_slot_spend_event(
+        preview,
+        self_repair_spend_actions=frozenset(),
+    )
+    assert event["health_check"] == (
+        "quota safe-bypass operator gate; quota slot spend event public-safe"
+    )
+
+    with pytest.raises(ValueError, match="requires an eligible"):
+        build_quota_slot_spend_event(
+            {**preview, "safe_bypass_spend": False},
+            self_repair_spend_actions=frozenset(),
+        )
 
 
 def test_material_monitor_poll_builds_attributed_spend_event(tmp_path: Path) -> None:
