@@ -10,11 +10,10 @@ from ...control_plane.scheduler.monitor_todo import (
     monitor_next_due_at,
     parse_monitor_counter,
 )
-from ...control_plane.todos.active_state_editing import section_bounds, todo_blocks
 from ...todos import (
     add_goal_todo,
     complete_goal_todo,
-    resolve_todo_state,
+    list_goal_todos,
     update_goal_todo,
 )
 
@@ -87,23 +86,16 @@ def _active_grouped_monitors(
 def _existing_issue_fix_monitors(
     *, registry_path: Path, goal_id: str, project: Path
 ) -> dict[str, dict[str, Any]]:
-    _resolved_project, _state_file, _text, lines = resolve_todo_state(
+    payload = list_goal_todos(
         registry_path=registry_path,
         goal_id=goal_id,
+        role="agent",
         project=project,
     )
-    bounds = section_bounds(lines, "agent")
-    if not bounds:
-        return {}
-    start, end, section = bounds
     monitors: dict[str, dict[str, Any]] = {}
-    for item in todo_blocks(
-        lines,
-        start,
-        end,
-        role="agent",
-        source_section=section,
-    ):
+    for item in payload.get("todos") or []:
+        if not isinstance(item, dict):
+            continue
         target_key = str(item.get("target_key") or "").strip()
         action_kind = str(item.get("action_kind") or "").strip()
         if (

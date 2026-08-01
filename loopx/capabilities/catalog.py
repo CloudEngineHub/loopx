@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .registry import CapabilityRegistry
+from .issue_fix.workflow_plan import build_issue_fix_pr_lifecycle_command
 
 from ..extensions.runtime import extension_catalog_entries
 
@@ -255,7 +256,12 @@ BUILTIN_CAPABILITIES: tuple[dict[str, Any], ...] = (
                 "write_boundary": "verified configured secondary sends plus compact receipt or stale-queue state writeback; no per-PR continuous monitor, arbitrary comment, push, merge, or publish",
             },
             {
-                "command": "loopx issue-fix pr-lifecycle --url <github-pr-url> --project <repo> --fetch-metadata --goal-id <goal-id> --claimed-by <agent-id> --execute-transition --format json",
+                "command": build_issue_fix_pr_lifecycle_command(
+                    cli_bin="loopx",
+                    goal_id="<goal-id>",
+                    agent_id="<agent-id>",
+                    project="<repo>",
+                ),
                 "purpose": "Project public PR lifecycle state and reconcile its grouped monitor, successor, user gate, or no-follow-up transition.",
                 "write_boundary": "reads compact public PR metadata and writes compact project-local domain state plus generic LoopX todos; no external comment, PR creation, merge, raw logs, or body/comment capture",
             },

@@ -130,7 +130,10 @@ open PRs, merge, publish, or run destructive git without an explicit gate.
    reconciliation through the generic todo API; `--monitor-cadence` controls
    the schedule and defaults to `30m`. A quiet replay with unchanged bucket
    membership is idempotent. The monitor poll lane, rather than repeated PR
-   lifecycle execution, owns later cadence advancement.
+   lifecycle execution, owns later cadence advancement. The creating issue-fix
+   agent remains the monitor's `claimed_by` owner across turns; another peer
+   cannot update, retire, reopen, or poll that monitor without explicit Todo
+   lifecycle authority.
    With a public PR URL, `--execute-transition` fetches compact public metadata
    automatically unless `--metadata-json` supplies a deterministic fixture.
 11. **Gate handling:** surface concrete gates instead of silently blocking. Safe

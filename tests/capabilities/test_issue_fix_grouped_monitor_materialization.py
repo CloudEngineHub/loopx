@@ -9,22 +9,34 @@ from pathlib import Path
 import pytest
 
 from loopx.capabilities.issue_fix import pr_lifecycle
+from loopx.capabilities.catalog import BUILTIN_CAPABILITIES
 from loopx.capabilities.issue_fix.pr_lifecycle import (
     build_issue_fix_pr_lifecycle_monitor_packet,
 )
 from loopx.capabilities.issue_fix.pr_monitor_materialization import (
     materialize_issue_fix_grouped_monitors,
 )
+from loopx.capabilities.issue_fix.workflow_plan import (
+    build_issue_fix_goal_command_templates,
+    build_issue_fix_pr_lifecycle_command,
+)
 from loopx.cli import main as cli_main
+from loopx.control_plane.scheduler.monitor_poll_writeback import (
+    write_monitor_poll_todo_state,
+)
 from loopx.domain_packs.issue_fix import (
     upsert_issue_fix_pr_lifecycle_ledger_jsonl,
 )
+from loopx.todos import list_goal_todos
 
 GOAL_ID = "issue-fix-monitor-goal"
 AGENT_ID = "issue-fix-worker"
+PEER_AGENT_ID = "issue-fix-peer"
 
 
-def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
+def _fixture(
+    tmp_path: Path, *, registered_agents: list[str] | None = None
+) -> tuple[Path, Path, Path]:
     project = tmp_path / "repo"
     state = project / "ACTIVE_GOAL_STATE.md"
     state.parent.mkdir(parents=True)
@@ -49,7 +61,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
                         "adapter": {"kind": "harness_self_improvement"},
                         "coordination": {
                             "agent_model": "peer_v1",
-                            "registered_agents": [AGENT_ID],
+                            "registered_agents": registered_agents or [AGENT_ID],
                         },
                     }
                 ]
@@ -58,6 +70,20 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
         encoding="utf-8",
     )
     return project, state, registry
+
+
+def _monitor_todos(registry: Path, project: Path) -> list[dict]:
+    payload = list_goal_todos(
+        registry_path=registry,
+        goal_id=GOAL_ID,
+        role="agent",
+        project=project,
+    )
+    return [
+        item
+        for item in payload["todos"]
+        if item.get("task_class") == "continuous_monitor"
+    ]
 
 
 def _packet(
@@ -193,6 +219,154 @@ def test_grouped_monitors_are_isolated_per_repository(tmp_path: Path) -> None:
     assert active.count("task_class=continuous_monitor") == 2
     assert "target_key=github-pr-state-huangruiteng--loopx-checks-pending" in active
     assert "target_key=github-pr-state-openai--codex-checks-pending" in active
+
+
+def test_grouped_monitor_keeps_creator_ownership_across_turns_and_due_poll(
+    tmp_path: Path,
+) -> None:
+    project, state, registry = _fixture(
+        tmp_path,
+        registered_agents=[AGENT_ID, PEER_AGENT_ID],
+    )
+    ledger = tmp_path / "pr-lifecycle.jsonl"
+    upsert_issue_fix_pr_lifecycle_ledger_jsonl(ledger, _packet(101))
+
+    created = materialize_issue_fix_grouped_monitors(
+        registry_path=registry,
+        goal_id=GOAL_ID,
+        project=project,
+        ledger_path=ledger,
+        claimed_by=AGENT_ID,
+        cadence="30m",
+        generated_at="2026-08-01T16:00:00Z",
+    )
+    assert created["write_performed"] is True
+    monitors = _monitor_todos(registry, project)
+    assert len(monitors) == 1
+    monitor = monitors[0]
+    assert monitor["claimed_by"] == AGENT_ID
+    todo_id = monitor["todo_id"]
+
+    state_before_peer_poll = state.read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match=f"claimed_by={AGENT_ID!r}"):
+        write_monitor_poll_todo_state(
+            registry_path=registry,
+            goal_id=GOAL_ID,
+            todo_id=todo_id,
+            result_hash=monitor["result_hash"],
+            generated_at="2026-08-01T16:30:00Z",
+            execute=True,
+            agent_id=PEER_AGENT_ID,
+        )
+    assert state.read_text(encoding="utf-8") == state_before_peer_poll
+
+    polled = write_monitor_poll_todo_state(
+        registry_path=registry,
+        goal_id=GOAL_ID,
+        todo_id=todo_id,
+        result_hash=monitor["result_hash"],
+        generated_at="2026-08-01T16:30:00Z",
+        execute=True,
+        agent_id=AGENT_ID,
+    )
+    assert polled is not None
+    assert polled["todo_update"]["mutation_authority"]["actor_agent_id"] == (
+        AGENT_ID
+    )
+    assert datetime.fromisoformat(polled["next_due_at"]).timestamp() == (
+        datetime.fromisoformat("2026-08-01T17:00:00+00:00").timestamp()
+    )
+
+    upsert_issue_fix_pr_lifecycle_ledger_jsonl(ledger, _packet(102))
+    state_before_peer_attempt = state.read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match=f"claimed_by={AGENT_ID!r}"):
+        materialize_issue_fix_grouped_monitors(
+            registry_path=registry,
+            goal_id=GOAL_ID,
+            project=project,
+            ledger_path=ledger,
+            claimed_by=PEER_AGENT_ID,
+            cadence="30m",
+            generated_at="2026-08-01T16:31:00Z",
+        )
+    assert state.read_text(encoding="utf-8") == state_before_peer_attempt
+
+    changed_by_creator = materialize_issue_fix_grouped_monitors(
+        registry_path=registry,
+        goal_id=GOAL_ID,
+        project=project,
+        ledger_path=ledger,
+        claimed_by=AGENT_ID,
+        cadence="30m",
+        generated_at="2026-08-01T16:31:00Z",
+    )
+    assert changed_by_creator["write_performed"] is True
+    monitors = _monitor_todos(registry, project)
+    assert len(monitors) == 1
+    assert monitors[0]["todo_id"] == todo_id
+    assert monitors[0]["claimed_by"] == AGENT_ID
+
+    upsert_issue_fix_pr_lifecycle_ledger_jsonl(ledger, _packet(101, state="MERGED"))
+    upsert_issue_fix_pr_lifecycle_ledger_jsonl(ledger, _packet(102, state="MERGED"))
+    retired_by_creator = materialize_issue_fix_grouped_monitors(
+        registry_path=registry,
+        goal_id=GOAL_ID,
+        project=project,
+        ledger_path=ledger,
+        claimed_by=AGENT_ID,
+        cadence="30m",
+        generated_at="2026-08-01T16:32:00Z",
+    )
+    assert retired_by_creator["write_performed"] is True
+    assert _monitor_todos(registry, project)[0]["status"] == "done"
+
+    upsert_issue_fix_pr_lifecycle_ledger_jsonl(ledger, _packet(103))
+    reopened_by_creator = materialize_issue_fix_grouped_monitors(
+        registry_path=registry,
+        goal_id=GOAL_ID,
+        project=project,
+        ledger_path=ledger,
+        claimed_by=AGENT_ID,
+        cadence="30m",
+        generated_at="2026-08-01T16:33:00Z",
+    )
+    assert reopened_by_creator["write_performed"] is True
+    reopened = _monitor_todos(registry, project)[0]
+    assert reopened["todo_id"] == todo_id
+    assert reopened["status"] == "open"
+    assert reopened["claimed_by"] == AGENT_ID
+
+
+def test_pr_lifecycle_command_contract_is_shared_by_all_operator_surfaces() -> None:
+    canonical = build_issue_fix_pr_lifecycle_command(
+        cli_bin="loopx",
+        goal_id="goal-fixture",
+        agent_id="agent-fixture",
+    )
+    templates = build_issue_fix_goal_command_templates(
+        cli_bin="loopx",
+        goal_id="goal-fixture",
+        agent_id="agent-fixture",
+    )
+    assert templates["issue_fix_pr_lifecycle_template"] == canonical
+
+    issue_fix = next(item for item in BUILTIN_CAPABILITIES if item["id"] == "issue-fix")
+    catalog_command = next(
+        item["command"]
+        for item in issue_fix["commands"]
+        if "issue-fix pr-lifecycle" in item["command"]
+    )
+    assert catalog_command == build_issue_fix_pr_lifecycle_command(
+        cli_bin="loopx",
+        goal_id="<goal-id>",
+        agent_id="<agent-id>",
+        project="<repo>",
+    )
+    for command in (canonical, catalog_command):
+        assert "--goal-id" in command
+        assert "--claimed-by" in command
+        assert "--execute-transition" in command
+        assert "--fetch-metadata" not in command
 
 
 def test_pr_lifecycle_execute_materializes_pending_monitor_and_keeps_goal_runnable(
