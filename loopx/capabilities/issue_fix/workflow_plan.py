@@ -50,7 +50,7 @@ def match_issue_fix_goal_intent(goal_text: str | None) -> str | None:
 
 
 def build_issue_fix_goal_command_templates(
-    *, cli_bin: str, goal_id: str
+    *, cli_bin: str, goal_id: str, agent_id: str = "<agent-id>"
 ) -> dict[str, str]:
     """Return the capability-owned commands projected into goal-start packets."""
 
@@ -59,6 +59,11 @@ def build_issue_fix_goal_command_templates(
         goal_id
         if goal_id.startswith("<") and goal_id.endswith(">")
         else shlex.quote(goal_id)
+    )
+    agent = (
+        agent_id
+        if agent_id.startswith("<") and agent_id.endswith(">")
+        else shlex.quote(agent_id)
     )
     return {
         "issue_fix_workflow_plan_template": (
@@ -83,7 +88,11 @@ def build_issue_fix_goal_command_templates(
         "issue_fix_pr_lifecycle_template": (
             f"{cli} issue-fix pr-lifecycle "
             "--url <github-pr-url> "
+            "--project <approved-repo> "
+            "--fetch-metadata "
             f"--goal-id {goal} "
+            f"--claimed-by {agent} "
+            "--execute-transition "
             "--format json"
         ),
         "issue_fix_reviewer_request_template": (
