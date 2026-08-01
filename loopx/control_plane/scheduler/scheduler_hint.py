@@ -67,6 +67,8 @@ SCHEDULER_IDENTITY_KEYS = (
 )
 MONITOR_WAIT_IDENTITY_KEYS = SCHEDULER_IDENTITY_KEYS[:-1]
 CODEX_APP_SSH_GOAL_RUNTIME_KEY = SchedulerRuntimeProfile.CODEX_APP_SSH_VISIBLE.value
+CODEX_NATIVE_GOAL_BLOCK_ACTION = "update_goal_blocked_keep_loopx_active"
+CODEX_NATIVE_GOAL_RESUME_TRIGGER = "explicit_codex_goal_resume"
 
 build_codex_app_scheduler_ack_event = scheduler_ack.build_codex_app_scheduler_ack_event
 build_scheduler_ack_plan = scheduler_ack.build_scheduler_ack_plan
@@ -607,24 +609,23 @@ class _SchedulerHintBuilder:
             "final_quota_replan_check": final_replan_check,
             "no_spend_for_cadence_change": True,
         }
-        codex_cli_tui = {
-            "unchanged_poll_limit": cli_limit,
-            "after_limit": "exit_goal_loop" if cli_limit is not None else "continue",
-            "final_quota_replan_check": final_replan_check,
-            "no_spend_for_exit": True,
-        }
-        codex_app_ssh_goal = {
+        codex_goal_loop = {
             "unchanged_poll_limit": cli_limit,
             "after_limit": (
-                "block_host_goal_keep_loopx"
+                CODEX_NATIVE_GOAL_BLOCK_ACTION
                 if cli_limit is not None
                 else "continue"
             ),
             "final_quota_replan_check": final_replan_check,
             "loopx_goal_state": "remains_active",
-            "resume_trigger": "explicit_host_resume_or_material_transition",
+            "resume_trigger": CODEX_NATIVE_GOAL_RESUME_TRIGGER,
             "no_spend_for_block": True,
         }
+        codex_cli_tui = {
+            **codex_goal_loop,
+            "no_spend_for_exit": True,
+        }
+        codex_app_ssh_goal = dict(codex_goal_loop)
         claude_code_loop = {
             "unchanged_poll_limit": claude_limit,
             "after_limit": "stop_loop" if claude_limit is not None else "continue",

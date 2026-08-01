@@ -521,8 +521,8 @@ def _codex_app_ssh_activation(commands: dict[str, str]) -> dict[str, Any]:
         host_surface="codex_app_ssh_visible_goal_mode",
     )
     activation["success_criteria"].append(
-        "An unchanged wait follows the codex_app_ssh_goal limit, then blocks only "
-        "the host Goal while the registered LoopX goal remains active."
+        "After three unchanged blocked turns, native update_goal marks only the "
+        "host Goal blocked; LoopX remains active until user /goal resume."
     )
     return activation
 

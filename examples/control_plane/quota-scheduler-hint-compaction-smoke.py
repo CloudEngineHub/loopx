@@ -397,9 +397,15 @@ def assert_cli_compact_and_detail_contract() -> None:
         compact["unchanged_poll"]["limits"]["codex_cli_tui"]
     ), detailed
     assert detailed["cold_path_detail"]["codex_cli_tui"]["final_quota_replan_check"], detailed
+    assert detailed["cold_path_detail"]["codex_cli_tui"]["after_limit"] == (
+        compact["unchanged_poll"]["after_limits"]["codex_cli_tui"]
+    ), detailed
     assert detailed["cold_path_detail"]["codex_app_ssh_goal"]["after_limit"] == (
         compact["unchanged_poll"]["after_limits"]["codex_app_ssh_goal"]
     ), detailed
+    assert compact["unchanged_poll"]["after_limits"]["codex_cli_tui"] == (
+        compact["unchanged_poll"]["after_limits"]["codex_app_ssh_goal"]
+    ), compact
     assert detailed["cold_path_detail"]["claude_code_loop"]["after_limit"] == (
         compact["unchanged_poll"]["after_limits"]["claude_code_loop"]
     ), detailed

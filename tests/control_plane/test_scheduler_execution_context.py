@@ -240,10 +240,18 @@ def test_codex_app_runtime_profile_preserves_host_backoff() -> None:
     assert hint["cold_path_detail"]["execution_phase"]["apply_needed"] is True
 
 
-def test_codex_app_ssh_monitor_wait_blocks_only_host_goal_after_limit() -> None:
-    context = scheduler_execution_context_for_runtime_profile(
-        SchedulerRuntimeProfile.CODEX_APP_SSH_VISIBLE
-    )
+@pytest.mark.parametrize(
+    ("profile", "runtime_key"),
+    (
+        (SchedulerRuntimeProfile.CODEX_APP_SSH_VISIBLE, "codex_app_ssh_goal"),
+        (SchedulerRuntimeProfile.CODEX_CLI_VISIBLE, "codex_cli_tui"),
+    ),
+)
+def test_native_codex_goal_monitor_wait_uses_blocked_status_after_limit(
+    profile: SchedulerRuntimeProfile,
+    runtime_key: str,
+) -> None:
+    context = scheduler_execution_context_for_runtime_profile(profile)
     hint = build_scheduler_hint(
         _monitor_wait_payload(),
         include_detail=True,
@@ -251,15 +259,13 @@ def test_codex_app_ssh_monitor_wait_blocks_only_host_goal_after_limit() -> None:
     )
 
     unchanged = hint["unchanged_poll"]
-    assert unchanged["limits"]["codex_app_ssh_goal"] == 3
-    assert unchanged["after_limits"]["codex_app_ssh_goal"] == (
-        "block_host_goal_keep_loopx"
+    assert unchanged["limits"][runtime_key] == 3
+    assert unchanged["after_limits"][runtime_key] == (
+        "update_goal_blocked_keep_loopx_active"
     )
-    host_detail = hint["cold_path_detail"]["codex_app_ssh_goal"]
+    host_detail = hint["cold_path_detail"][runtime_key]
     assert host_detail["loopx_goal_state"] == "remains_active"
-    assert host_detail["resume_trigger"] == (
-        "explicit_host_resume_or_material_transition"
-    )
+    assert host_detail["resume_trigger"] == "explicit_codex_goal_resume"
     assert host_detail["no_spend_for_block"] is True
 
 

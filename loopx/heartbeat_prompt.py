@@ -64,13 +64,14 @@ RUNTIME_EXECUTION_ROUTING_RULE = (
     "Normal turns use CLI `interaction_contract`; use `loopx-project` for "
     "lifecycle/registry and `loopx-self-repair` for runtime/projection drift."
 )
-VISIBLE_GOAL_UNCHANGED_WAIT_RULE = """
+CODEX_NATIVE_GOAL_UNCHANGED_WAIT_RULE = """
 
-Scheduler hints must not mutate host automation here, but their matching
-`scheduler_hint.unchanged_poll` host limit is executable. For
-`codex_app_ssh_goal`, rerun quota once at the limit; if it is still unchanged,
-block this host Goal without spending or completing the registered LoopX goal.
-Resume it only for explicit user input or a material transition."""
+Native Codex `/goal` owns its blocked state. At the matching
+`scheduler_hint.unchanged_poll` limit, rerun quota once. If the same blocking
+condition remains for the third consecutive Goal turn and no meaningful progress
+is possible, call `update_goal` with `status=blocked`. This stops native Goal
+continuation without spending or completing LoopX. Only user `/goal resume`
+reactivates it; rerun quota after resume."""
 INTERFACE_BUDGET_CHARS = {
     "full": 12_000,
     "compact": 6_200,
@@ -1104,7 +1105,7 @@ def render_visible_goal_task_body(
         material_queue_rule=material_queue_rule,
         permission_rule=permission_rule,
         agent_scope_instruction=agent_scope_instruction,
-        host_wait_rule=VISIBLE_GOAL_UNCHANGED_WAIT_RULE,
+        host_wait_rule=CODEX_NATIVE_GOAL_UNCHANGED_WAIT_RULE,
     )
 
 

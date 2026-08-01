@@ -648,8 +648,8 @@ of an error string.
       },
       "after_limits": {
         "local_scheduler": "stop_tick_loop",
-        "codex_cli_tui": "exit_goal_loop",
-        "codex_app_ssh_goal": "block_host_goal_keep_loopx",
+        "codex_cli_tui": "update_goal_blocked_keep_loopx_active",
+        "codex_app_ssh_goal": "update_goal_blocked_keep_loopx_active",
         "claude_code_loop": "stop_loop"
       },
       "final_quota_replan_check_enabled": true,
@@ -949,9 +949,12 @@ and migration support only: a host or agent that forgets
 `--include-detail scheduler` must still retain the core scheduling abilities by
 reading the default hot-path fields named in
 `scheduler_hint.detail_ref.hot_path_runtime_fields`.
-For `codex_app_ssh_goal`, the after-limit action blocks only the current host
-Goal. The registered LoopX goal stays active and may resume on explicit user
-input or a material transition; the final check and host block do not spend.
+For native Codex `/goal` runtimes (`codex_cli_tui` and
+`codex_app_ssh_goal`), the after-limit action calls `update_goal` with
+`status=blocked` only after the same blocked condition has repeated for three
+consecutive Goal turns. The registered LoopX goal stays active, the user resumes
+the native Goal with `/goal resume`, and neither the final check nor the blocked
+transition spends LoopX quota.
 The response also includes `execution_obligation`, which is the compatibility
 field that separates worker execution from user-facing notification.
 `heartbeat_recommendation.notify` answers "should this heartbeat interrupt the

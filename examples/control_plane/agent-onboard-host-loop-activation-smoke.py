@@ -94,7 +94,7 @@ def main() -> int:
     assert codex_app_ssh["activation_method"] == "set_visible_goal", codex_app_ssh
     assert codex_app_ssh["host_surface"] == "codex_app_ssh_visible_goal_mode", codex_app_ssh
     assert any(
-        "blocks only the host Goal" in criterion
+        "native update_goal marks only the host Goal blocked" in criterion
         for criterion in codex_app_ssh["success_criteria"]
     ), codex_app_ssh
     assert "--runtime-profile codex_app_ssh_goal" in (
@@ -379,8 +379,13 @@ def main() -> int:
         assert "not a heartbeat automation" in app_ssh_prompt["task_body"], app_ssh_prompt
         assert "host_action=" not in app_ssh_prompt["task_body"], app_ssh_prompt
         assert "automation_update stop" not in app_ssh_prompt["task_body"], app_ssh_prompt
-        assert "block this host Goal" in app_ssh_prompt["task_body"], app_ssh_prompt
-        assert "completing the registered LoopX goal" in (
+        assert "call `update_goal` with `status=blocked`" in (
+            app_ssh_prompt["task_body"]
+        ), app_ssh_prompt
+        assert "Only user `/goal resume`" in (
+            app_ssh_prompt["task_body"]
+        ), app_ssh_prompt
+        assert "reactivates it; rerun quota after resume" in (
             app_ssh_prompt["task_body"]
         ), app_ssh_prompt
         app_ssh_quota_argv = shlex.split(app_ssh_prompt["quota_guard_command"])
