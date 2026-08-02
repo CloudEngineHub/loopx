@@ -52,9 +52,16 @@ def assert_compact_monitor_poll_decisions(payload: dict) -> None:
     summary = payload["decision_summary"]
     assert payload["before"] == summary["before"], payload
     assert "work_lane_contract" not in payload["before"], payload
+    assert "interaction_contract" not in payload["before"], payload
     if isinstance(payload.get("after"), dict):
-        assert payload["after"] == summary["after"], payload
-        assert "interaction_contract" not in payload["after"], payload
+        assert payload["after"] != summary["after"], payload
+        assert "interaction_contract" not in summary["after"], payload
+        contract = payload["after"]["interaction_contract"]
+        assert contract["agent_channel"]["must_attempt"] is payload["after"][
+            "should_run"
+        ], payload
+        assert "required_reads" not in contract["agent_channel"], payload
+        assert "next_cli_actions" not in contract["cli_channel"], payload
     decisions = payload["payload_compaction"]["decisions"]
     assert decisions["detail_ref"]["request"] == (
         "quota monitor-poll --include-detail decisions"

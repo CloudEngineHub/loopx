@@ -4,7 +4,6 @@ from typing import Any
 
 from .decision_summary import compact_quota_decision
 
-
 QUOTA_CLI_TODO_SUMMARY_COMPACTION_SCHEMA_VERSION = (
     "quota_cli_todo_summary_compaction_v0"
 )
@@ -98,6 +97,48 @@ _RETAINED_MONITOR_POLL_SELECTED_TODO_FIELDS = (
     "claimed_by",
     "selected_by",
 )
+_RETAINED_MONITOR_POLL_INTERACTION_FIELDS = {
+    "user_channel": (
+        "action_required",
+        "notify",
+    ),
+    "agent_channel": (
+        "must_attempt",
+        "delivery_allowed",
+        "quiet_noop_allowed",
+    ),
+    "cli_channel": (
+        "spend_allowed_now",
+        "spend_after_validation",
+    ),
+}
+_RETAINED_MONITOR_POLL_FOLLOW_UP_SUMMARY_FIELDS = (
+    "should_run",
+    "effective_action",
+    "state",
+)
+
+
+def _compact_monitor_poll_interaction_contract(
+    contract: Any,
+) -> dict[str, Any] | None:
+    if not isinstance(contract, dict):
+        return None
+    compact = {
+        key: contract[key]
+        for key in ("schema_version", "mode")
+        if key in contract
+    }
+    for channel_name, retained_fields in (
+        _RETAINED_MONITOR_POLL_INTERACTION_FIELDS.items()
+    ):
+        channel = contract.get(channel_name)
+        if not isinstance(channel, dict):
+            continue
+        compact[channel_name] = {
+            key: channel[key] for key in retained_fields if key in channel
+        }
+    return compact
 
 
 def _compact_monitor_poll_decision(decision: dict[str, Any]) -> dict[str, Any]:
@@ -132,9 +173,24 @@ def compact_quota_monitor_poll_cli_payload(
     for phase in ("before", "after"):
         full_decision = payload.get(phase)
         if isinstance(full_decision, dict):
-            compact_decision = _compact_monitor_poll_decision(full_decision)
+            summary_decision = _compact_monitor_poll_decision(full_decision)
+            compact_decision = summary_decision
+            if phase == "after":
+                compact_decision = dict(summary_decision)
+                interaction_contract = _compact_monitor_poll_interaction_contract(
+                    full_decision.get("interaction_contract")
+                )
+                if interaction_contract is not None:
+                    compact_decision["interaction_contract"] = interaction_contract
             projected[phase] = compact_decision
-            decision_summary[phase] = compact_decision
+            decision_summary[phase] = (
+                {
+                    key: summary_decision[key]
+                    for key in _RETAINED_MONITOR_POLL_FOLLOW_UP_SUMMARY_FIELDS
+                }
+                if phase == "after"
+                else summary_decision
+            )
             omitted_fields[phase] = max(0, len(full_decision) - len(compact_decision))
 
             if phase == "before" and isinstance(payload.get("monitor_event"), dict):
