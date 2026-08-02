@@ -196,6 +196,28 @@ def _write_plan(path: Path, plan: Mapping[str, Any]) -> None:
     os.replace(temporary_path, path)
 
 
+def _configured_remotes(repo: Path, plan: Mapping[str, Any]) -> list[str]:
+    known_remotes = set(_git(repo, "remote").stdout.split())
+    configured_refs = [str(plan["base_ref"]), *map(str, plan["source_refs"])]
+    remotes: list[str] = []
+    for ref in configured_refs:
+        normalized = ref.removeprefix("refs/remotes/")
+        candidate, separator, _ = normalized.partition("/")
+        if separator and candidate in known_remotes and candidate not in remotes:
+            remotes.append(candidate)
+    return remotes
+
+
+def _refresh_configured_remotes(
+    repo: Path,
+    plan: Mapping[str, Any],
+) -> dict[str, Any]:
+    remotes = _configured_remotes(repo, plan)
+    for remote in remotes:
+        _git(repo, "fetch", "--no-tags", "--prune", remote)
+    return {"requested": True, "remotes": remotes}
+
+
 def _resolved_state(repo: Path, plan: Mapping[str, Any]) -> dict[str, Any]:
     integration_branch = str(plan["integration_branch"])
     return {
@@ -346,11 +368,17 @@ def integration_branch_status(
     *,
     repo_path: str | Path,
     plan_file: str | Path | None = None,
+    refresh_remotes: bool = False,
 ) -> dict[str, Any]:
     repo = _repository_root(repo_path)
     path = _plan_path(repo, plan_file)
     _assert_ignored_plan(repo, path)
     plan = _read_plan(repo, path)
+    remote_refresh = (
+        _refresh_configured_remotes(repo, plan)
+        if refresh_remotes
+        else {"requested": False, "remotes": []}
+    )
     resolved = _resolved_state(repo, plan)
     reasons = _drift_reasons(plan, resolved)
     return {
@@ -362,7 +390,11 @@ def integration_branch_status(
         "plan": plan,
         "resolved": resolved,
         "drift_reasons": reasons,
-        "write_boundary": "read-only local git refs and ignored plan",
+        "remote_refresh": remote_refresh,
+        "write_boundary": (
+            "read-only integration inputs; optional remote refresh updates only "
+            "remote-tracking refs"
+        ),
     }
 
 
@@ -571,10 +603,15 @@ def sync_integration_branch(
     repo_path: str | Path,
     plan_file: str | Path | None = None,
     candidate_ref: str | None = None,
+    refresh_remotes: bool = False,
     execute: bool = False,
 ) -> dict[str, Any]:
     repo = _repository_root(repo_path)
-    status = integration_branch_status(repo_path=repo, plan_file=plan_file)
+    status = integration_branch_status(
+        repo_path=repo,
+        plan_file=plan_file,
+        refresh_remotes=refresh_remotes,
+    )
     if not status["sync_required"]:
         integration_sha = status["resolved"]["integration"]["sha"]
         return {
@@ -676,6 +713,7 @@ def sync_integration_branch(
     }
     _write_plan(Path(status["plan_file"]), plan)
     refreshed = integration_branch_status(repo_path=repo, plan_file=plan_file)
+    refreshed["remote_refresh"] = status["remote_refresh"]
     if refreshed["sync_required"]:
         raise IntegrationBranchError(
             "integration branch sync did not produce an in-sync readback"
