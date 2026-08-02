@@ -497,6 +497,13 @@ def assert_material_transition_followup() -> None:
         assert event["reason_summary"] == "due monitor observation produced a material transition", event
         assert "due monitor material transition observed" in payload["health_check"], payload
         assert "unchanged" not in payload["health_check"], payload
+        compact_after = payload["after"]
+        assert compact_after["selected_todo"]["todo_id"] == successor_id, compact_after
+        assert compact_after["selected_todo"]["unblocks_todo_id"] == TODO_ID, compact_after
+        compact_contract = compact_after["interaction_contract"]
+        assert compact_contract["agent_channel"]["must_attempt"] is True, compact_contract
+        assert compact_contract["agent_channel"]["primary_action"], compact_contract
+        assert compact_contract["cli_channel"]["spend_after_validation"] is True, compact_contract
 
         handoff = run_cli(
             registry_path,
@@ -610,6 +617,11 @@ def assert_due_monitor_poll_allowed_with_open_user_gate() -> None:
         assert payload["agent_id"] == AGENT_ID, payload
         assert payload["todo_id"] == TODO_ID, payload
         assert payload["target_key"] == TARGET_KEY, payload
+        user_channel = payload["after"]["interaction_contract"]["user_channel"]
+        assert user_channel["action_required"] is True, user_channel
+        assert user_channel["notify"] == "NOTIFY", user_channel
+        assert user_channel["actions"], user_channel
+        assert "publication gate" in user_channel["actions"][0], user_channel
         item = find_todo(state_file, TODO_ID)
         assert item["consecutive_no_change"] == "2", item
         assert item["next_due_at"] != "2026-01-01T00:00:00+00:00", item

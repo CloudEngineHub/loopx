@@ -9,6 +9,8 @@ from loopx.control_plane.quota.cli_projection import (
     compact_quota_monitor_poll_cli_payload,
 )
 
+MONITOR_POLL_PROJECTION_BUDGET = 6_000
+
 
 def _decision(*, effective_action: str, should_run: bool) -> dict[str, object]:
     return {
@@ -32,11 +34,18 @@ def _decision(*, effective_action: str, should_run: bool) -> dict[str, object]:
         },
         "selected_todo": {
             "schema_version": "quota_selected_todo_v0",
+            "source": "capability_gate.runnable_candidates",
             "todo_id": "todo_monitor",
+            "index": 7,
+            "role": "agent",
+            "priority": "P1",
             "status": "open",
             "task_class": "continuous_monitor",
             "action_kind": "pr_review_monitor",
+            "task_repository": "git:github.com/example/loopx",
             "claimed_by": "agent-a",
+            "unblocks_todo_id": "todo_parent",
+            "agent_id": "agent-a",
             "selected_by": "current_agent_claimed_todo",
             "text": "Monitor a verbose external target without copying this text.",
         },
@@ -46,10 +55,14 @@ def _decision(*, effective_action: str, should_run: bool) -> dict[str, object]:
         },
         "interaction_contract": {
             "schema_version": "interaction_contract_v0",
-            "mode": "DONT_NOTIFY",
+            "mode": "NOTIFY",
             "user_channel": {
                 "action_required": False,
-                "notify": "DONT_NOTIFY",
+                "notify": "NOTIFY",
+                "max_items": 3,
+                "actions": ["Review the updated public contract."],
+                "non_blocking": True,
+                "reason": "This explanation remains on the cold path.",
                 "diagnostic": "u" * 60_000,
             },
             "agent_channel": {
@@ -57,13 +70,29 @@ def _decision(*, effective_action: str, should_run: bool) -> dict[str, object]:
                 "delivery_allowed": should_run,
                 "quiet_noop_allowed": not should_run,
                 "primary_action": "Continue." if should_run else "Wait.",
+                "resolution_trace": {"summary": "source=agent_lane"},
                 "diagnostic": "a" * 60_000,
             },
             "cli_channel": {
                 "spend_allowed_now": False,
                 "spend_after_validation": should_run,
                 "spend_policy": "spend once" if should_run else "do not spend",
+                "delivery_workspace_causality": {
+                    "schema_version": "delivery_workspace_causality_v0",
+                    "refresh": "delivery_workspace",
+                    "spend": "recorded_delivery_workspace",
+                    "mismatch": "fail_closed",
+                },
+                "next_cli_actions": ["verbose cold-path command"],
                 "diagnostic": "c" * 60_000,
+            },
+            "response_plan": {
+                "schema_version": "interaction_response_plan_v0",
+                "kind": "surface_user_gate",
+                "decision": "ask_user",
+                "action_sequence": ["notify", "wait"],
+                "silent_wait_allowed": False,
+                "diagnostic": "r" * 60_000,
             },
             "diagnostic": "y" * 60_000,
         },
@@ -108,11 +137,18 @@ def test_monitor_poll_default_projection_is_bounded_and_semantically_aligned(
     assert projected["before"]["effective_action"] == "monitor_quiet_skip"
     assert projected["before"]["selected_todo"] == {
         "schema_version": "quota_selected_todo_v0",
+        "source": "capability_gate.runnable_candidates",
         "todo_id": "todo_monitor",
+        "index": 7,
+        "role": "agent",
+        "priority": "P1",
         "status": "open",
         "task_class": "continuous_monitor",
         "action_kind": "pr_review_monitor",
+        "task_repository": "git:github.com/example/loopx",
         "claimed_by": "agent-a",
+        "unblocks_todo_id": "todo_parent",
+        "agent_id": "agent-a",
         "selected_by": "current_agent_claimed_todo",
     }
     assert "work_lane_contract" not in projected["before"]
@@ -127,27 +163,52 @@ def test_monitor_poll_default_projection_is_bounded_and_semantically_aligned(
         assert projected["after"]["effective_action"] == "autonomous_replan_required"
         assert projected["after"]["interaction_contract"] == {
             "schema_version": "interaction_contract_v0",
-            "mode": "DONT_NOTIFY",
+            "mode": "NOTIFY",
             "user_channel": {
                 "action_required": False,
-                "notify": "DONT_NOTIFY",
+                "notify": "NOTIFY",
+                "max_items": 3,
+                "actions": ["Review the updated public contract."],
+                "non_blocking": True,
             },
             "agent_channel": {
                 "must_attempt": True,
                 "delivery_allowed": True,
                 "quiet_noop_allowed": False,
+                "primary_action": "Continue.",
             },
             "cli_channel": {
                 "spend_allowed_now": False,
                 "spend_after_validation": True,
+                "spend_policy": "spend once",
+                "delivery_workspace_causality": {
+                    "schema_version": "delivery_workspace_causality_v0",
+                    "refresh": "delivery_workspace",
+                    "spend": "recorded_delivery_workspace",
+                    "mismatch": "fail_closed",
+                },
+            },
+            "response_plan": {
+                "schema_version": "interaction_response_plan_v0",
+                "kind": "surface_user_gate",
+                "decision": "ask_user",
+                "action_sequence": ["notify", "wait"],
+                "silent_wait_allowed": False,
             },
         }
+        compact_contract = projected["after"]["interaction_contract"]
+        assert "reason" not in compact_contract["user_channel"]
+        assert "resolution_trace" not in compact_contract["agent_channel"]
+        assert "next_cli_actions" not in compact_contract["cli_channel"]
     else:
         assert projected["after"] is None
         assert projected["decision_summary"]["after"] is None
     detail_ref = projected["payload_compaction"]["decisions"]["detail_ref"]
     assert detail_ref["request"] == QUOTA_CLI_MONITOR_POLL_DECISION_DETAIL_COMMAND
-    assert len(json.dumps(projected, ensure_ascii=False, indent=2)) < 4_000
+    assert (
+        len(json.dumps(projected, ensure_ascii=False, indent=2))
+        < MONITOR_POLL_PROJECTION_BUDGET
+    )
     assert payload["before"] is before
     assert "work_lane_contract" in payload["before"]
 
