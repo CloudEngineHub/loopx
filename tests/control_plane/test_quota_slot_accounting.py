@@ -15,6 +15,23 @@ from loopx.control_plane.quota.slot_accounting import (
 GOAL_ID = "quota-slot-accounting-fixture"
 AGENT_A = "codex-monitor-a"
 AGENT_B = "codex-monitor-b"
+SAFE_BYPASS_CASES = (
+    pytest.param(
+        {"state": "operator_gate", "safe_bypass_allowed": True},
+        id="operator-gate",
+    ),
+    pytest.param(
+        {"recovery_delivery_allowed": True, "safe_bypass_allowed": True},
+        id="recovery-delivery",
+    ),
+    pytest.param(
+        {
+            "effective_action": "outcome_floor_recovery",
+            "safe_bypass_allowed": True,
+        },
+        id="outcome-floor-recovery",
+    ),
+)
 
 
 def _write_run_index(runtime: Path, records: list[dict[str, Any]]) -> None:
@@ -124,18 +141,14 @@ def test_unchanged_monitor_poll_is_not_accountable_delivery(tmp_path: Path) -> N
     assert _preview(runtime)["ok"] is False
 
 
-def test_operator_gate_safe_bypass_rejects_no_accountable_writeback(
+@pytest.mark.parametrize("before_overrides", SAFE_BYPASS_CASES)
+def test_safe_bypass_rejects_no_accountable_writeback(
     tmp_path: Path,
+    before_overrides: dict[str, Any],
 ) -> None:
     runtime = tmp_path / "runtime"
 
-    preview = _preview(
-        runtime,
-        before_overrides={
-            "state": "operator_gate",
-            "safe_bypass_allowed": True,
-        },
-    )
+    preview = _preview(runtime, before_overrides=before_overrides)
 
     assert preview["ok"] is False
     assert "requires a latest unspent accountable delivery writeback" in preview[
@@ -143,28 +156,23 @@ def test_operator_gate_safe_bypass_rejects_no_accountable_writeback(
     ]
 
 
-def test_operator_gate_safe_bypass_accepts_accountable_writeback(
+@pytest.mark.parametrize("before_overrides", SAFE_BYPASS_CASES)
+def test_safe_bypass_consumes_accountable_writeback_once(
     tmp_path: Path,
+    before_overrides: dict[str, Any],
 ) -> None:
     runtime = tmp_path / "runtime"
+    delivery = _run(
+        "2026-01-01T00:01:00+00:00",
+        classification="validated_fallback",
+        delivery_outcome="outcome_progress",
+    )
     _write_run_index(
         runtime,
-        [
-            _run(
-                "2026-01-01T00:01:00+00:00",
-                classification="validated_fallback",
-                delivery_outcome="outcome_progress",
-            )
-        ],
+        [delivery],
     )
 
-    preview = _preview(
-        runtime,
-        before_overrides={
-            "state": "operator_gate",
-            "safe_bypass_allowed": True,
-        },
-    )
+    preview = _preview(runtime, before_overrides=before_overrides)
 
     assert preview["ok"] is True
     assert preview["safe_bypass_spend"] is True
@@ -173,15 +181,19 @@ def test_operator_gate_safe_bypass_accepts_accountable_writeback(
         preview,
         self_repair_spend_actions=frozenset(),
     )
-    assert event["health_check"] == (
-        "quota safe-bypass operator gate; quota slot spend event public-safe"
-    )
+    assert "safe-bypass" in event["health_check"]
 
     with pytest.raises(ValueError, match="requires an eligible"):
         build_quota_slot_spend_event(
             {**preview, "safe_bypass_spend": False},
             self_repair_spend_actions=frozenset(),
         )
+
+    _write_run_index(
+        runtime,
+        [delivery, _spent("2026-01-01T00:02:00+00:00")],
+    )
+    assert _preview(runtime, before_overrides=before_overrides)["ok"] is False
 
 
 def test_material_monitor_poll_builds_attributed_spend_event(tmp_path: Path) -> None:
