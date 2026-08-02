@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .decision_summary import compact_quota_decision
+
 
 QUOTA_CLI_TODO_SUMMARY_COMPACTION_SCHEMA_VERSION = (
     "quota_cli_todo_summary_compaction_v0"
@@ -27,6 +29,12 @@ QUOTA_CLI_VISION_COMPACTION_SCHEMA_VERSION = (
 QUOTA_CLI_VISION_DETAIL_COMMAND = "quota should-run --include-detail vision"
 QUOTA_CLI_CAPABILITY_GATE_COMPACTION_SCHEMA_VERSION = (
     "quota_cli_capability_gate_compaction_v0"
+)
+QUOTA_CLI_MONITOR_POLL_DECISION_COMPACTION_SCHEMA_VERSION = (
+    "quota_cli_monitor_poll_decision_compaction_v0"
+)
+QUOTA_CLI_MONITOR_POLL_DECISION_DETAIL_COMMAND = (
+    "quota monitor-poll --include-detail decisions"
 )
 _RETAINED_AGENT_ITEM_LANES = {
     "first_executable_items": 3,
@@ -81,6 +89,76 @@ _RUNTIME_CAPABILITY_PREFIX_FIELDS = (
     "decision",
     "should_run",
 )
+_RETAINED_MONITOR_POLL_SELECTED_TODO_FIELDS = (
+    "schema_version",
+    "todo_id",
+    "status",
+    "task_class",
+    "action_kind",
+    "claimed_by",
+    "selected_by",
+)
+
+
+def _compact_monitor_poll_decision(decision: dict[str, Any]) -> dict[str, Any]:
+    compact = compact_quota_decision(decision)
+    selected_todo = decision.get("selected_todo")
+    if isinstance(selected_todo, dict):
+        compact["selected_todo"] = {
+            key: selected_todo[key]
+            for key in _RETAINED_MONITOR_POLL_SELECTED_TODO_FIELDS
+            if key in selected_todo
+        }
+    return compact
+
+
+def compact_quota_monitor_poll_cli_payload(
+    payload: dict[str, Any],
+    *,
+    include_decision_detail: bool = False,
+) -> dict[str, Any]:
+    """Project monitor-poll guards without duplicating full should-run payloads."""
+
+    if include_decision_detail:
+        return payload
+
+    projected = dict(payload)
+    decision_summary = (
+        dict(payload["decision_summary"])
+        if isinstance(payload.get("decision_summary"), dict)
+        else {}
+    )
+    omitted_fields: dict[str, int] = {}
+    for phase in ("before", "after"):
+        full_decision = payload.get(phase)
+        if isinstance(full_decision, dict):
+            compact_decision = _compact_monitor_poll_decision(full_decision)
+            projected[phase] = compact_decision
+            decision_summary[phase] = compact_decision
+            omitted_fields[phase] = max(0, len(full_decision) - len(compact_decision))
+
+            if phase == "before" and isinstance(payload.get("monitor_event"), dict):
+                monitor_event = dict(payload["monitor_event"])
+                monitor_event["before"] = compact_decision
+                projected["monitor_event"] = monitor_event
+
+    if decision_summary:
+        projected["decision_summary"] = decision_summary
+    if omitted_fields:
+        payload_compaction = (
+            dict(payload["payload_compaction"])
+            if isinstance(payload.get("payload_compaction"), dict)
+            else {}
+        )
+        payload_compaction["decisions"] = {
+            "schema_version": QUOTA_CLI_MONITOR_POLL_DECISION_COMPACTION_SCHEMA_VERSION,
+            "omitted_top_level_fields": omitted_fields,
+            "detail_ref": {
+                "request": QUOTA_CLI_MONITOR_POLL_DECISION_DETAIL_COMMAND,
+            },
+        }
+        projected["payload_compaction"] = payload_compaction
+    return projected
 
 
 def _compact_agent_item(item: Any) -> Any:
