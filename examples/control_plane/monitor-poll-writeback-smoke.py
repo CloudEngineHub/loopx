@@ -45,6 +45,29 @@ AGENT_ID = "codex-product-capability"
 TODO_ID = "todo_monitorpoll000"
 TARGET_KEY = "update-note-draft-pr"
 OTHER_TARGET_KEY = "other-monitor-target"
+MONITOR_POLL_JSON_BUDGET = 40_000
+
+
+def assert_compact_monitor_poll_decisions(payload: dict) -> None:
+    summary = payload["decision_summary"]
+    assert payload["before"] == summary["before"], payload
+    assert "work_lane_contract" not in payload["before"], payload
+    assert "interaction_contract" not in payload["before"], payload
+    if isinstance(payload.get("after"), dict):
+        assert payload["after"] != summary["after"], payload
+        assert "interaction_contract" not in summary["after"], payload
+        contract = payload["after"]["interaction_contract"]
+        assert contract["agent_channel"]["must_attempt"] is payload["after"][
+            "should_run"
+        ], payload
+        assert "required_reads" not in contract["agent_channel"], payload
+        assert "next_cli_actions" not in contract["cli_channel"], payload
+    decisions = payload["payload_compaction"]["decisions"]
+    assert decisions["detail_ref"]["request"] == (
+        "quota monitor-poll --include-detail decisions"
+    ), payload
+    rendered = json.dumps(payload, ensure_ascii=False, indent=2)
+    assert len(rendered) <= MONITOR_POLL_JSON_BUDGET, len(rendered)
 
 
 def write_promotion_readiness(runtime: Path) -> None:
@@ -340,12 +363,7 @@ def assert_unchanged_writeback() -> None:
         assert "no quota spend" in payload["health_check"], payload
         summary = payload["decision_summary"]
         assert summary["before"] == payload["monitor_event"]["before"], payload
-        assert summary["before"]["effective_action"] == payload["before"]["effective_action"], payload
-        assert "work_lane_contract" not in summary["before"], payload
-        assert payload["before"]["work_lane_contract"]["obligation"] == "attempt_due_monitor", payload
-        assert summary["after"]["effective_action"] == payload["after"]["effective_action"], payload
-        assert "interaction_contract" not in summary["after"], payload
-        assert payload["after"]["interaction_contract"]["mode"] == "autonomous_replan", payload
+        assert_compact_monitor_poll_decisions(payload)
         records = monitor_poll_records(registry_path)
         assert [record["classification"] for record in records] == ["quota_monitor_poll"], records
 
@@ -622,6 +640,7 @@ def assert_target_key_cannot_hijack_selected_due_monitor() -> None:
         )
         assert payload["ok"] is False, payload
         assert "monitor-poll requires" in payload["reason"], payload
+        assert_compact_monitor_poll_decisions(payload)
         markdown = run_cli_markdown_expect_error(
             registry_path,
             "quota",
@@ -694,6 +713,8 @@ def assert_compacted_auxiliary_due_monitor_can_write_back() -> None:
             OTHER_TARGET_KEY,
             "--result-hash",
             "old",
+            "--include-detail",
+            "decisions",
             "--execute",
         )
         assert payload["ok"] is True, payload
@@ -744,6 +765,8 @@ def assert_capability_gated_monitor_poll_requires_declaration_parity() -> None:
             TARGET_KEY,
             "--result-hash",
             "old",
+            "--include-detail",
+            "decisions",
         )
         assert "monitor-poll recomputes should-run" in failure["reason"], failure
         retry = failure["capability_retry"]
@@ -777,6 +800,8 @@ def assert_capability_gated_monitor_poll_requires_declaration_parity() -> None:
             TARGET_KEY,
             "--result-hash",
             "old",
+            "--include-detail",
+            "decisions",
         )
         assert success["ok"] is True, success
         assert success["before"]["work_lane_contract"]["obligation"] == "attempt_due_monitor", success
@@ -913,6 +938,8 @@ def cli_monitor_poll_scheduler_hints(registry_path: Path, *scheduler_args: str) 
         GOAL_ID,
         "--agent-id",
         AGENT_ID,
+        "--include-detail",
+        "decisions",
         *scheduler_args,
         "--todo-id",
         TODO_ID,
