@@ -45,7 +45,26 @@ def _decision(*, effective_action: str, should_run: bool) -> dict[str, object]:
             "diagnostic": "x" * 60_000,
         },
         "interaction_contract": {
+            "schema_version": "interaction_contract_v0",
             "mode": "DONT_NOTIFY",
+            "user_channel": {
+                "action_required": False,
+                "notify": "DONT_NOTIFY",
+                "diagnostic": "u" * 60_000,
+            },
+            "agent_channel": {
+                "must_attempt": should_run,
+                "delivery_allowed": should_run,
+                "quiet_noop_allowed": not should_run,
+                "primary_action": "Continue." if should_run else "Wait.",
+                "diagnostic": "a" * 60_000,
+            },
+            "cli_channel": {
+                "spend_allowed_now": False,
+                "spend_after_validation": should_run,
+                "spend_policy": "spend once" if should_run else "do not spend",
+                "diagnostic": "c" * 60_000,
+            },
             "diagnostic": "y" * 60_000,
         },
     }
@@ -97,10 +116,32 @@ def test_monitor_poll_default_projection_is_bounded_and_semantically_aligned(
         "selected_by": "current_agent_claimed_todo",
     }
     assert "work_lane_contract" not in projected["before"]
+    assert "interaction_contract" not in projected["before"]
     if has_after:
-        assert projected["after"] == projected["decision_summary"]["after"]
+        assert projected["after"] != projected["decision_summary"]["after"]
+        assert projected["decision_summary"]["after"] == {
+            "should_run": True,
+            "effective_action": "autonomous_replan_required",
+            "state": "active",
+        }
         assert projected["after"]["effective_action"] == "autonomous_replan_required"
-        assert "interaction_contract" not in projected["after"]
+        assert projected["after"]["interaction_contract"] == {
+            "schema_version": "interaction_contract_v0",
+            "mode": "DONT_NOTIFY",
+            "user_channel": {
+                "action_required": False,
+                "notify": "DONT_NOTIFY",
+            },
+            "agent_channel": {
+                "must_attempt": True,
+                "delivery_allowed": True,
+                "quiet_noop_allowed": False,
+            },
+            "cli_channel": {
+                "spend_allowed_now": False,
+                "spend_after_validation": True,
+            },
+        }
     else:
         assert projected["after"] is None
         assert projected["decision_summary"]["after"] is None
