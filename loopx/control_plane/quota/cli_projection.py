@@ -35,6 +35,9 @@ QUOTA_CLI_MONITOR_POLL_DECISION_COMPACTION_SCHEMA_VERSION = (
 QUOTA_CLI_MONITOR_POLL_DECISION_DETAIL_COMMAND = (
     "quota monitor-poll --include-detail decisions"
 )
+QUOTA_CLI_SHADOWED_ACTION_COMPACTION_SCHEMA_VERSION = (
+    "quota_cli_shadowed_action_compaction_v0"
+)
 _RETAINED_AGENT_ITEM_LANES = {
     "first_executable_items": 3,
     "unclaimed_priority_open_items": 3,
@@ -506,6 +509,64 @@ def _compact_goal_route_hint(route: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def _compact_shadowed_action_projections(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep the selected Todo as the only executable action on the hot path."""
+
+    selected = payload.get("selected_todo")
+    route = payload.get("goal_route_hint")
+    if not isinstance(selected, dict) or not isinstance(route, dict):
+        return payload
+    current = route.get("current_agent_next_action")
+    if (
+        not route.get("selected_action_differs_from_durable")
+        or not isinstance(current, dict)
+        or current.get("todo_id") != selected.get("todo_id")
+    ):
+        return payload
+
+    shadowed_fields = [
+        key
+        for key in (
+            "active_state_next_action",
+            "latest_run_recommended_action",
+        )
+        if payload.get(key)
+    ]
+    if not shadowed_fields:
+        return payload
+
+    compact = dict(payload)
+    for key in shadowed_fields:
+        compact.pop(key, None)
+
+    warning = compact.get("next_action_projection_warning")
+    if isinstance(warning, dict):
+        compact_warning = dict(warning)
+        projection_refs = compact_warning.get("projection_refs")
+        if isinstance(projection_refs, dict):
+            compact_refs = dict(projection_refs)
+            for key in shadowed_fields:
+                compact_refs.pop(key, None)
+            if compact_refs:
+                compact_warning["projection_refs"] = compact_refs
+            else:
+                compact_warning.pop("projection_refs", None)
+        for key in shadowed_fields:
+            compact_warning.pop(key, None)
+        compact_warning["shadowed_by"] = "$.selected_todo"
+        compact["next_action_projection_warning"] = compact_warning
+
+    compact["shadowed_action_projection"] = {
+        "schema_version": QUOTA_CLI_SHADOWED_ACTION_COMPACTION_SCHEMA_VERSION,
+        "selected_todo_ref": "$.selected_todo",
+        "omitted_fields": shadowed_fields,
+        "full_detail_cold_path": QUOTA_CLI_TODO_SUMMARY_DETAIL_COMMAND,
+    }
+    return compact
+
+
 def _promote_runtime_capability_reentry(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
@@ -601,4 +662,5 @@ def compact_quota_should_run_cli_payload(
         if isinstance(goal_route_hint, dict):
             compact = dict(compact)
             compact["goal_route_hint"] = _compact_goal_route_hint(goal_route_hint)
+        compact = _compact_shadowed_action_projections(compact)
     return _promote_runtime_capability_reentry(compact)
