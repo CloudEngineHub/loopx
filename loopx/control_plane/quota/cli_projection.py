@@ -90,28 +90,48 @@ _RUNTIME_CAPABILITY_PREFIX_FIELDS = (
 )
 _RETAINED_MONITOR_POLL_SELECTED_TODO_FIELDS = (
     "schema_version",
+    "source",
     "todo_id",
+    "index",
+    "role",
+    "priority",
     "status",
     "task_class",
     "action_kind",
+    "task_repository",
     "claimed_by",
+    "unblocks_todo_id",
+    "agent_id",
     "selected_by",
 )
 _RETAINED_MONITOR_POLL_INTERACTION_FIELDS = {
     "user_channel": (
         "action_required",
         "notify",
+        "max_items",
+        "actions",
+        "non_blocking",
     ),
     "agent_channel": (
         "must_attempt",
         "delivery_allowed",
         "quiet_noop_allowed",
+        "primary_action",
     ),
     "cli_channel": (
         "spend_allowed_now",
         "spend_after_validation",
+        "spend_policy",
+        "delivery_workspace_causality",
     ),
 }
+_RETAINED_MONITOR_POLL_RESPONSE_PLAN_FIELDS = (
+    "schema_version",
+    "kind",
+    "decision",
+    "action_sequence",
+    "silent_wait_allowed",
+)
 _RETAINED_MONITOR_POLL_FOLLOW_UP_SUMMARY_FIELDS = (
     "should_run",
     "effective_action",
@@ -137,6 +157,13 @@ def _compact_monitor_poll_interaction_contract(
             continue
         compact[channel_name] = {
             key: channel[key] for key in retained_fields if key in channel
+        }
+    response_plan = contract.get("response_plan")
+    if isinstance(response_plan, dict):
+        compact["response_plan"] = {
+            key: response_plan[key]
+            for key in _RETAINED_MONITOR_POLL_RESPONSE_PLAN_FIELDS
+            if key in response_plan
         }
     return compact
 
