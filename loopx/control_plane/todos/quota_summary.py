@@ -10,6 +10,7 @@ from ..agents.agent_scope import (
     agent_scope_item_claimed_by,
 )
 from ..agents.capability_gate import missing_required_capabilities
+from ..runtime.time import now_utc, parse_timestamp
 from .claim_visibility import (
     build_agent_claim_scoped_open_items,
     build_todo_claim_visibility_lanes,
@@ -636,6 +637,15 @@ def _compact_quota_payload_item(item: Any) -> Any:
     return compact
 
 
+def _quota_payload_item_priority(item: Any, current_time: Any) -> tuple[int, float, int]:
+    if not isinstance(item, dict):
+        return (2, 0.0, 0)
+    next_due_at = parse_timestamp(item.get("next_due_at"))
+    if next_due_at is not None and next_due_at > current_time:
+        return (0, next_due_at.timestamp(), int(item.get("index") or 0))
+    return (1, 0.0, int(item.get("index") or 0))
+
+
 def _compact_quota_payload_item_list(
     items: Any,
     *,
@@ -643,7 +653,12 @@ def _compact_quota_payload_item_list(
 ) -> list[Any]:
     if not isinstance(items, list):
         return []
-    return [_compact_quota_payload_item(item) for item in items[:limit]]
+    current_time = now_utc()
+    ordered = sorted(
+        items,
+        key=lambda item: _quota_payload_item_priority(item, current_time),
+    )
+    return [_compact_quota_payload_item(item) for item in ordered[:limit]]
 
 
 def _compact_quota_payload_claim_scope(value: Any) -> Any:
