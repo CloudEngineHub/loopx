@@ -35,9 +35,6 @@ QUOTA_CLI_MONITOR_POLL_DECISION_COMPACTION_SCHEMA_VERSION = (
 QUOTA_CLI_MONITOR_POLL_DECISION_DETAIL_COMMAND = (
     "quota monitor-poll --include-detail decisions"
 )
-QUOTA_CLI_SHADOWED_ACTION_COMPACTION_SCHEMA_VERSION = (
-    "quota_cli_shadowed_action_compaction_v0"
-)
 _RETAINED_AGENT_ITEM_LANES = {
     "first_executable_items": 3,
     "unclaimed_priority_open_items": 3,
@@ -558,12 +555,6 @@ def _compact_shadowed_action_projections(
         compact_warning["shadowed_by"] = "$.selected_todo"
         compact["next_action_projection_warning"] = compact_warning
 
-    compact["shadowed_action_projection"] = {
-        "schema_version": QUOTA_CLI_SHADOWED_ACTION_COMPACTION_SCHEMA_VERSION,
-        "selected_todo_ref": "$.selected_todo",
-        "omitted_fields": shadowed_fields,
-        "full_detail_cold_path": QUOTA_CLI_TODO_SUMMARY_DETAIL_COMMAND,
-    }
     return compact
 
 
