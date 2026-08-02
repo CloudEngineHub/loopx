@@ -111,6 +111,30 @@ def test_monitor_poll_default_projection_is_bounded_and_semantically_aligned(
     assert "work_lane_contract" in payload["before"]
 
 
+def test_monitor_poll_projection_keeps_nested_event_decision_aligned() -> None:
+    before = _decision(effective_action="monitor_quiet_skip", should_run=False)
+    monitor_event = {
+        "source": "heartbeat",
+        "before": {"effective_action": "stale"},
+    }
+    payload = {
+        "ok": True,
+        "mode": "monitor-poll",
+        "monitor_event": monitor_event,
+        "decision_summary": {"before": {}, "after": None},
+        "before": before,
+        "after": None,
+    }
+
+    projected = compact_quota_monitor_poll_cli_payload(payload)
+
+    assert projected["before"] == projected["decision_summary"]["before"]
+    assert projected["before"] == projected["monitor_event"]["before"]
+    assert projected["monitor_event"]["source"] == "heartbeat"
+    assert payload["monitor_event"] is monitor_event
+    assert monitor_event["before"] == {"effective_action": "stale"}
+
+
 def test_monitor_poll_explicit_cold_path_preserves_full_decisions() -> None:
     before = _decision(effective_action="monitor_quiet_skip", should_run=False)
     after = _decision(effective_action="normal_run", should_run=True)

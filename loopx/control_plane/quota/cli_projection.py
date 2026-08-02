@@ -137,6 +137,11 @@ def compact_quota_monitor_poll_cli_payload(
             decision_summary[phase] = compact_decision
             omitted_fields[phase] = max(0, len(full_decision) - len(compact_decision))
 
+            if phase == "before" and isinstance(payload.get("monitor_event"), dict):
+                monitor_event = dict(payload["monitor_event"])
+                monitor_event["before"] = compact_decision
+                projected["monitor_event"] = monitor_event
+
     if decision_summary:
         projected["decision_summary"] = decision_summary
     if omitted_fields:
