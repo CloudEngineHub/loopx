@@ -195,12 +195,10 @@ def build_quota_slot_preview_for_decision(
         if raw_runtime_root
         else None
     )
-    operator_gate_bypass_without_delivery = (
-        safe_bypass_requested
-        and before.get("state") == "operator_gate"
-        and delivery_completion_run is None
+    safe_bypass_without_delivery = (
+        safe_bypass_requested and delivery_completion_run is None
     )
-    if operator_gate_bypass_without_delivery:
+    if safe_bypass_without_delivery:
         return {
             "ok": False,
             "mode": "spend-slot",
@@ -211,7 +209,7 @@ def build_quota_slot_preview_for_decision(
             "appended": False,
             "registry_mutated": False,
             "reason": (
-                "operator-gate safe-bypass quota spend requires a latest "
+                "safe-bypass quota spend requires a latest "
                 "unspent accountable delivery writeback"
             ),
             "before": before,
@@ -483,7 +481,7 @@ def build_quota_slot_spend_event(
                         else (
                             "quota validated delivery completion; quota slot spend event public-safe"
                             if delivery_completion_spend
-                            else "quota safe-bypass operator gate; quota slot spend event public-safe"
+                            else "quota safe-bypass delivery; quota slot spend event public-safe"
                         )
                     )
                 )
@@ -509,7 +507,7 @@ def build_quota_slot_spend_event(
                                 f"{slots} automatic agent slot(s) accounted after validated delivery "
                                 f"{preview.get('delivery_run_classification')}"
                                 if delivery_completion_spend
-                                else f"{slots} automatic agent slot(s) completed as safe-bypass work under an operator gate"
+                                else f"{slots} automatic agent slot(s) completed as safe-bypass work"
                             )
                         )
                     )

@@ -366,8 +366,25 @@ def assert_outcome_floor_recovery_should_run() -> None:
     }
     decision = build_quota_should_run(payload, goal_id=goal_id)
     markdown = render_quota_should_run_markdown(decision)
-    preview = build_quota_slot_preview(payload, goal_id=goal_id, slots=1)
-    spend_event = build_quota_slot_spend_event(preview, source="heartbeat")
+    with tempfile.TemporaryDirectory(prefix="loopx-outcome-floor-spend-") as tmp:
+        runtime_root = Path(tmp)
+        index_path = runtime_root / "goals" / goal_id / "runs" / "index.jsonl"
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        index_path.write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-01-01T00:01:00+00:00",
+                    "goal_id": goal_id,
+                    "classification": "validated_recovery",
+                    "delivery_outcome": "outcome_progress",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        payload["runtime_root"] = str(runtime_root)
+        preview = build_quota_slot_preview(payload, goal_id=goal_id, slots=1)
+        spend_event = build_quota_slot_spend_event(preview, source="heartbeat")
 
     assert decision["ok"] is True, decision
     assert decision["decision"] == "safe_bypass_recovery", decision

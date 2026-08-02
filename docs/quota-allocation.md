@@ -1038,8 +1038,9 @@ Post-turn accounting protocol:
   completes bounded safe-bypass work, append one spend event for that work. For
   `safe_bypass_kind=outcome_floor_recovery`, spend only after validated
   ranker/cross-domain evidence or concrete blocker writeback, not for another
-  surface-only report. An operator-gate safe bypass must have a latest unspent
-  accountable delivery writeback; the gate alone never authorizes accounting.
+  surface-only report. Every safe-bypass spend must have a latest unspent
+  accountable delivery writeback; the bypass decision alone never authorizes
+  accounting.
 - if `should_run=true` with `effective_action=control_plane_health_repair` or
   `control_plane_projection_repair`, append one spend event only after the
   control-plane projection or blocker writeback is validated.
