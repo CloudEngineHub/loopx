@@ -2,12 +2,26 @@ from __future__ import annotations
 
 import argparse
 
-from ..bootstrap_command_pack import START_GOAL_HOST_SURFACES
+from ..bootstrap_command_pack import (
+    START_GOAL_CAPABILITY_ROUTES,
+    START_GOAL_HOST_SURFACES,
+)
 from ..codex_cli_probe import DEFAULT_CODEX_BIN
 from ..project_prompt import (
     DEFAULT_HANDOFF_ADAPTER_KIND,
     DEFAULT_HANDOFF_ADAPTER_STATUS,
 )
+
+
+def _add_capability_route_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--capability-route",
+        choices=START_GOAL_CAPABILITY_ROUTES,
+        help=(
+            "Explicit product capability route for this goal start. Goal text never "
+            "selects a capability route."
+        ),
+    )
 
 
 def register_starter_bootstrap_commands(subparsers: argparse._SubParsersAction) -> None:
@@ -76,6 +90,7 @@ def register_starter_bootstrap_commands(subparsers: argparse._SubParsersAction) 
         action="append",
         help="Capability available in this host loop. Repeat for multiple capabilities.",
     )
+    _add_capability_route_argument(bootstrap_command_pack_parser)
     bootstrap_command_pack_parser.add_argument(
         "--goal-text",
         help=(
@@ -125,6 +140,7 @@ def register_starter_bootstrap_commands(subparsers: argparse._SubParsersAction) 
         action="append",
         help="Capability available in this host loop. Repeat for multiple capabilities.",
     )
+    _add_capability_route_argument(start_goal_parser)
     start_goal_parser.add_argument(
         "--goal-text",
         required=True,
