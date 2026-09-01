@@ -26,6 +26,9 @@ from ..extensions.lark.event_collector import (
     install_lark_event_collector,
     plan_lark_event_collector,
 )
+from ..extensions.lark.event_collector_routes import (
+    reconcile_lark_event_collector_route,
+)
 from ..extensions.lark.event_collector_runtime import run_lark_event_collector
 from ..extensions.lark.event_inbox import (
     acknowledge_lark_event_inbox,
@@ -260,6 +263,20 @@ def register_lark_inbox_commands(
     collector_install.add_argument("--project", default=".")
     collector_install.add_argument("--config", required=True)
     collector_install.add_argument("--execute", action="store_true")
+    collector_route = sub.add_parser(
+        "collector-route-reconcile",
+        help=(
+            "Plan or atomically add one collector route; receipts redact chat and "
+            "local inbox bindings."
+        ),
+    )
+    add_subcommand_format(collector_route)
+    collector_route.add_argument("--project", default=".")
+    collector_route.add_argument("--config", required=True)
+    collector_route.add_argument("--route-key", required=True)
+    collector_route.add_argument("--chat-id", required=True)
+    collector_route.add_argument("--event-inbox-config", required=True)
+    collector_route.add_argument("--execute", action="store_true")
     collector_status = sub.add_parser(
         "collector-status",
         help="Inspect collector installation, supervisor state, and event evidence.",
@@ -638,6 +655,15 @@ def handle_lark_inbox_command(
                 project=args.project,
                 config_path=args.config,
                 runtime_root=runtime_root_arg,
+                execute=args.execute,
+            )
+        elif args.lark_inbox_command == "collector-route-reconcile":
+            payload = reconcile_lark_event_collector_route(
+                project=args.project,
+                config_path=args.config,
+                route_key=args.route_key,
+                chat_id=args.chat_id,
+                event_inbox_config=args.event_inbox_config,
                 execute=args.execute,
             )
         elif args.lark_inbox_command == "collector-run":
