@@ -259,7 +259,9 @@ def handle_turn_command(
                     )
             else:
                 if args.host_command_json:
-                    raise ValueError("codex-cli does not accept --host-command-json")
+                    raise ValueError(
+                        f"{args.host} does not accept --host-command-json"
+                    )
                 raw_argv = None
             if args.validation_command_json:
                 raw_validation_argv = json.loads(args.validation_command_json)
@@ -924,6 +926,42 @@ def handle_turn_command(
                     return codex_cli_session_binding(runtime_root, turn_envelope)
 
                 session_binding_resolver = resolve_built_in_session_binding
+            elif args.host == "dsh":
+                from ..dsh_goal_mode.turn_host_adapter import (
+                    DshHostConfig,
+                    run_dsh_host,
+                )
+
+                dsh_config = DshHostConfig(
+                    workspace=project,
+                    **{
+                        key: value
+                        for key, value in {
+                            "provider": args.dsh_provider,
+                            "model": args.dsh_model,
+                            "max_tokens": args.dsh_max_tokens,
+                            "dsh_home": (
+                                Path(args.dsh_home) if args.dsh_home else None
+                            ),
+                            "cordis": Path(args.dsh_cordis) if args.dsh_cordis else None,
+                            "runtime_bin": args.dsh_runtime_bin,
+                            "request_timeout_seconds": max(
+                                1.0, args.timeout_seconds - 5.0
+                            ),
+                            "dsh_runner": (
+                                Path(args.dsh_runner) if args.dsh_runner else None
+                            ),
+                        }.items()
+                        if value is not None
+                    },
+                )
+
+                def run_dsh_built_in_host(
+                    request: Mapping[str, Any],
+                ) -> dict[str, Any]:
+                    return run_dsh_host(request, config=dsh_config)
+
+                host_runner = run_dsh_built_in_host
 
             payload = run_loopx_turn_once(
                 payload,
