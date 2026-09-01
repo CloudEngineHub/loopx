@@ -80,10 +80,15 @@ loopx lark-inbox history-catch-up \
   --execute
 ```
 
-Retries resume the exact private page token, and a completed window replays
-without another provider read. A caller may extend one completed history
+Retries resume the exact private page token. A completed window replays
+without another provider read only while its upper coverage bound is current;
+a later invocation opens one bounded forward window from the previous end, so
+new messages in an existing group or topic are not stranded behind an old
+`history_complete` state. A caller may also extend one completed history
 window to an earlier start once; the provider covers only the missing earlier
-window and rejects later source/config drift. The returned link-evidence packet
+window and rejects later source/config drift. Legacy v0 cursors migrate
+conservatively: they may replay already ingested messages, but never advance a
+coverage bound that could skip unseen history. The returned link-evidence packet
 contains URL plus message and route lineage for the owner-local Agent, but not
 the surrounding message body, sender, chat id, profile, cursor, or raw provider
 payload. Inbox and cursor directories are restricted to the owner, and their
