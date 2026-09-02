@@ -120,7 +120,7 @@ def _add_todo(
     )
 
 
-def test_product_cli_configure_capture_readback_disable_and_default_off_parity(
+def test_product_cli_configure_capture_readback_disable_and_default_off_lifecycle_isolation(
     tmp_path: Path,
 ) -> None:
     goal_id = "shadow-cli-e2e"
@@ -271,7 +271,7 @@ def test_product_cli_candidate_failure_preserves_the_primary_lifecycle_commit(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="requires POSIX cross-process flock and SIGKILL")
-def test_product_cli_crash_gap_has_no_outbox_but_later_capture_refreshes_head(
+def test_product_cli_loses_capture_between_commit_and_observer_then_refreshes_snapshot(
     tmp_path: Path,
 ) -> None:
     goal_id = "shadow-cli-crash-gap"
