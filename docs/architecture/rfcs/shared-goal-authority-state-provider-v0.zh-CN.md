@@ -12,9 +12,10 @@
   （release 0.11.0、Python API 1、Holt 固定为 0.8.6）。Stage 2A 的可执行资格
   验证只接受这份 SDK 合同与本 checkout 的 helper；它仍是候选证据，不是合并门槛
   或 authority promotion
-- PostgreSQL 基线：TypeScript Stage 2B candidate 已实现 store contract，且已通过
-  真实 PostgreSQL 16 transaction matrix；shared authority service、runtime caller、
-  authentication boundary 与 authority promotion 均尚未交付
+- PostgreSQL 基线：TypeScript Stage 2B candidate 已实现 store contract、
+  transaction-local tenant context 与 forced row-level security，且已通过真实
+  PostgreSQL 16 transaction matrix；shared authority service、runtime caller、
+  principal authentication/tenant authorization 与 authority promotion 均尚未交付
 - 语言说明：[英文版](./shared-goal-authority-state-provider-v0.md)与本中文版互为
   语义镜像；两者不一致属于缺陷
 
@@ -915,7 +916,7 @@ Stage 2 的 aggregate 与 provider shadow。该 aggregate 必须把 `handoff_mod
 lineage，却不会因此获得当前权威；把恢复状态晋升为 live authority head，必须经过
 显式的 lineage 与 binding fence。
 
-#### Stage 2B PostgreSQL candidate 状态（2026-09-01）
+#### Stage 2B PostgreSQL candidate 状态（2026-09-02）
 
 首个 PostgreSQL candidate 已实现由 LoopX 持有的 TypeScript store contract，而非
 引入第二个语义权威。Store handle 绑定 `(tenant_id, goal_id)`，只接收 service 持有的
@@ -927,6 +928,18 @@ scoped head row，校验 opaque provider revision，以 unique constraint fence
 的错误返回 typed `ambiguous`，只能通过 receipt readback reconcile。Database
 incarnation metadata 由行政部署路径安装，不能被隐式重新绑定。
 
+数据库 trust-boundary 切片现在会为每次 provider operation 设置 transaction-local
+`loopx.tenant_id` context，并在所有 tenant-scoped table 上同时 enable 与 force
+PostgreSQL row-level security。读操作使用 read-only transaction，并在返回前
+rollback，因此 pooled session 不会残留上一个 tenant context。缺少 context 时看不到
+任何 scoped row；`WITH CHECK` 会拒绝写入 active context 之外的 tenant。资格化所用的
+restricted-role profile 只获得 schema usage、metadata read 与 scoped table 所需的最小
+权限，因此不能重新绑定 database-incarnation metadata，也不能安装 schema policy。
+
+这只是 service 内部的 defense in depth，不是 tenant authentication。Service 仍持有
+database role，并且必须先认证 principal、授权其 tenant，才能选择 transaction context。
+Agent 永远拿不到该 role；RLS 也不会让 caller 自报的 tenant id 自动变可信。
+
 本切片还把 strict JSON validation 与 commit normalization 从 file 实现抽到统一的
 TypeScript authority-store codec。File 与 PostgreSQL 现在运行同一套 provider-neutral
 conformance suite，覆盖 projection-plus-receipt 原子提交、CAS contention、历史 receipt
@@ -934,19 +947,22 @@ replay、operation fencing、有序 cursor scan、返回值隔离，以及 malfo
 被拒绝。
 
 真实 PostgreSQL qualification 从这里开始，而不是等到 shadow 或 canary。一个真实
-PostgreSQL 16 实例已通过九行 durable 验证：共享 conformance matrix、同一 head 的并发
-CAS、不同 tenant 复用相同 goal 与 operation id、transaction rollback 后不暴露 head
-或 receipt、已提交 transaction 丢失响应后的 receipt 恢复，以及拒绝 database
-incarnation rebind。Fake 仍可覆盖 adapter 分支，但不能证明 row lock、unique
-constraint、rollback 或 commit visibility；因此后续每个 PostgreSQL provider 切片都
-必须保留真实数据库门禁。
+PostgreSQL 16 实例已通过共享 conformance matrix、同一 head 的并发 CAS、不同 tenant
+复用相同 goal 与 operation id、transaction rollback 后不暴露 head 或 receipt、已提交
+transaction 丢失响应后的 receipt 恢复、拒绝 database incarnation rebind，以及受限
+role 的双 tenant RLS matrix。最后一项证明：缺少 transaction context 时看不到 scoped
+row，跨 context 写入失败，runtime role 也不能修改行政 metadata。Fake 仍可覆盖 adapter
+分支，但不能证明 row lock、unique constraint、rollback、commit visibility、privilege
+或 RLS；因此后续每个 PostgreSQL provider 切片都必须保留真实数据库门禁。
 
 该 candidate 仍是 coverage-only。没有 production LoopX entry point 构造它，本地模式
-保持不变，Agent 也不能获得注入的 pool。Service authentication 与 database role、
-tenant authorization/RLS、restore incarnation rotation、pool exhaustion/cancellation/
-failover、单向 shadow parity 与 authority-source promotion 仍是显式 hold。从这里到
-TEST ONLY canary，预计还需三个经 review 的切片：service trust 与 deployment boundary；
-单向 runtime shadow 加 parity；最后是有界 canary 与 promotion gate。
+保持不变，Agent 也不能获得注入的 pool。Service trust boundary 内的数据库
+runtime-role/RLS 行为现已实现并完成资格化。Service API authentication、
+principal-to-tenant authorization、production runtime caller、restore
+incarnation rotation、pool exhaustion/cancellation/failover、单向 shadow parity、TEST
+ONLY canary 与 authority-source promotion 仍是显式 hold。下一个 PostgreSQL 切片必须
+资格化 authenticated service/deployment 与 failure boundary，不能把 database RLS 当成
+仍缺失的 API authorization layer。
 
 File-backed provider shadow 属于 Stage 2；其第一个切片已通过 #3529 合入
 `main`，证据记录在下方的 Stage 2 状态小节。

@@ -13,9 +13,10 @@
   qualification admits only that SDK contract and this checkout's helper. It
   remains candidate evidence, not a merge gate or authority promotion
 - PostgreSQL baseline: the TypeScript Stage 2B candidate implements the store
-  contract and has passed a real PostgreSQL 16 transaction matrix. No shared
-  authority service, runtime caller, authentication boundary, or authority
-  promotion ships yet
+  contract, transaction-local tenant context, forced row-level security, and
+  has passed a real PostgreSQL 16 transaction matrix. No shared authority
+  service, runtime caller, principal authentication/tenant authorization, or
+  authority promotion ships yet
 - Language note: the
   [Chinese version](./shared-goal-authority-state-provider-v0.zh-CN.md) and this
   English version are semantic mirrors. A difference between them is a defect.
@@ -1136,7 +1137,7 @@ independent version domains. Likewise, a restore may preserve frozen bytes and
 lineage without granting current authority: promoting restored state to the
 live authority head requires an explicit lineage and binding fence.
 
-#### Stage 2B PostgreSQL candidate status (2026-09-01)
+#### Stage 2B PostgreSQL candidate status (2026-09-02)
 
 The first PostgreSQL candidate now implements the LoopX-owned TypeScript store
 contract instead of introducing a second semantic authority. A store handle is
@@ -1151,6 +1152,21 @@ An error before `COMMIT` is rolled back and typed `failed`; an error after the
 receipt readback. Database-incarnation metadata is installed administratively
 and cannot be rebound implicitly.
 
+The database trust-boundary slice now gives each provider operation a
+transaction-local `loopx.tenant_id` context and enables plus forces PostgreSQL
+row-level security on every tenant-scoped table. Reads use a read-only
+transaction and roll it back before returning, so a pooled session cannot
+retain a previous tenant context. A missing context sees no scoped rows;
+`WITH CHECK` rejects a row for any tenant other than the active context. The
+qualified restricted-role profile receives only schema usage, metadata read,
+and the minimum scoped table privileges, so it cannot rebind
+database-incarnation metadata or install schema policy.
+
+This is defense in depth inside the service, not tenant authentication. The
+service still owns the database role and chooses the transaction context after
+authenticating a principal and authorizing its tenant. An Agent never receives
+that role, and RLS does not make a caller-supplied tenant id trustworthy.
+
 This slice also moves strict JSON validation and commit normalization out of
 the file implementation into one TypeScript authority-store codec. File and
 PostgreSQL now run the same provider-neutral conformance suite for atomic
@@ -1159,22 +1175,27 @@ operation fencing, ordered cursor scans, isolation of returned values, and
 pre-write rejection of malformed JSON.
 
 Real PostgreSQL qualification starts here, not at shadow or canary. A
-PostgreSQL 16 instance passed nine durable rows: the shared conformance matrix,
-same-head concurrent CAS, tenant-scoped reuse of the same goal and operation
-ids, transaction rollback with no visible head or receipt, receipt recovery
-after a committed transaction loses its response, and database-incarnation
-rebind refusal. A fake can still exercise adapter branches, but it cannot prove
-row locking, unique constraints, rollback, or commit visibility; every later
-PostgreSQL provider slice must therefore retain a real-database gate.
+PostgreSQL 16 instance passed the shared conformance matrix, same-head
+concurrent CAS, tenant-scoped reuse of the same goal and operation ids,
+transaction rollback with no visible head or receipt, receipt recovery after a
+committed transaction loses its response, database-incarnation rebind refusal,
+and a restricted-role two-tenant RLS matrix. The latter proves that missing
+transaction context exposes no scoped row, cross-context writes fail, and the
+runtime role cannot mutate administrative metadata. A fake can still exercise
+adapter branches, but it cannot prove row locking, unique constraints,
+rollback, commit visibility, privileges, or RLS; every later PostgreSQL
+provider slice must therefore retain a real-database gate.
 
 The candidate remains coverage-only. No production LoopX entry point constructs
 it, local mode remains unchanged, and Agents cannot receive the injected pool.
-Service authentication and database roles, tenant authorization/RLS, restore
-incarnation rotation, pool exhaustion/cancellation/failover, one-way shadow
-parity, and authority-source promotion remain explicit holds. The expected
-route to the TEST ONLY canary is three further reviewed slices: service trust
-and deployment boundaries; one-way runtime shadow plus parity; then the bounded
-canary and promotion gate.
+The database runtime-role and RLS behavior within the service trust boundary is
+now implemented and qualified. Service API authentication,
+principal-to-tenant authorization, the production runtime caller,
+restore-incarnation rotation, pool
+exhaustion/cancellation/failover, one-way shadow parity, the TEST ONLY canary,
+and authority-source promotion remain explicit holds. The next PostgreSQL
+slice must qualify the authenticated service/deployment and failure boundary;
+it must not treat database RLS as that missing API authorization layer.
 
 The file-backed provider shadow is Stage 2; its first slice is merged on
 `main` through #3529, and the evidence behind it is recorded in the Stage 2
