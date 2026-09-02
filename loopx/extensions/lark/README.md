@@ -109,6 +109,44 @@ member of the group, the application to be published, and
 as typed `group_history_permission_required`; it never advances the inbox or
 cursor.
 
+### Dynamic collector route reconcile
+
+An already provisioned inbox can be enrolled into a v1 multi-chat collector
+without rewriting the complete owner-local collector file by hand. Preview the
+route first, then apply it explicitly:
+
+```bash
+loopx lark-inbox collector-route-reconcile \
+  --project . \
+  --config .loopx/config/lark-collector.json \
+  --route-key project-feedback \
+  --chat-id oc_<local-private-chat-id> \
+  --event-inbox-config .loopx/config/lark/project-feedback.json
+
+loopx lark-inbox collector-route-reconcile \
+  --project . \
+  --config .loopx/config/lark-collector.json \
+  --route-key project-feedback \
+  --chat-id oc_<local-private-chat-id> \
+  --event-inbox-config .loopx/config/lark/project-feedback.json \
+  --execute
+```
+
+The operation validates unique route, chat, inbox-config, and inbox-path
+bindings; serializes concurrent writers; writes through an atomic replacement;
+and reads the exact binding and config digest back. Repeating the same request
+is a zero-write `already_applied` result, while any binding drift fails closed.
+Receipts return the public-safe `route_key` but never the chat id, inbox config,
+local path, profile, or credentials.
+
+Config readback does not prove that a running collector has reloaded the new
+route. Every successful plan/apply receipt therefore keeps
+`runtime_reload_required=true`, `runtime_reload_performed=false`, and
+`runtime_readback_verified=false`. The deployment owner must restart or
+reinstall the collector and independently verify its runtime before treating
+the route as live. Removing routes remains a separate owner-authorized
+lifecycle operation; this additive command never deletes or rebinds one.
+
 ## Lifecycle
 
 Install the bundled provider explicitly, then read back its readiness:
