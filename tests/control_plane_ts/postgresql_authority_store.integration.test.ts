@@ -361,3 +361,63 @@ test("PostgreSQL schema declares fail-closed tenant RLS on every scoped table", 
     /current_setting\('loopx\.tenant_id', TRUE\)/,
   );
 });
+
+test("PostgreSQL provider evicts and awaits cleanup-uncertain read connections", async () => {
+  const tenantId = "tenant-cleanup-fault";
+  const rollbackFailure = new Error("injected rollback failure");
+  const queries: string[] = [];
+  let finishRelease: (() => void) | undefined;
+  let resultSettled = false;
+  const releaseGate = new Promise<void>((resolve) => {
+    finishRelease = resolve;
+  });
+  let reportRelease: ((error: Error | undefined) => void) | undefined;
+  const releaseStarted = new Promise<Error | undefined>((resolve) => {
+    reportRelease = resolve;
+  });
+  const faultingDatabase: PostgreSqlAuthorityDatabase = {
+    connect: async () => ({
+      query: async (text) => {
+        queries.push(text);
+        if (text === "ROLLBACK") throw rollbackFailure;
+        if (text.includes("set_config")) {
+          return { rows: [{ tenant_id: tenantId }], rowCount: 1 };
+        }
+        if (text.includes("authority_store_metadata")) {
+          return {
+            rows: [{ schema_version: "loopx_postgresql_authority_store_v0", store_identity: STORE_IDENTITY }],
+            rowCount: 1,
+          };
+        }
+        if (text.includes("authority_heads")) {
+          return { rows: [], rowCount: 0 };
+        }
+        return { rows: [], rowCount: 0 };
+      },
+      release: async (error) => {
+        reportRelease?.(error);
+        await releaseGate;
+      },
+    }),
+  };
+  const store = new PostgreSqlAuthorityStore(faultingDatabase, {
+    tenant_id: tenantId,
+    goal_id: "goal-cleanup-fault",
+  });
+
+  const resultPromise = store.loadAuthority().then((result) => {
+    resultSettled = true;
+    return result;
+  });
+  assert.strictEqual(await releaseStarted, rollbackFailure);
+  assert.equal(resultSettled, false, "read result must wait for asynchronous connection eviction");
+  assert.ok(finishRelease);
+  finishRelease();
+
+  assert.deepEqual(await resultPromise, {
+    status: "unavailable",
+    reason_code: "provider_read_unavailable",
+    reason: "PostgreSQL authority store is unavailable",
+  });
+  assert.equal(queries.filter((query) => query === "ROLLBACK").length, 1);
+});
