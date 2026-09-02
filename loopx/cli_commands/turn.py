@@ -53,6 +53,7 @@ from .lark_inbox import (
     build_lark_operator_inbox_urgency_projector,
     dispatch_goal_lark_turn_start_hooks,
 )
+from .turn_dsh_host import build_dsh_host_runner
 from .turn_registration import register_turn_commands as register_turn_commands
 from .turn_inspection import handle_turn_journal_inspection
 from .turn_rendering import (
@@ -902,7 +903,7 @@ def handle_turn_command(
                     }
                 )
 
-            host_runner = None
+            host_runner: Callable[[Mapping[str, Any]], dict[str, Any]] | None = None
             session_binding_resolver = None
             if args.host == "codex-cli":
 
@@ -928,41 +929,10 @@ def handle_turn_command(
 
                 session_binding_resolver = resolve_built_in_session_binding
             elif args.host == "dsh":
-                from ..dsh_goal_mode.turn_host_adapter import (
-                    DshHostConfig,
-                    run_dsh_host,
-                )
-
-                dsh_config = DshHostConfig(
+                host_runner = build_dsh_host_runner(
+                    args,
                     workspace=project,
-                    **{
-                        key: value
-                        for key, value in {
-                            "provider": args.dsh_provider,
-                            "model": args.dsh_model,
-                            "max_tokens": args.dsh_max_tokens,
-                            "dsh_home": (
-                                Path(args.dsh_home) if args.dsh_home else None
-                            ),
-                            "cordis": Path(args.dsh_cordis) if args.dsh_cordis else None,
-                            "runtime_bin": args.dsh_runtime_bin,
-                            "request_timeout_seconds": max(
-                                1.0, args.timeout_seconds - 5.0
-                            ),
-                            "dsh_runner": (
-                                Path(args.dsh_runner) if args.dsh_runner else None
-                            ),
-                        }.items()
-                        if value is not None
-                    },
                 )
-
-                def run_dsh_built_in_host(
-                    request: Mapping[str, Any],
-                ) -> dict[str, Any]:
-                    return run_dsh_host(request, config=dsh_config)
-
-                host_runner = run_dsh_built_in_host
 
             payload = run_loopx_turn_once(
                 payload,
