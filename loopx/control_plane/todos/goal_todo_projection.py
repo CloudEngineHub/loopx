@@ -364,12 +364,39 @@ def todo_summaries_from_fields(
         uncapped_todo_count=uncapped_todo_count,
     )
 
+def project_goal_todo_items(
+    goal: dict[str, Any] | None,
+    *,
+    state_text: str,
+    state_path: Path,
+    rollout_events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Every user and agent todo item projected from one active-state text.
+
+    Same items ``list_goal_todos`` returns without filters, computed from the
+    caller's text instead of the file so it can run inside the writer's lock.
+    """
+
+    return goal_todo_summaries(
+        goal,
+        state_text=state_text,
+        state_path=state_path,
+        rollout_events=rollout_events,
+        roles=["user", "agent"],
+        status=None,
+        todo_id=None,
+        agent_id=None,
+        limit=None,
+    ).todos
+
+
 __all__ = [
     "GoalTodoSummaries",
     "empty_todo_summary",
     "filtered_todo_summary",
     "goal_todo_summaries",
     "merge_todo_projection_fields",
+    "project_goal_todo_items",
     "summary_items",
     "todo_summaries_from_fields",
 ]

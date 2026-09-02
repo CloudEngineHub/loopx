@@ -100,6 +100,7 @@ from .cli_commands import (
     handle_support_control_command,
     handle_handoff_mode_command,
     handle_task_lease_command,
+    handle_authority_shadow_command,
     handle_version_command,
     handle_host_mode_plan_command,
     handle_worker_bridge_command,
@@ -140,6 +141,7 @@ from .cli_commands import (
     register_support_control_commands,
     register_handoff_mode_command,
     register_task_lease_command,
+    register_authority_shadow_command,
     register_todo_command,
     register_version_command,
     register_host_mode_plan_command,
@@ -325,6 +327,7 @@ def build_parser() -> LoopXArgumentParser:
     register_todo_command(sub, add_subcommand_format)
     register_coordination_shadow_command(sub, add_subcommand_format)
     register_task_lease_command(sub, add_subcommand_format)
+    register_authority_shadow_command(sub, add_subcommand_format)
     register_handoff_mode_command(sub, add_subcommand_format)
     register_shared_goal_alignment_command(sub, add_subcommand_format)
     register_quota_command(sub)
@@ -813,6 +816,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     if task_lease_result is not None:
         return task_lease_result
+
+    authority_shadow_result = handle_authority_shadow_command(
+        args,
+        registry_path=registry_path,
+        runtime_root_arg=args.runtime_root,
+        output_format=output_format,
+        print_payload=print_payload,
+    )
+    if authority_shadow_result is not None:
+        return authority_shadow_result
 
     handoff_mode_result = handle_handoff_mode_command(
         args,

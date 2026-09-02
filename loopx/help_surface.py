@@ -288,6 +288,7 @@ COMMAND_GROUPS: list[dict[str, object]] = [
 MANPAGE_COMMAND_HELP_ONLY = frozenset(
     {
         "archive-runtime",
+        "authority-shadow",
         "backup-state",
         "capability",
         "chat-endpoint",
