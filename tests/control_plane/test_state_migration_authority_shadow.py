@@ -167,7 +167,7 @@ def test_execute_excludes_old_shadow_and_seeds_fresh_target_lineage(
     seed = result["authority_shadow_seeds"][0]  # type: ignore[index]
     assert seed["goal_id"] == NEW_GOAL_ID
     assert seed["attempted"] is True
-    assert seed["outcome"] == "advanced"
+    assert seed["outcome"] == "captured"
 
 
 def test_dry_run_reports_exclusion_and_seed_plan_without_writing(

@@ -25,8 +25,8 @@ function request(directory: string, operationId = "local-operation-a") {
     mode: "file_one_way",
     runtime_root: directory,
     goal_id: "goal-a",
-    operation_id: operationId,
-    source_operation: "todo_update",
+    observation_id: operationId,
+    observation_trigger: "todo_update",
     source_digest: `sha256:${"a".repeat(64)}`,
     source_projection: {
       schema_version: "loopx_local_authority_shadow_projection_v0",
@@ -38,18 +38,23 @@ function request(directory: string, operationId = "local-operation-a") {
   };
 }
 
-test("one-way file shadow commits an observation without becoming decision authority", async (t) => {
+test("one-way file shadow captures a post-commit observation without claiming parity", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "loopx-local-authority-shadow-"));
   t.after(() => rm(root, { recursive: true, force: true }));
 
   const evidence = await recordLocalAuthorityShadow(request(root));
 
   assert.equal(evidence.schema_version, LOCAL_AUTHORITY_SHADOW_EVIDENCE_SCHEMA);
-  assert.equal(evidence.outcome, "advanced");
+  assert.equal(evidence.outcome, "captured");
   assert.equal(evidence.primary_authority, "legacy_local");
   assert.equal(evidence.candidate_read_for_decision, false);
   assert.equal(evidence.provider_to_local_writes, false);
   assert.equal(evidence.primary_writeback_preserved, true);
+  assert.equal(evidence.capture_kind, "post_commit_snapshot");
+  assert.equal(evidence.source_transaction_correlated, false);
+  assert.equal(evidence.durable_source_outbox, false);
+  assert.equal(evidence.source_candidate_compared, false);
+  assert.equal(evidence.parity_verdict, "not_evaluated");
   const loaded = await new FileAuthorityStore(
     join(root, "authority-shadow", "file", "goal-a"),
     "goal-a",
@@ -60,11 +65,11 @@ test("one-way file shadow commits an observation without becoming decision autho
   }
 });
 
-test("same operation replays its typed observation receipt", async (t) => {
+test("same observation reuses its candidate-side capture receipt", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "loopx-local-authority-shadow-"));
   t.after(() => rm(root, { recursive: true, force: true }));
 
-  assert.equal((await recordLocalAuthorityShadow(request(root))).outcome, "advanced");
+  assert.equal((await recordLocalAuthorityShadow(request(root))).outcome, "captured");
   const replay = await recordLocalAuthorityShadow(request(root));
 
   assert.equal(replay.outcome, "replayed");
@@ -74,6 +79,46 @@ test("same operation replays its typed observation receipt", async (t) => {
   ).scanCommitted(null, 10);
   assert.equal(page.status, "page");
   if (page.status === "page") assert.equal(page.transactions.length, 1);
+});
+
+test("observation trigger does not imply exact source-transaction binding", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "loopx-local-authority-shadow-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const requestAfterConcurrentCommit = request(root);
+  requestAfterConcurrentCommit.observation_trigger = "todo_add:todo-a";
+  requestAfterConcurrentCommit.source_projection.todos.push({
+    todo_id: "todo-b",
+    status: "open",
+    claimed_by: "agent-b",
+  });
+
+  const observation = await recordLocalAuthorityShadow(requestAfterConcurrentCommit);
+
+  assert.equal(observation.outcome, "captured");
+  assert.equal(observation.source_transaction_correlated, false);
+  assert.equal(observation.parity_verdict, "not_evaluated");
+  const page = await new FileAuthorityStore(
+    join(root, "authority-shadow", "file", "goal-a"),
+    "goal-a",
+  ).scanCommitted(null, 10);
+  assert.equal(page.status, "page");
+  if (page.status === "page") {
+    assert.equal(page.transactions[0]?.events[0]?.observation_trigger, "todo_add:todo-a");
+    const capturedTodos = page.transactions[0]?.projection.todos;
+    assert.ok(Array.isArray(capturedTodos));
+    assert.equal(capturedTodos.length, 2);
+  }
+});
+
+test("legacy source_operation wording is rejected by the closed observation contract", async () => {
+  const legacyRequest = { ...request("/not-used") } as Record<string, unknown>;
+  legacyRequest.source_operation = legacyRequest.observation_trigger;
+  delete legacyRequest.observation_trigger;
+
+  await assert.rejects(
+    recordLocalAuthorityShadow(legacyRequest),
+    /unsupported fields: source_operation/u,
+  );
 });
 
 class UnavailableStore implements AuthorityStore {
@@ -160,7 +205,7 @@ test("goal id cannot escape the fixed shadow directory", async () => {
   );
 });
 
-test("ambiguous response is success only when the exact receipt is readable", async () => {
+test("ambiguous response is captured only when its candidate observation receipt is readable", async () => {
   const root = await mkdtemp(join(tmpdir(), "loopx-local-authority-shadow-"));
   tCleanup(root);
   class AfterCommitStore extends FileAuthorityStore {

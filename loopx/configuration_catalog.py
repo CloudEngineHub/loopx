@@ -107,8 +107,8 @@ def build_goal_configuration_catalog(
         "features": [
             {
                 "feature_id": "local_authority_shadow",
-                "display_name": "Local authority parity shadow",
-                "availability": "qualification_opt_in",
+                "display_name": "Local post-commit authority observation",
+                "availability": "experimental_opt_in",
                 "default": {"enabled": False},
                 "current": {
                     "enabled": local_authority_shadow.get("enabled") is True,
@@ -116,17 +116,20 @@ def build_goal_configuration_catalog(
                     "status": local_authority_shadow.get("status", "disabled"),
                 },
                 "consider_when": (
-                    "A Goal needs post-commit parity evidence before any local "
-                    "authority-source promotion."
+                    "A Goal needs to exercise the first Stage 2C observation "
+                    "plumbing while legacy local writers remain authoritative."
                 ),
                 "effect": (
-                    "Observes committed Todo and task-lease state through the "
-                    "FileAuthorityStore contract."
+                    "Captures a best-effort post-commit snapshot of Todo and "
+                    "task-lease state through the FileAuthorityStore contract."
                 ),
                 "does_not": [
                     "read the candidate for lifecycle decisions",
                     "write candidate state back into Markdown or task-lease files",
                     "promote shared authority or fence legacy writers",
+                    "bind the snapshot to the exact primary transaction",
+                    "guarantee delivery through a durable outbox",
+                    "compare source and candidate or issue a parity verdict",
                 ],
                 "commands": {
                     "preview_enable": _configure_command(

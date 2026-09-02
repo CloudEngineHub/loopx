@@ -16,21 +16,21 @@ export const LOCAL_AUTHORITY_SHADOW_PROJECTION_SCHEMA =
   "loopx_local_authority_shadow_projection_v0";
 export const LOCAL_AUTHORITY_SHADOW_EVIDENCE_SCHEMA =
   "loopx_local_authority_shadow_evidence_v0";
-export const LOCAL_AUTHORITY_SHADOW_RECEIPT_SCHEMA =
-  "loopx_local_authority_shadow_receipt_v0";
+export const LOCAL_AUTHORITY_SHADOW_OBSERVATION_RECEIPT_SCHEMA =
+  "loopx_local_authority_shadow_observation_receipt_v0";
 
 const REQUEST_FIELDS = new Set([
   "schema_version",
   "mode",
   "runtime_root",
   "goal_id",
-  "operation_id",
-  "source_operation",
+  "observation_id",
+  "observation_trigger",
   "source_digest",
   "source_projection",
 ]);
 export type LocalAuthorityShadowOutcome =
-  | "advanced"
+  | "captured"
   | "replayed"
   | "ambiguous_reconciled"
   | "ambiguous_unproved"
@@ -44,8 +44,13 @@ export interface LocalAuthorityShadowEvidence extends JsonObject {
   outcome: LocalAuthorityShadowOutcome;
   reason_code: string | null;
   goal_id: string;
-  operation_id: string;
+  observation_id: string;
   source_digest: string;
+  capture_kind: "post_commit_snapshot";
+  source_transaction_correlated: false;
+  durable_source_outbox: false;
+  source_candidate_compared: false;
+  parity_verdict: "not_evaluated";
   primary_authority: "legacy_local";
   candidate_provider: "file";
   candidate_read_for_decision: false;
@@ -60,8 +65,8 @@ interface LocalAuthorityShadowRequest {
   mode: "file_one_way";
   runtime_root: string;
   goal_id: string;
-  operation_id: string;
-  source_operation: string;
+  observation_id: string;
+  observation_trigger: string;
   source_digest: string;
   source_projection: JsonObject;
 }
@@ -107,10 +112,10 @@ function decodeRequest(value: unknown): LocalAuthorityShadowRequest {
     mode: "file_one_way",
     runtime_root: requireNonEmptyString(request.runtime_root, "runtime_root"),
     goal_id: goalId,
-    operation_id: requireNonEmptyString(request.operation_id, "operation_id"),
-    source_operation: requireNonEmptyString(
-      request.source_operation,
-      "source_operation",
+    observation_id: requireNonEmptyString(request.observation_id, "observation_id"),
+    observation_trigger: requireNonEmptyString(
+      request.observation_trigger,
+      "observation_trigger",
     ),
     source_digest: sourceDigest,
     source_projection: structuredClone(projection),
@@ -132,8 +137,13 @@ function evidence(
     outcome,
     reason_code: options.reasonCode ?? null,
     goal_id: request.goal_id,
-    operation_id: request.operation_id,
+    observation_id: request.observation_id,
     source_digest: request.source_digest,
+    capture_kind: "post_commit_snapshot",
+    source_transaction_correlated: false,
+    durable_source_outbox: false,
+    source_candidate_compared: false,
+    parity_verdict: "not_evaluated",
     primary_authority: "legacy_local",
     candidate_provider: "file",
     candidate_read_for_decision: false,
@@ -162,8 +172,8 @@ function receiptMatches(
 ): boolean {
   return result.receipts.some((raw) => {
     const receipt = raw as Record<string, unknown>;
-    return receipt.schema_version === LOCAL_AUTHORITY_SHADOW_RECEIPT_SCHEMA &&
-      receipt.operation_id === request.operation_id &&
+    return receipt.schema_version === LOCAL_AUTHORITY_SHADOW_OBSERVATION_RECEIPT_SCHEMA &&
+      receipt.observation_id === request.observation_id &&
       receipt.source_digest === request.source_digest &&
       receipt.primary_authority === "legacy_local" &&
       receipt.provider_to_local_writes === false;
@@ -176,7 +186,7 @@ async function reconcileReceipt(
   storeIdentity: string,
   reconciledOutcome: "replayed" | "ambiguous_reconciled",
 ): Promise<LocalAuthorityShadowEvidence> {
-  const result = await store.readReceipt(request.operation_id);
+  const result = await store.readReceipt(request.observation_id);
   if (result.status === "found" && receiptMatches(request, result)) {
     return evidence(request, reconciledOutcome, {
       storeIdentity,
@@ -203,8 +213,8 @@ async function reconcileReceipt(
       : "protocol_mismatch",
     {
       reasonCode: result.status === "missing"
-        ? "operation_receipt_missing"
-        : "operation_receipt_mismatch",
+        ? "observation_receipt_missing"
+        : "observation_receipt_mismatch",
       storeIdentity,
     },
   );
@@ -247,19 +257,21 @@ export async function recordLocalAuthorityShadow(
     }
     const storeIdentity = identity.store_identity;
     const receipt = {
-      schema_version: LOCAL_AUTHORITY_SHADOW_RECEIPT_SCHEMA,
-      operation_id: request.operation_id,
+      schema_version: LOCAL_AUTHORITY_SHADOW_OBSERVATION_RECEIPT_SCHEMA,
+      observation_id: request.observation_id,
       source_digest: request.source_digest,
-      source_operation: request.source_operation,
+      observation_trigger: request.observation_trigger,
+      source_transaction_correlated: false,
+      parity_verdict: "not_evaluated",
       primary_authority: "legacy_local",
       candidate_read_for_decision: false,
       provider_to_local_writes: false,
     };
     const event = {
       schema_version: "loopx_local_authority_shadow_event_v0",
-      kind: "source_observed",
-      operation_id: request.operation_id,
-      source_operation: request.source_operation,
+      kind: "post_commit_snapshot_captured",
+      observation_id: request.observation_id,
+      observation_trigger: request.observation_trigger,
       source_digest: request.source_digest,
     };
 
@@ -270,13 +282,13 @@ export async function recordLocalAuthorityShadow(
     const committed = await store.commitAuthority({
       expected_provider_revision:
         loaded.status === "loaded" ? loaded.provider_revision : null,
-      operation_id: request.operation_id,
+      operation_id: request.observation_id,
       events: [event],
       next_projection: request.source_projection,
       receipts: [receipt],
     });
     if (committed.status === "applied") {
-      return evidence(request, "advanced", {
+      return evidence(request, "captured", {
         storeIdentity,
         providerRevision: committed.provider_revision,
         cursor: committed.cursor,

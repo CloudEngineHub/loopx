@@ -38,7 +38,7 @@ def _attach_local_authority_shadow(
     if registry_path is None:
         return result
     lease = result.get("lease") if isinstance(result.get("lease"), dict) else {}
-    source_operation = ":".join(
+    observation_trigger = ":".join(
         (
             f"task_lease_{operation}",
             str(todo_id),
@@ -55,7 +55,7 @@ def _attach_local_authority_shadow(
         registry_path=registry_path,
         runtime_root=runtime_root,
         goal_id=str(goal_id),
-        source_operation=source_operation,
+        observation_trigger=observation_trigger,
     )
     if evidence is not None:
         result["authority_shadow"] = evidence

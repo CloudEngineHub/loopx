@@ -535,10 +535,13 @@ Unknown command types fail closed. Transfer or delegated assignment,
 arbitrary todo/gate mutation, quota reservation, and external effects still
 require later runtime contracts and qualification. Non-empty write scopes and
 cross-todo scope-overlap rejection likewise require a later command contract
-and qualification. The recoverable-execution verbs below are the Stage 3
-slice; steps 1 through 4 and 7 through 10 of Section 5 (identity, digest,
-replay, CAS, reload, rebase, budget) apply to every verb unchanged, and only
-the per-verb preconditions and transition (steps 5 and 6) differ.
+and qualification. The recoverable-execution verbs below were called Stage 3
+in the historical #3669 implementation sequence. Under the current delivery
+sequence in Section 11, that merged work is part of the Stage 0 reference foundation,
+not the Stage 3 remote-shadow phase in Section 11. Steps 1 through
+4 and 7 through 10 of Section 5 (identity, digest, replay, CAS, reload, rebase,
+budget) apply to every verb unchanged, and only the per-verb preconditions and
+transition (steps 5 and 6) differ.
 
 ### 5.2 `renew_work`
 
@@ -1079,7 +1082,7 @@ The sequence is:
    cache, offline projection, and diagnostic material. Never keep a long-lived
    dual-write or dual-master mode.
 
-#### Stage 2C qualification slice: local post-commit shadow
+#### Stage 2C observation foundation: local post-commit capture
 
 The first half of Stage 2C is an explicit, default-off product path. Preview
 and enable it with:
@@ -1089,12 +1092,19 @@ loopx configure-goal --goal-id GOAL --local-authority-shadow-file
 loopx configure-goal --goal-id GOAL --local-authority-shadow-file --execute
 ```
 
-Todo, handoff-mode, follow-up, and task-lease facades observe their committed
-local result through `FileAuthorityStore`. Candidate bytes live under
+Todo, handoff-mode, follow-up, and task-lease facades sample the full current
+local projection after their primary write returns committed, then ask
+`FileAuthorityStore` to retain that snapshot. `observation_trigger` records
+why sampling began; it is not the primary transaction identity. A concurrent
+primary commit may therefore appear in the sampled snapshot. A `captured` or
+`replayed` result proves only the candidate-side observation commit. It does
+not compare the source and candidate and carries `parity_verdict=not_evaluated`.
+
+Candidate bytes live under
 `authority-shadow/file/` outside the legacy per-Goal runtime tree, so state
 migration never copies a store identity or revision; an executed migration
 seeds a new target lineage from the migrated local state. Candidate failure is
-reported as evidence but never reverses the completed local write.
+reported as an observation result but never reverses the completed local write.
 
 Disable the observer in one command with
 `loopx configure-goal --goal-id GOAL --clear-local-authority-shadow --execute`.
@@ -1104,7 +1114,8 @@ decision, fence a legacy writer, qualify a remote provider, or complete the
 second Stage 2C promotion. A process crash after the local commit but before
 the observer call may miss that individual observation; a later committed
 write or migration seed refreshes the full current projection, but no durable
-shadow outbox is claimed here.
+shadow outbox or transaction-correlated receipt is claimed here. This plumbing
+is not parity evidence and cannot by itself support Stage 2C promotion.
 
 ### Implementation prerequisite: put local file mode behind the same coordination contract
 

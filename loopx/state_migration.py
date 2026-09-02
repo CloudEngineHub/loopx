@@ -16,7 +16,7 @@ LEGACY_GLOBAL_REGISTRY = LEGACY_RUNTIME_ROOT / "registry.global.json"
 AUTHORITY_SHADOW_CONFIG_SCHEMA = "loopx_local_authority_shadow_config_v0"
 MIGRATION_SHADOW_SEED_EVIDENCE_SCHEMA = "loopx_state_migration_shadow_seed_evidence_v0"
 _SHADOW_EVIDENCE_OUTCOMES = {
-    "advanced",
+    "captured",
     "replayed",
     "ambiguous_reconciled",
     "ambiguous_unproved",
@@ -256,7 +256,7 @@ def _shadow_seed_result(*, goal_id: str, result: object) -> dict[str, Any]:
 
     reason_code = (
         None
-        if outcome in {"advanced", "replayed", "ambiguous_reconciled"}
+        if outcome in {"captured", "replayed", "ambiguous_reconciled"}
         else f"post_migration_shadow_seed_{outcome}"
     )
     return _shadow_seed_evidence(
@@ -299,7 +299,7 @@ def seed_migrated_authority_shadows(
                 registry_path=target_registry_path,
                 runtime_root=target_runtime_root,
                 goal_id=goal_id,
-                source_operation="state_migration_seed",
+                observation_trigger="state_migration_seed",
             )
             results.append(_shadow_seed_result(goal_id=goal_id, result=result))
         except Exception:

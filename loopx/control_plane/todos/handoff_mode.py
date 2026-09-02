@@ -517,7 +517,7 @@ def set_goal_handoff_mode(
         registry_path=registry_path,
         runtime_root=runtime_root_from_registry(registry_path, None),
         goal_id=goal_id,
-        source_operation=f"handoff_mode_set:{previous}:{requested}",
+        observation_trigger=f"handoff_mode_set:{previous}:{requested}",
     )
     if evidence is not None:
         payload["authority_shadow"] = evidence

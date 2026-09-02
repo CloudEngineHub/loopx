@@ -10,6 +10,7 @@ from loopx.configure_goal import configure_goal
 
 
 GOAL_ID = "local-authority-shadow-config"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _registry(tmp_path: Path) -> Path:
@@ -145,11 +146,17 @@ def test_configure_goal_cli_exposes_default_off_shadow_boundary(
         for item in payload["configuration_catalog"]["features"]
         if item["feature_id"] == "local_authority_shadow"
     )
-    assert feature["availability"] == "qualification_opt_in"
+    assert feature["display_name"] == "Local post-commit authority observation"
+    assert feature["availability"] == "experimental_opt_in"
+    assert "parity" not in feature["consider_when"].lower()
+    assert "post-commit snapshot" in feature["effect"]
     assert feature["does_not"] == [
         "read the candidate for lifecycle decisions",
         "write candidate state back into Markdown or task-lease files",
         "promote shared authority or fence legacy writers",
+        "bind the snapshot to the exact primary transaction",
+        "guarantee delivery through a durable outbox",
+        "compare source and candidate or issue a parity verdict",
     ]
     assert feature["commands"]["apply_disable"].endswith(
         "--clear-local-authority-shadow --execute"
@@ -157,3 +164,21 @@ def test_configure_goal_cli_exposes_default_off_shadow_boundary(
     assert "authority_shadow" not in json.loads(
         registry.read_text(encoding="utf-8")
     )["goals"][0]["coordination"]
+
+
+def test_rfc_disambiguates_historical_and_current_stage_numbering() -> None:
+    english = (
+        REPO_ROOT
+        / "docs/architecture/rfcs/shared-goal-authority-state-provider-v0.md"
+    ).read_text(encoding="utf-8")
+    chinese = (
+        REPO_ROOT
+        / "docs/architecture/rfcs/shared-goal-authority-state-provider-v0.zh-CN.md"
+    ).read_text(encoding="utf-8")
+
+    assert "historical #3669 implementation sequence" in english
+    assert "part of the Stage 0 reference foundation" in english
+    assert "not the Stage 3 remote-shadow phase in Section 11" in english
+    assert "#3669 历史实施序列" in chinese
+    assert "属于 Stage 0 reference foundation" in chinese
+    assert "不是第 11 节的 Stage 3 远端 shadow 阶段" in chinese

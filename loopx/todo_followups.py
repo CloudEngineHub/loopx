@@ -175,7 +175,7 @@ def capture_followup_todos(
             registry_path=registry_path,
             runtime_root=None,
             goal_id=goal_id,
-            source_operation=(
+            observation_trigger=(
                 f"todo_capture_followups:{recorded_count}:{updated_at}"
             ),
         )

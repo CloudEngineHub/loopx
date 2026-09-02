@@ -29,7 +29,7 @@ _CONFIG_FIELDS = {"schema_version", "mode"}
 _PROJECTION_ATTEMPTS = 3
 _CONFLICT_RETRY_ATTEMPTS = 3
 _EVIDENCE_OUTCOMES = {
-    "advanced",
+    "captured",
     "replayed",
     "ambiguous_reconciled",
     "ambiguous_unproved",
@@ -145,8 +145,13 @@ def _base_evidence(
         "outcome": outcome,
         "reason_code": reason_code,
         "goal_id": goal_id,
-        "operation_id": None,
+        "observation_id": None,
         "source_digest": None,
+        "capture_kind": "post_commit_snapshot",
+        "source_transaction_correlated": False,
+        "durable_source_outbox": False,
+        "source_candidate_compared": False,
+        "parity_verdict": "not_evaluated",
         "primary_authority": "legacy_local",
         "candidate_provider": "file",
         "candidate_read_for_decision": False,
@@ -277,7 +282,7 @@ def _valid_evidence(
     result: object,
     *,
     goal_id: str,
-    operation_id: str,
+    observation_id: str,
     source_digest: str,
 ) -> bool:
     if not isinstance(result, dict):
@@ -286,8 +291,13 @@ def _valid_evidence(
         result.get("schema_version") == LOCAL_AUTHORITY_SHADOW_EVIDENCE_SCHEMA
         and result.get("outcome") in _EVIDENCE_OUTCOMES
         and result.get("goal_id") == goal_id
-        and result.get("operation_id") == operation_id
+        and result.get("observation_id") == observation_id
         and result.get("source_digest") == source_digest
+        and result.get("capture_kind") == "post_commit_snapshot"
+        and result.get("source_transaction_correlated") is False
+        and result.get("durable_source_outbox") is False
+        and result.get("source_candidate_compared") is False
+        and result.get("parity_verdict") == "not_evaluated"
         and result.get("primary_authority") == "legacy_local"
         and result.get("candidate_provider") == "file"
         and result.get("candidate_read_for_decision") is False
@@ -305,9 +315,13 @@ def observe_local_authority_commit(
     registry_path: Path,
     runtime_root: Path | None,
     goal_id: str,
-    source_operation: str,
+    observation_trigger: str,
 ) -> dict[str, Any] | None:
-    """Record one local post-commit observation without changing its verdict."""
+    """Capture a best-effort post-commit snapshot without changing its verdict.
+
+    ``observation_trigger`` is diagnostic context, not a primary transaction
+    identity. The snapshot may include commits that landed after that trigger.
+    """
 
     if not goal_id or goal_id in {".", ".."} or "/" in goal_id or "\\" in goal_id:
         return _base_evidence(
@@ -353,13 +367,13 @@ def observe_local_authority_commit(
                 source_digest = (
                     "sha256:" + hashlib.sha256(_canonical(projection)).hexdigest()
                 )
-                operation_id = (
+                observation_id = (
                     "local-shadow:"
                     + hashlib.sha256(
                         _canonical(
                             {
                                 "goal_id": goal_id,
-                                "source_operation": source_operation,
+                                "observation_trigger": observation_trigger,
                                 "source_digest": source_digest,
                             }
                         )
@@ -372,8 +386,8 @@ def observe_local_authority_commit(
                         "mode": config["mode"],
                         "runtime_root": str(runtime_root),
                         "goal_id": goal_id,
-                        "operation_id": operation_id,
-                        "source_operation": source_operation,
+                        "observation_id": observation_id,
+                        "observation_trigger": observation_trigger,
                         "source_digest": source_digest,
                         "source_projection": projection,
                     },
@@ -382,13 +396,13 @@ def observe_local_authority_commit(
                 if not _valid_evidence(
                     raw_result,
                     goal_id=goal_id,
-                    operation_id=operation_id,
+                    observation_id=observation_id,
                     source_digest=source_digest,
                 ):
                     return _base_evidence(
                         goal_id=goal_id,
                         outcome="failed",
-                        reason_code="shadow_evidence_invalid",
+                        reason_code="shadow_observation_result_invalid",
                     )
                 result = dict(raw_result)
                 if result["outcome"] != "conflict_retry_required":
@@ -434,7 +448,7 @@ def observe_todo_local_authority_commit(
         registry_path=registry_path,
         runtime_root=None,
         goal_id=goal_id,
-        source_operation=f"{write_class}:{todo_id}:{updated_at}",
+        observation_trigger=f"{write_class}:{todo_id}:{updated_at}",
     )
     if evidence is not None:
         payload["authority_shadow"] = evidence

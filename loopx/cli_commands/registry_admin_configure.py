@@ -255,8 +255,8 @@ def register_configure_goal_command(subparsers: argparse._SubParsersAction) -> N
         "--local-authority-shadow-file",
         action="store_true",
         help=(
-            "Enable the default-off, one-way post-commit FileAuthorityStore "
-            "qualification shadow. Legacy local writers remain authoritative."
+            "Enable default-off, one-way capture of post-commit local snapshots "
+            "in FileAuthorityStore. This does not compare source and candidate."
         ),
     )
     configure_goal_parser.add_argument(
@@ -264,7 +264,7 @@ def register_configure_goal_command(subparsers: argparse._SubParsersAction) -> N
         action="store_true",
         help=(
             "Disable the local authority shadow. This does not delete retained "
-            "qualification evidence."
+            "candidate observations."
         ),
     )
     configure_goal_parser.add_argument(

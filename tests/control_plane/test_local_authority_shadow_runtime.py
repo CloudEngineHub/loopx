@@ -207,6 +207,11 @@ def test_enabled_todo_public_facades_emit_post_commit_evidence(tmp_path: Path) -
         )
         assert result["authority_shadow"]["primary_writeback_preserved"] is True
         assert result["authority_shadow"]["provider_to_local_writes"] is False
+        assert result["authority_shadow"]["capture_kind"] == "post_commit_snapshot"
+        assert result["authority_shadow"]["source_transaction_correlated"] is False
+        assert result["authority_shadow"]["durable_source_outbox"] is False
+        assert result["authority_shadow"]["source_candidate_compared"] is False
+        assert result["authority_shadow"]["parity_verdict"] == "not_evaluated"
 
 
 def test_enabled_task_lease_facades_shadow_only_committed_mutations(
@@ -267,7 +272,7 @@ def test_enabled_task_lease_facades_shadow_only_committed_mutations(
 
     for result in (acquired, renewed, transferred, released):
         assert result["authority_shadow"]["outcome"] in {
-            "advanced",
+            "captured",
             "replayed",
             "ambiguous_reconciled",
         }
@@ -293,9 +298,9 @@ def test_handoff_mode_and_direct_followup_writers_refresh_the_same_shadow(
     )
 
     assert mode["changed"] is True
-    assert mode["authority_shadow"]["outcome"] == "advanced"
+    assert mode["authority_shadow"]["outcome"] == "captured"
     assert followups["changed"] is True
-    assert followups["authority_shadow"]["outcome"] == "advanced"
+    assert followups["authority_shadow"]["outcome"] == "captured"
     head = _shadow_document(runtime_root)["head"]
     assert head["handoff_mode"] == "legacy"
     assert [todo["todo_id"] for todo in head["todos"]] == [
@@ -348,7 +353,7 @@ def test_event_projected_completion_refreshes_shadow_after_releasing_lease(
 
     assert completed["source"] == "event_log"
     assert completed["changed"] is True
-    assert completed["authority_shadow"]["outcome"] == "advanced"
+    assert completed["authority_shadow"]["outcome"] == "captured"
     head = _shadow_document(runtime_root)["head"]
     assert len(head["leases"]) == 1
     assert head["leases"][0]["todo_id"] == todo_id
@@ -373,13 +378,18 @@ def test_candidate_failure_never_changes_committed_todo_result(
             "outcome": "unavailable",
             "reason_code": "injected_outage",
             "goal_id": params["goal_id"],
-            "operation_id": params["operation_id"],
+            "observation_id": params["observation_id"],
             "source_digest": params["source_digest"],
             "primary_authority": "legacy_local",
             "candidate_provider": "file",
             "candidate_read_for_decision": False,
             "provider_to_local_writes": False,
             "primary_writeback_preserved": True,
+            "capture_kind": "post_commit_snapshot",
+            "source_transaction_correlated": False,
+            "durable_source_outbox": False,
+            "source_candidate_compared": False,
+            "parity_verdict": "not_evaluated",
             "store_identity": None,
             "provider_revision": None,
             "cursor": None,
@@ -424,7 +434,7 @@ def test_observer_is_default_off_without_creating_lock_or_provider_directory(
             registry_path=registry,
             runtime_root=runtime_root,
             goal_id=GOAL_ID,
-            source_operation="todo_update",
+            observation_trigger="todo_update",
         )
         is None
     )
@@ -467,7 +477,7 @@ def test_provider_revision_conflict_resamples_source_under_same_observation_lock
         **_kwargs: object,
     ) -> dict[str, object]:
         requests.append(dict(params))
-        outcome = "conflict_retry_required" if len(requests) == 1 else "advanced"
+        outcome = "conflict_retry_required" if len(requests) == 1 else "captured"
         return {
             "schema_version": LOCAL_AUTHORITY_SHADOW_EVIDENCE_SCHEMA,
             "outcome": outcome,
@@ -475,13 +485,18 @@ def test_provider_revision_conflict_resamples_source_under_same_observation_lock
                 "provider_revision_mismatch" if len(requests) == 1 else None
             ),
             "goal_id": GOAL_ID,
-            "operation_id": params["operation_id"],
+            "observation_id": params["observation_id"],
             "source_digest": params["source_digest"],
             "primary_authority": "legacy_local",
             "candidate_provider": "file",
             "candidate_read_for_decision": False,
             "provider_to_local_writes": False,
             "primary_writeback_preserved": True,
+            "capture_kind": "post_commit_snapshot",
+            "source_transaction_correlated": False,
+            "durable_source_outbox": False,
+            "source_candidate_compared": False,
+            "parity_verdict": "not_evaluated",
             "store_identity": "file:test",
             "provider_revision": "file:2:test",
             "cursor": "2",
@@ -496,13 +511,13 @@ def test_provider_revision_conflict_resamples_source_under_same_observation_lock
         registry_path=registry,
         runtime_root=runtime_root,
         goal_id=GOAL_ID,
-        source_operation="todo_update:todo_a:now",
+        observation_trigger="todo_update:todo_a:now",
     )
 
     assert result is not None
-    assert result["outcome"] == "advanced"
+    assert result["outcome"] == "captured"
     assert len(requests) == 2
     assert requests[0]["source_digest"] != requests[1]["source_digest"]
-    assert requests[0]["operation_id"] != requests[1]["operation_id"]
+    assert requests[0]["observation_id"] != requests[1]["observation_id"]
     assert all(request["runtime_root"] == str(runtime_root) for request in requests)
     assert all("provider_directory" not in request for request in requests)
