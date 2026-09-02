@@ -12,8 +12,10 @@
   `publish_bytes` generation-CAS mapping was exercised once by hand against a
   live NoKV stack at that pin (see the example README); the run is evidence for
   the mapping only, not part of any merge gate
-- PostgreSQL baseline: contract and delivery plan only. This RFC does not claim
-  that a PostgreSQL provider or shared authority service already ships
+- PostgreSQL baseline: the TypeScript Stage 2B candidate implements the store
+  contract and has passed a real PostgreSQL 16 transaction matrix. No shared
+  authority service, runtime caller, authentication boundary, or authority
+  promotion ships yet
 - Language note: the
   [Chinese version](./shared-goal-authority-state-provider-v0.zh-CN.md) and this
   English version are semantic mirrors. A difference between them is a defect.
@@ -200,6 +202,60 @@ deployable semantic-authority and reconciliation surface, not the NoKV adapter
 or provider-neutral core. This RFC neither requires a repository split nor
 selects separate license terms; the current policy remains
 [`LoopX Licensing`](../../project/licensing.md).
+
+### 1.3 Prospective license path by distribution boundary
+
+This subsection is non-normative and does not change the license of any current
+LoopX source or release. It records the boundary that a future license RFC
+should evaluate if the service-grade horizon becomes a separately shipped
+product.
+
+| Distribution boundary | Delivery horizon | Recommended path |
+| --- | --- | --- |
+| RFCs, schemas, typed commands, receipts, provider-neutral decisions, store contracts/codecs, client SDKs, conformance fixtures, and examples | Stages 1-4 | Remain in the Apache-2.0 open core so runtimes and providers can implement one coordination contract without adopting a server distribution |
+| Embedded/local authority, file parity backend, and shared-store adapters for NoKV or PostgreSQL | Stages 1-4 | Remain Apache-2.0; an adapter does not acquire LoopX semantic authority, and the underlying provider keeps its own license |
+| Test-only shadowing, canary, migration fixtures, and authority-source promotion proof | Stages 3-4 | Remain Apache-2.0 qualification material; evidence that a deployment is correct is not by itself a separately licensed product |
+| Independently versioned shared-authority server that owns authentication, tenant isolation, audit, durable receipt service, migration/promotion, capacity controls, recovery, and HA | Stage 5 | May be evaluated for AGPL-3.0 in a separate license RFC once this is more than a thin wrapper around the Apache core |
+| Persistent Supervisor/reconciliation worker shipped as part of that server distribution | Stage 5 | May follow the server's AGPL-3.0 candidate terms when it owns restart-safe observation, reclaim, remote-resume orchestration, and wake requests through authority commands |
+| Separately delivered managed operations or enterprise-only modules | After a service boundary exists | May use separate commercial terms when they are not included in the Apache or AGPL distribution and their dependency boundary is explicit |
+
+An illustrative package boundary, if these distributions are later created,
+is:
+
+```text
+loopx/control_plane/coordination/             Apache-2.0
+packages/loopx-authority-client/              Apache-2.0
+packages/loopx-authority-provider-*/          Apache-2.0
+packages/loopx-shared-authority-server/       AGPL-3.0 candidate
+packages/loopx-persistent-supervisor/         AGPL-3.0 candidate, or part of the server
+```
+
+The names are illustrative rather than a Stage 0 layout requirement. The
+dependency direction is the durable rule: an AGPL server distribution may
+consume Apache contracts, core logic, and providers; Apache artifacts must not
+import, bundle, or require the AGPL server. The NoKV or PostgreSQL server is
+not relicensed by a LoopX adapter, and an adapter must not be used as an
+artificial license boundary.
+
+Any Stage 5 license proposal must satisfy all of these gates before changing
+the current policy:
+
+1. identify one independently deployable and versioned server artifact;
+2. show that the artifact owns a real network trust and reconciliation
+   boundary rather than only forwarding Apache-core calls;
+3. preserve Apache client, protocol, embedded-mode, provider, and conformance
+   paths for interoperable adoption;
+4. define package metadata, nested license/NOTICE files, SPDX markings, and
+   build checks that prevent cross-license bundling;
+5. decide the inbound contribution policy before accepting contributions to
+   any AGPL component, especially if commercial dual licensing may be needed;
+6. apply any change prospectively through an explicit version boundary without
+   narrowing rights already granted by MIT or Apache releases.
+
+The current RFC therefore keeps Stages 1-4 under the repository's Apache-2.0
+policy. Stage 5 creates a decision point, not an automatic license transition.
+No source path becomes AGPL-3.0 merely because it implements a shared-authority
+contract or passes a remote-provider canary.
 
 ## 2. What We Will Do, and What We Will Not
 
@@ -964,12 +1020,31 @@ tracks. Workstream labels are responsibility boundaries, not authority grants:
 | PostgreSQL provider owner | Generic PostgreSQL provider/service; transaction isolation, authentication, tenancy, audit, and operational deployment contract |
 | Joint qualification | Provider conformance matrix, one-way shadow parity, one-Goal/two-Agent TEST ONLY canary, and promotion evidence |
 
+The shared control plane is a composition of independently owned ledgers, not
+one large coordination aggregate. Stage 3/4 qualification must preserve these
+ownership and proof boundaries:
+
+| Ledger / decision | Authority and stable identity | Failure boundary | Stage 3/4 proof |
+| --- | --- | --- | --- |
+| Coordination head, Todo/claim, and lease fence | `AuthorityStore`; `(tenant_id, goal_id)`, `operation_id`, authority revision, and lease epoch | provider CAS/transaction plus operation-receipt readback | provider parity for projection, legal claim/lease transitions, fence, receipt, head, and cursor |
+| Turn admission and quota | independent Turn/quota ledgers; obligation, admission, debit, and void receipt identities | their own append/idempotency boundary; never absorbed into a coordination commit | end-to-end observation that admitted work references the accepted coordination head and accounts quota once |
+| Delivery, inbox, and external effects | independent delivery/inbox/provider ledgers; event cursor, effect identity, and provider receipt | connector/effect ambiguity is reconciled at its owning ledger | end-to-end observation that steering changes a later decision and an effect is not duplicated |
+| Settlement and run history | independent settlement journal and run ledger; settlement/phase receipt and run identity | ordered settlement checkpoints and idempotent replay | end-to-end observation of exactly-once settlement across restart, referenced from rather than stored inside coordination state |
+
+Only the first row qualifies an `AuthorityStore` implementation. The remaining
+rows qualify control-plane composition through typed references and receipts;
+passing them must not be reported as additional state owned or transacted by
+the coordination provider.
+
 The sequence is:
 
 1. **Stage 0 - merge the recoverable reference foundation.** Integrate #3669
    with the native TypeScript task-lease acquire boundary, preserve TypeScript as
-   the acquire transaction owner, close file store-identity publication, and
-   keep the remaining Python lifecycle verbs explicitly coverage-only.
+   the acquire transaction owner, and close file store-identity publication.
+   #3806 completes the local lifecycle transaction cutover and makes renew,
+   transfer, and release consume one pure TypeScript decision in both the local
+   file executor and provider-neutral coordination; Python is a typed adapter,
+   not an alternate authority.
 2. **Stage 1 - define the provider-neutral transaction boundary.** Express the
    service-grade contract in LoopX-owned TypeScript and make the file provider
    its first conformance backend. Do not recreate a second Python semantic
@@ -978,16 +1053,27 @@ The sequence is:
    the NoKV adapter and storage envelope; the PostgreSQL owner implements the
    generic service/provider. Both reuse the same LoopX transition and receipt
    semantics.
-4. **Stage 3 - one-way shadow parity.** Local control-plane files remain the
-   only authority while committed observations are projected to the candidate
-   provider. Compare Todo/claim, lease fence, Turn admission, quota,
-   settlement, receipt, projection head, and cursor. Do not perform bidirectional
-   synchronization or provider-to-file writes.
-5. **Stage 4 - TEST ONLY canary.** One Goal and two Agents must show no duplicate
-   claim or effect, correct expiry/fencing, restart resume, inbox steering,
-   idempotent exactly-once settlement, and fail-closed writes during network
-   failure.
-6. **Stage 5 - flip one authority source.** Only after a reviewed promotion,
+4. **Stage 2C - promote the local canonical file aggregate.** First shadow the
+   current Markdown/task-lease writers into `FileAuthorityStore` without reading
+   it for decisions. Prove parity, crash recovery, migration, and one-command
+   rollback; then, in a separately reviewed promotion, make the file aggregate
+   the local coordination authority and fence the legacy writers. Markdown and
+   task-lease files become projections only after that promotion.
+5. **Stage 3 - one-way remote shadow parity.** The promoted local
+   `FileAuthorityStore` remains the only authority while committed observations
+   are projected to a NoKV or PostgreSQL candidate. Provider parity compares
+   Todo/claim, lease fence, operation
+   receipt, projection head, and cursor. Turn admission, quota, settlement,
+   inbox, and run history remain independent ledgers: the shadow records only
+   typed references needed to verify their end-to-end composition. Do not
+   perform bidirectional synchronization or provider-to-file writes.
+6. **Stage 4 - TEST ONLY canary.** One Goal and two Agents must show no duplicate
+   claim, correct expiry/fencing, restart resume, and fail-closed coordination
+   writes during network failure. The same canary separately observes that no
+   external effect is duplicated, inbox steering changes a later decision,
+   and settlement is idempotent and exactly-once; those are composition proofs
+   over their owning ledgers, not `AuthorityStore` conformance claims.
+7. **Stage 5 - flip one authority source.** Only after a reviewed promotion,
    make the shared LoopX service the sole writer. Local `.loopx` state becomes
    cache, offline projection, and diagnostic material. Never keep a long-lived
    dual-write or dual-master mode.
@@ -1019,16 +1105,17 @@ does not replace today's separate claim and lease verbs with the atomic
 `claim_work` command described above; that command belongs to the future shared
 aggregate.
 
-After the task-lease acquire TypeScript cutover, the acquire portion of this
-pure core is owned by `task_lease_acquire.ts`. The Python `authority_core`
-surface is a typed adapter for that command: it projects a normalized snapshot,
-invokes `task_lease.acquire.decide`, and reconstructs the provider-neutral
-`TransitionPlan`. Both the local lease-file transaction and the Stage 2
-coordination executor therefore consume the same acquire decision; locking,
+After the task-lease TypeScript cutovers, acquire is owned by
+`task_lease_acquire.ts`, while renew, transfer, and release are owned by the
+pure seam in `task_lease_lifecycle_decision.ts`. Python `authority_core`
+projects normalized snapshots, invokes those decisions, and reconstructs the
+provider-neutral `TransitionPlan`. The local lease-file transaction and the
+coordination executor therefore consume the same lease decisions; locking,
 source revalidation, file persistence, provider CAS, and receipt construction
-remain in their respective execution layers. The remaining todo, renew,
-transfer, release, fence, and handoff-mode decisions stay in the Python core
-until their own reviewed TypeScript cutovers.
+remain in their respective execution layers. Todo, terminal-fence, and
+handoff-mode decisions stay in the Python core until their own reviewed
+TypeScript cutovers; local holder/fence-close lock mechanics remain execution
+effects rather than provider contracts.
 
 Keep three layers distinct as the provider work proceeds:
 
@@ -1048,6 +1135,46 @@ contract must never collapse `missing` into `unavailable` or `failed`.
 independent version domains. Likewise, a restore may preserve frozen bytes and
 lineage without granting current authority: promoting restored state to the
 live authority head requires an explicit lineage and binding fence.
+
+#### Stage 2B PostgreSQL candidate status (2026-09-01)
+
+The first PostgreSQL candidate now implements the LoopX-owned TypeScript store
+contract instead of introducing a second semantic authority. A store handle is
+bound to `(tenant_id, goal_id)` and receives only a service-owned database
+pool. Its fixed `loopx_control_plane` schema separates the scoped head,
+committed operations, ordered events, and ordered receipts. One SQL transaction
+creates or locks the scoped head row, checks the opaque provider revision,
+fences `operation_id` with a unique constraint, allocates the per-goal cursor,
+inserts the commit/events/receipts, advances the projection head, and commits.
+An error before `COMMIT` is rolled back and typed `failed`; an error after the
+`COMMIT` attempt starts is typed `ambiguous` and can be reconciled only by
+receipt readback. Database-incarnation metadata is installed administratively
+and cannot be rebound implicitly.
+
+This slice also moves strict JSON validation and commit normalization out of
+the file implementation into one TypeScript authority-store codec. File and
+PostgreSQL now run the same provider-neutral conformance suite for atomic
+projection-plus-receipt commit, CAS contention, historical receipt replay,
+operation fencing, ordered cursor scans, isolation of returned values, and
+pre-write rejection of malformed JSON.
+
+Real PostgreSQL qualification starts here, not at shadow or canary. A
+PostgreSQL 16 instance passed nine durable rows: the shared conformance matrix,
+same-head concurrent CAS, tenant-scoped reuse of the same goal and operation
+ids, transaction rollback with no visible head or receipt, receipt recovery
+after a committed transaction loses its response, and database-incarnation
+rebind refusal. A fake can still exercise adapter branches, but it cannot prove
+row locking, unique constraints, rollback, or commit visibility; every later
+PostgreSQL provider slice must therefore retain a real-database gate.
+
+The candidate remains coverage-only. No production LoopX entry point constructs
+it, local mode remains unchanged, and Agents cannot receive the injected pool.
+Service authentication and database roles, tenant authorization/RLS, restore
+incarnation rotation, pool exhaustion/cancellation/failover, one-way shadow
+parity, and authority-source promotion remain explicit holds. The expected
+route to the TEST ONLY canary is three further reviewed slices: service trust
+and deployment boundaries; one-way runtime shadow plus parity; then the bounded
+canary and promotion gate.
 
 The file-backed provider shadow is Stage 2; its first slice is merged on
 `main` through #3529, and the evidence behind it is recorded in the Stage 2
@@ -1246,7 +1373,8 @@ shipped production capability.
 
 - the LoopX-owned TypeScript transaction/store boundary and file-provider
   conformance described in Section 6.2;
-- NoKV and PostgreSQL providers qualified independently behind that boundary;
+- NoKV qualification and the remaining PostgreSQL service, failure, and
+  promotion holds behind that boundary;
 - one-way shadow parity, the one-Goal/two-Agent TEST ONLY canary, and a
   single-source authority flip with no long-lived dual-write or dual-master;
 - an explicit shared-mode migration and rollback/export operation, local
