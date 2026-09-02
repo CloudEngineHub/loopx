@@ -3,14 +3,15 @@
 - 状态：Draft，正在接受 maintainer review
 - 最初提案方：NoKV Lab
 - 扩展修订方：LoopX maintainer
-- 日期：2026-08-05；修订于 2026-09-01
+- 日期：2026-08-05；修订于 2026-09-02
 - 范围：一个 provider-neutral 的 LoopX 权威合同，支持内置 file、可选 NoKV
   与可选 PostgreSQL provider profile，用来补充
   [`host-integration-surface-v0`](../../reference/protocols/host-integration-surface-v0.md)
 - 源码基线：LoopX `a0c20f1779d273e7aaa4bd3ea166d145d466e6d5`
-- Provider API 基线：NoKV `3d75d96965`（0.11.0 线）。Python `publish_bytes`
-  generation-CAS 映射已在该基线的真实 NoKV stack 上手工跑过一次（见示例 README）；
-  该次运行只是映射本身的证据，不属于任何合并门槛
+- Provider API 基线：NoKV `7bb3ffd6512fd57d9c0f193aa6d9c5b935d77f30`
+  （release 0.11.0、Python API 1、Holt 固定为 0.8.6）。Stage 2A 的可执行资格
+  验证只接受这份 SDK 合同与本 checkout 的 helper；它仍是候选证据，不是合并门槛
+  或 authority promotion
 - PostgreSQL 基线：TypeScript Stage 2B candidate 已实现 store contract，且已通过
   真实 PostgreSQL 16 transaction matrix；shared authority service、runtime caller、
   authentication boundary 与 authority promotion 均尚未交付
@@ -1144,6 +1145,24 @@ migration/promotion、service recovery 或 HA。
 `python3 examples/nokv-shadow-provider/probes.py contract` 通过并不表示上面的完整 P0
 验收门通过。历史 latency 或 fault 结果只具有参考意义，不构成 durability、recovery、
 HA 或 production qualification 声明。
+
+`examples/nokv-authority-store/` 还包含一个 TEST ONLY 的 Stage 2A probe：它会
+打开三个相互独立的 SDK helper 进程，验证 fresh create、精确 generation update、
+一次 CAS 已落盘但响应被刻意丢弃后的回读 reconciliation、两个竞争者恰一胜出的
+CAS、胜负双方的 receipt 行为，以及新进程对 receipt 与完整 history 的回读。该可
+执行入口把 argv 固定为一个绝对 Python executable、解释器隔离标志 `-I`，加本
+checkout 中经过评审的 helper，因此 `PYTHONPATH` 无法替换 `nokv` 模块；helper 只
+接受 NoKV 0.11.0 / Python API 1，report 中重复的是这两个准入常量，而非从服务端读
+回的值。它把 read metadata 与当前
+workbench incarnation 对照，并针对请求的 workbench、path、operation、revision、
+generation 校验 publish 回包。即使 publish 回包报告成功，AuthorityStore 也必须
+重新读取并证明当前 workbench incarnation 下持久化了完全相同的 transaction，才会
+接受成功。这在 LoopX 边界消除了错误成功，但 NoKV 当前 Python API 尚不能把
+expected workspace incarnation 原子绑定到 `publish_bytes`；阻止 concurrent
+remove/recreate 后的写入仍是明确的 provider-contract hold。只有成功的 live JSON report 才是该次单节点 Stage 2A store-conformance
+运行的证据；确定性测试只证明场景序列。这个纯 LoopX 候选既不修改 NoKV 源码，也
+不改变其 workbench/artifact 数据模型；它不证明 runtime shadow parity、multi-Agent
+canary、authority-source promotion、HA、重启恢复、容量或生产路由。
 
 ## 附录 B：交接模式决策记录（2026-08-10）
 
