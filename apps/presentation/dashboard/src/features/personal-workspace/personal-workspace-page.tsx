@@ -109,7 +109,9 @@ function ManagerHomeBoard({
   });
   const goalCard = (goal: WorkspaceGoal) => (
     <button className="personal-home-goal-card" data-goal-state={goal.state} key={goal.goalId} onClick={() => onSelectGoal(goal.goalId)} type="button">
-      <span className="personal-home-goal-meta"><i />{goal.agentLabel ?? goal.agentId}</span>
+      <span className="personal-home-goal-meta"><i />{goal.agentLaneCount && goal.agentLaneCount > 1
+        ? t("header.workAgentCount", { count: goal.agentLaneCount })
+        : goal.agentLabel ?? goal.agentId}</span>
       <strong>{goal.title}</strong>
       <p>{goal.needsYou ?? goal.nextSentence}</p>
       <footer><span>{localizedGoalState(goal.state, locale)}</span><small title={goal.latestActivity}>{goal.latestActivity ? activityTimeLabel(goal.latestActivity, locale, t) : goal.agentTodos.length ? t("home.taskCount", { count: goal.agentTodos.length }) : t("home.noActivity")}</small></footer>
