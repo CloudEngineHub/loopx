@@ -18,6 +18,7 @@ from .store import (
     configure_machine_configuration,
     inspect_machine_configuration,
     read_machine_configuration,
+    read_stored_machine_configuration,
     rollback_machine_configuration,
 )
 
@@ -62,7 +63,9 @@ def _render(payload: dict[str, object]) -> str:
             title = str(item.get("title") or namespace)
             versions = item.get("schema_versions")
             version_text = (
-                ", ".join(map(str, versions)) if isinstance(versions, list) else "unknown"
+                ", ".join(map(str, versions))
+                if isinstance(versions, list)
+                else "unknown"
             )
             lines.append(f"- `{namespace}` — {title} (`{version_text}`)")
     return "\n".join(lines) + "\n"
@@ -169,7 +172,7 @@ def handle_machine_configuration_command(
             configuration = _load_json_object(args.config_json)
             if args.namespace:
                 configuration = merge_machine_configuration_namespace(
-                    read_machine_configuration(runtime_root, registry=registry),
+                    read_stored_machine_configuration(runtime_root),
                     namespace=args.namespace,
                     namespace_configuration=configuration,
                     registry=registry,
@@ -183,7 +186,7 @@ def handle_machine_configuration_command(
             configuration = _load_json_object(args.config_json)
             if args.namespace:
                 configuration = merge_machine_configuration_namespace(
-                    read_machine_configuration(runtime_root, registry=registry),
+                    read_stored_machine_configuration(runtime_root),
                     namespace=args.namespace,
                     namespace_configuration=configuration,
                     registry=registry,

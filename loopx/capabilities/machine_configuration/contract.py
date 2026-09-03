@@ -123,11 +123,25 @@ def merge_machine_configuration_namespace(
     """Build one whole-document update while preserving sibling namespaces."""
 
     contract = registry.resolve(namespace)
+    # Namespace updates are also the recovery path for an installed namespace
+    # whose previously valid value no longer satisfies the current contract.
+    # Keep the stored value opaque until the owning namespace has replaced it;
+    # the final whole-document normalization below still validates every
+    # sibling and the new value before a plan can be produced.
     normalized_current = (
-        normalize_machine_configuration(current, registry=registry)
+        _mapping(current, "machine_configuration")
         if current is not None
         else {"schema_version": MACHINE_CONFIGURATION_SCHEMA, "namespaces": {}}
     )
+    if normalized_current.get("schema_version") != MACHINE_CONFIGURATION_SCHEMA:
+        raise ValueError(
+            f"machine_configuration must use {MACHINE_CONFIGURATION_SCHEMA}"
+        )
+    unknown = sorted(set(normalized_current) - {"schema_version", "namespaces"})
+    if unknown:
+        raise ValueError(
+            "machine_configuration contains unsupported fields: " + ", ".join(unknown)
+        )
     current_namespaces = _mapping(
         normalized_current.get("namespaces"), "machine_configuration.namespaces"
     )
