@@ -306,6 +306,7 @@ def test_sequence_advances_past_the_drain_cursor_and_lists_oldest_first(tmp_path
     assert summary["leases"] == {
         "committed_pending": 0,
         "prepared_only": 0,
+        "retired_residue": 0,
         "next_seq": 0,
         "cursor_last_seq": None,
         "cursor_last_entry_id": None,
@@ -353,3 +354,75 @@ def test_primary_lock_probe_reports_held_locks(tmp_path: Path) -> None:
     with exclusive_file_lock(target, timeout_seconds=1.0, operation="test_hold"):
         assert adapter.primary_lock_is_free(target) is False
     assert adapter.primary_lock_is_free(target) is True
+
+
+def test_prepared_records_must_bind_their_directory_identity_and_source(tmp_path: Path) -> None:
+    registry, state, runtime_root = _fixture(tmp_path)
+    original = state.read_text(encoding="utf-8")
+    _add_todo(registry, "Bound to this goal and partition.")
+    capture = _capture(registry, state, runtime_root, original_text=original)
+    capture.prepare(state.read_text(encoding="utf-8"))
+    capture.committed()
+    directory = _todo_dir(runtime_root)
+    [entry] = outbox.list_entries(directory)
+    assert entry.prepared["goal_id"] == GOAL_ID
+    assert entry.prepared["partition"] == "todos"
+    assert entry.prepared["source_root_digest"] == outbox.runtime_root_digest(runtime_root)
+    assert outbox.record_source_ref(entry.prepared) == text_digest(state.read_text(encoding="utf-8"))
+
+    def tampered(**changes: object) -> None:
+        record = dict(entry.prepared)
+        for key, value in changes.items():
+            if isinstance(value, dict) and isinstance(record.get(key), dict):
+                record[key] = {**record[key], **value}
+            else:
+                record[key] = value
+        outbox.durable_write_json(entry.prepared_path, record)
+        with pytest.raises(outbox.OutboxError) as raised:
+            outbox.list_entries(directory)
+        assert raised.value.reason_code == "outbox_file_invalid"
+
+    tampered(goal_id="goal-other")
+    tampered(partition="leases")
+    tampered(source={"bytes_digest": text_digest("some other bytes")})
+    tampered(source_root_digest="not-a-digest")
+    tampered(writer={"runtime": "ruby"})
+    tampered(source={"kind": "unknown_source"})
+    outbox.durable_write_json(entry.prepared_path, entry.prepared)
+    assert len(outbox.list_entries(directory)) == 1
+
+    # Seed entries bind their identity through the partition digest instead.
+    lease_seed = outbox.write_seed_entry(
+        runtime_root=runtime_root,
+        goal_id=GOAL_ID,
+        seed=outbox.lease_seed_source(runtime_root, GOAL_ID),
+    )
+    assert outbox.record_source_ref(lease_seed.prepared) == f"seed:{lease_seed.recorded_partition_digest()}"
+    lease_directory = outbox.partition_directory(runtime_root, GOAL_ID, "leases")
+    assert [item.entry_id for item in outbox.list_entries(lease_directory)] == [lease_seed.entry_id]
+
+
+def test_retired_residue_is_defined_by_the_cursor_watermark(tmp_path: Path) -> None:
+    _registry, _state, runtime_root = _fixture(tmp_path)
+    directory = _todo_dir(runtime_root)
+    seed = outbox.SeedSource(partition="todos", projection={"handoff_mode": "hard_lease", "todos": []})
+    first = outbox.write_seed_entry(runtime_root=runtime_root, goal_id=GOAL_ID, seed=seed)
+    second = outbox.write_seed_entry(runtime_root=runtime_root, goal_id=GOAL_ID, seed=seed)
+    assert outbox.retired_residue(directory) == []
+    outbox.write_cursor(
+        directory,
+        partition="todos",
+        last_seq=first.seq,
+        last_entry_id=first.entry_id,
+        last_partition_digest=first.recorded_partition_digest(),
+        last_cursor="1",
+        last_provider_revision="rev-1",
+    )
+    assert [path.name for path in outbox.retired_residue(directory)] == sorted(
+        [first.committed_path.name, first.prepared_path.name]  # type: ignore[union-attr]
+    )
+    assert [entry.seq for entry in outbox.list_entries(directory)] == [second.seq]
+    assert outbox.next_seq(directory) == 3
+    assert outbox.reclaim_retired_residue(directory) == 2
+    assert outbox.retired_residue(directory) == []
+    assert [entry.seq for entry in outbox.list_entries(directory)] == [second.seq]

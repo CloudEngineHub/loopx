@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
@@ -24,6 +24,7 @@ import {
   decodeLocalAuthorityShadowBinding,
   leaseRecordDigest,
   outboxEntryIdentity,
+  sha256Digest,
 } from "../../loopx/control_plane/coordination/local_authority_shadow_outbox.ts";
 
 const execFileAsync = promisify(execFile);
@@ -289,6 +290,7 @@ test("lease outbox entries are two-phase, durable, and skipped without a binding
   assert.equal(prepared.schema_version, LOCAL_AUTHORITY_SHADOW_OUTBOX_ENTRY_SCHEMA);
   assert.equal(prepared.partition, "leases");
   assert.equal(prepared.partition_digest, null);
+  assert.equal(prepared.source_root_digest, sha256Digest(resolve(root)));
   assert.deepEqual(prepared.source.lease, {
     todo_id: "todo-a",
     version: 2,

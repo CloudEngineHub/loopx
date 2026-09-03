@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { JsonObject } from "../effect_program.ts";
 import { durableWriteJson } from "../effect_runtime_io.ts";
@@ -235,7 +235,7 @@ export async function beginLeaseOutboxEntry(
         previous_lease: leaseSourceFacts(input.previous_lease),
         event_id: null,
       },
-      source_root_digest: sha256Digest(input.runtime_root),
+      source_root_digest: sha256Digest(resolve(input.runtime_root)),
       projection,
       partition_digest: null,
       prepared_at: new Date().toISOString(),

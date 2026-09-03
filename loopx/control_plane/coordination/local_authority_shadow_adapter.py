@@ -575,6 +575,7 @@ class DrainResult:
     reconciled: int = 0
     no_op: int = 0
     reseeded: int = 0
+    reclaimed_residue: int = 0
     pending_after: int = 0
     prepared_only_after: int = 0
     in_flight_partitions: list[str] = field(default_factory=list)
@@ -905,6 +906,10 @@ class _PartitionDrainer:
         self.last_delivered_digest: str | None = None
 
     def run(self) -> None:
+        # Files the cursor already covers are settled; reclaim them first so a
+        # crash between the cursor write and the unlinks can never wedge the
+        # partition.
+        self._result.reclaimed_residue += outbox.reclaim_retired_residue(self._directory)
         while not self._budget.exhausted():
             entries = outbox.list_entries(self._directory)
             if not entries:
@@ -985,6 +990,14 @@ class _PartitionDrainer:
         projection: dict[str, Any] | None,
         digest: str | None,
     ) -> bool:
+        expected_root = outbox.runtime_root_digest(self._runtime_root)
+        if entry.prepared.get("source_root_digest") != expected_root:
+            # The entry was written for a different runtime root; delivering it
+            # here would stitch another lineage's transaction into this one.
+            raise outbox.OutboxError(
+                "source_root_mismatch",
+                f"entry {entry.entry_id} was recorded for a different runtime root",
+            )
         request = _commit_entry_request(
             runtime_root=self._runtime_root,
             goal_id=self._goal_id,
@@ -1133,7 +1146,10 @@ def _drain_prelude(
 
 def _outbox_is_idle(summary: Mapping[str, Mapping[str, Any]]) -> bool:
     return all(
-        item["committed_pending"] == 0 and item["prepared_only"] == 0 and item["invalid"] is None
+        item["committed_pending"] == 0
+        and item["prepared_only"] == 0
+        and item["retired_residue"] == 0
+        and item["invalid"] is None
         for item in summary.values()
     )
 
@@ -1378,6 +1394,7 @@ def capture_evidence(
             "outcome": drain.outcome,
             "delivered": drain.delivered,
             "replayed": drain.replayed,
+            "reclaimed_residue": drain.reclaimed_residue,
             "pending_after": drain.pending_after,
             "prepared_only_after": drain.prepared_only_after,
             "stopped_at": drain.stopped_at,
@@ -1386,8 +1403,11 @@ def capture_evidence(
             "candidate_readback_verified": drain.candidate_readback_verified,
         },
         "capture_kind": "source_transaction_outbox",
+        # Both flags are measured facts of this write: they are true only when
+        # a prepared/committed entry was actually recorded for it. A disabled
+        # or unchanged capture recorded nothing and claims nothing.
         "source_transaction_correlated": capture.recorded,
-        "durable_source_outbox": capture.failure is None,
+        "durable_source_outbox": capture.recorded,
         "source_candidate_compared": False,
         "parity_verdict": "not_evaluated",
         "primary_authority": "legacy_local",

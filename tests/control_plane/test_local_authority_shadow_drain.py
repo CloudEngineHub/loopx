@@ -452,6 +452,7 @@ def test_status_reports_backlog_candidate_and_growth_facts(tmp_path: Path) -> No
     assert drained["outbox"]["todos"] == {
         "committed_pending": 0,
         "prepared_only": 0,
+        "retired_residue": 0,
         "next_seq": 0,
         "cursor_last_seq": 1,
         "cursor_last_entry_id": outbox.read_cursor(_todo_dir(runtime_root))["last_entry_id"],
@@ -484,11 +485,145 @@ def test_capture_evidence_v1_reports_measured_facts_only(tmp_path: Path) -> None
     assert pending["outcome"] == "pending"
     assert pending["drain"] is None
 
-    skipped = outbox.CaptureOutcome(partition="todos", skipped_reason="partition_unchanged")
-    assert adapter.capture_evidence(goal_id=GOAL_ID, capture=skipped, drain=None)["outcome"] == "no_transaction"
+    for skipped_reason in ("partition_unchanged", "shadow_disabled"):
+        skipped = outbox.CaptureOutcome(partition="todos", skipped_reason=skipped_reason)
+        no_transaction = adapter.capture_evidence(goal_id=GOAL_ID, capture=skipped, drain=None)
+        assert no_transaction["outcome"] == "no_transaction"
+        assert no_transaction["reason_code"] == skipped_reason
+        # Nothing was recorded, so nothing durable or correlated may be claimed.
+        assert no_transaction["durable_source_outbox"] is False
+        assert no_transaction["source_transaction_correlated"] is False
+        assert adapter.valid_evidence_v1(no_transaction, goal_id=GOAL_ID)
     failed = outbox.CaptureOutcome(partition="todos", failure={"reason_code": "outbox_prepare_failed", "error_class": "OSError"})
     failed_evidence = adapter.capture_evidence(goal_id=GOAL_ID, capture=failed, drain=None)
     assert failed_evidence["outcome"] == "capture_failed"
     assert failed_evidence["durable_source_outbox"] is False
     assert failed_evidence["source_transaction_correlated"] is False
     assert adapter.valid_evidence_v1(failed_evidence, goal_id=GOAL_ID)
+
+
+def _commit_entry_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    calls: list[str] = []
+    real = adapter.effect_runtime_result
+
+    def counting(method: str, params: object, **kwargs: object) -> object:
+        calls.append(method)
+        return real(method, params, **kwargs)
+
+    monkeypatch.setattr(adapter, "effect_runtime_result", counting)
+    return calls
+
+
+def test_crash_between_the_two_unlinks_leaves_residue_the_next_drain_reclaims(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry, state, runtime_root = _fixture(tmp_path)
+    capture = _record_todo_write(registry, state, runtime_root, "Retired but half-removed")
+    real_remove = outbox.remove_entry_files
+
+    def crash_between_unlinks(entry: outbox.OutboxEntry) -> None:
+        entry.prepared_path.unlink(missing_ok=True)
+        raise OSError("simulated crash between the prepared and committed unlinks")
+
+    monkeypatch.setattr(outbox, "remove_entry_files", crash_between_unlinks)
+    first = _drain(registry, runtime_root)
+    assert first.outcome == "stopped"
+    assert first.reason_code == "shadow_drain_failed"
+    monkeypatch.setattr(outbox, "remove_entry_files", real_remove)
+
+    # On disk: the cursor covers seq 1 and only the committed marker survives.
+    marker_name = outbox.entry_file_name(1, str(capture.outcome.entry_id), "committed")
+    names = sorted(path.name for path in _todo_dir(runtime_root).iterdir())
+    assert names == sorted([marker_name, "drain-cursor.json"])
+    assert outbox.read_cursor(_todo_dir(runtime_root))["last_seq"] == 1
+    # The marker is retired residue, not corruption: listing stays valid.
+    assert outbox.list_entries(_todo_dir(runtime_root)) == []
+    assert [path.name for path in outbox.retired_residue(_todo_dir(runtime_root))] == [marker_name]
+    summary = outbox.outbox_summary(runtime_root, GOAL_ID)["todos"]
+    assert summary["invalid"] is None
+    assert summary["retired_residue"] == 1
+    assert summary["committed_pending"] == 0
+    status = adapter.local_authority_shadow_status(registry_path=registry, runtime_root=runtime_root, goal_id=GOAL_ID)
+    assert status["ok"] is True
+    assert status["outbox"]["todos"]["retired_residue"] == 1
+
+    calls = _commit_entry_calls(monkeypatch)
+    second = _drain(registry, runtime_root)
+    assert second.ok is True
+    assert second.outcome == "drained"
+    assert second.reclaimed_residue == 1
+    assert (second.delivered, second.replayed) == (0, 0)
+    assert "coordination.local_authority_shadow.commit_entry" not in calls
+    assert list(_todo_dir(runtime_root).iterdir()) == [_todo_dir(runtime_root) / "drain-cursor.json"]
+    view = adapter.read_local_authority_shadow(runtime_root=runtime_root, goal_id=GOAL_ID, scan_limit=5)
+    assert view["cursor"] == "1"
+
+    # A later write mints seq 2 from the cursor, never reusing the retired seq.
+    later = _record_todo_write(registry, state, runtime_root, "After the reclaim")
+    assert later.outcome.seq == 2
+    third = _drain(registry, runtime_root)
+    assert third.delivered == 1
+    assert third.reclaimed_residue == 0
+
+
+def test_crash_after_the_cursor_but_before_any_unlink_is_reclaimed_without_a_store_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry, state, runtime_root = _fixture(tmp_path)
+    capture = _record_todo_write(registry, state, runtime_root, "Cursor written, files untouched")
+    real_remove = outbox.remove_entry_files
+
+    def crash_before_unlinks(entry: outbox.OutboxEntry) -> None:
+        raise OSError("simulated crash after the cursor write")
+
+    monkeypatch.setattr(outbox, "remove_entry_files", crash_before_unlinks)
+    assert _drain(registry, runtime_root).outcome == "stopped"
+    monkeypatch.setattr(outbox, "remove_entry_files", real_remove)
+    names = sorted(path.name for path in _todo_dir(runtime_root).iterdir())
+    entry_id = str(capture.outcome.entry_id)
+    assert names == [
+        outbox.entry_file_name(1, entry_id, "committed"),
+        outbox.entry_file_name(1, entry_id, "prepared"),
+        "drain-cursor.json",
+    ]
+    assert outbox.list_entries(_todo_dir(runtime_root)) == []
+
+    calls = _commit_entry_calls(monkeypatch)
+    result = _drain(registry, runtime_root)
+    assert result.ok is True
+    assert result.reclaimed_residue == 2
+    assert "coordination.local_authority_shadow.commit_entry" not in calls
+    assert list(_todo_dir(runtime_root).iterdir()) == [_todo_dir(runtime_root) / "drain-cursor.json"]
+
+
+def test_an_orphan_marker_above_the_cursor_is_still_corruption(tmp_path: Path) -> None:
+    registry, state, runtime_root = _fixture(tmp_path)
+    capture = _record_todo_write(registry, state, runtime_root, "Marker without its prepared file")
+    (_todo_dir(runtime_root) / outbox.entry_file_name(1, str(capture.outcome.entry_id), "prepared")).unlink()
+    with pytest.raises(outbox.OutboxError) as raised:
+        outbox.list_entries(_todo_dir(runtime_root))
+    assert raised.value.reason_code == "outbox_file_invalid"
+    result = _drain(registry, runtime_root)
+    assert result.outcome == "stopped"
+    assert result.reason_code == "outbox_file_invalid"
+    status = adapter.local_authority_shadow_status(registry_path=registry, runtime_root=runtime_root, goal_id=GOAL_ID)
+    assert status["ok"] is False
+    assert status["outbox"]["todos"]["invalid"] == "outbox_file_invalid"
+
+
+def test_drain_fails_closed_on_an_entry_recorded_for_another_runtime_root(tmp_path: Path) -> None:
+    registry, state, runtime_root = _fixture(tmp_path)
+    capture = _record_todo_write(registry, state, runtime_root, "Written under a foreign root")
+    entry_id = str(capture.outcome.entry_id)
+    prepared_path = _todo_dir(runtime_root) / outbox.entry_file_name(1, entry_id, "prepared")
+    record = json.loads(prepared_path.read_text(encoding="utf-8"))
+    record["source_root_digest"] = outbox.runtime_root_digest(tmp_path / "elsewhere")
+    outbox.durable_write_json(prepared_path, record)
+
+    result = _drain(registry, runtime_root)
+
+    assert result.outcome == "stopped"
+    assert result.reason_code == "source_root_mismatch"
+    assert result.delivered == 0
+    assert result.pending_after == 1
+    assert [entry.seq for entry in outbox.list_entries(_todo_dir(runtime_root))] == [1]

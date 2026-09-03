@@ -162,8 +162,7 @@ class OutboxEntry:
 
     @property
     def source_ref(self) -> str:
-        source = _as_object(self.prepared.get("source"))
-        return str(source.get("bytes_digest") or f"event:{source.get('event_id')}")
+        return str(record_source_ref(self.prepared))
 
     def projection(self) -> dict[str, Any] | None:
         """The partition projection recorded for this entry, if any."""
@@ -198,14 +197,59 @@ def _index_entry_files(directory: Path) -> tuple[dict[_EntryKey, Path], dict[_En
     return prepared, committed
 
 
-def _load_prepared_record(path: Path, *, seq: int, entry_id: str) -> dict[str, Any]:
+_WRITER_RUNTIMES = frozenset({WRITER_RUNTIME_PYTHON, WRITER_RUNTIME_TYPESCRIPT})
+_SOURCE_KINDS = frozenset({SOURCE_MARKDOWN, SOURCE_STATE_EVENT_LOG, SOURCE_TASK_LEASE})
+_DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def _load_prepared_record(
+    path: Path,
+    *,
+    directory: Path,
+    seq: int,
+    entry_id: str,
+) -> dict[str, Any]:
+    """Load one prepared record and prove it binds this directory and entry id.
+
+    The file name, the directory (``outbox/<goal>/<partition>``), the record's
+    own goal/partition fields, and the entry id recomputed from the record's
+    source reference must all agree; a record that was copied, edited, or
+    written for another goal fails closed before it can reach the candidate.
+    """
+
     record = _load_json(path)
-    if (
-        record.get("schema_version") != OUTBOX_ENTRY_SCHEMA
-        or record.get("entry_id") != entry_id
-        or record.get("seq") != seq
-    ):
-        raise OutboxError("outbox_file_invalid", f"{path.name} does not match its name")
+    writer = _as_object(record.get("writer"))
+    source = _as_object(record.get("source"))
+    expected_goal = directory.parent.name
+    expected_partition = directory.name
+    source_ref = record_source_ref(record)
+    root_digest = record.get("source_root_digest")
+    bound = (
+        record.get("schema_version") == OUTBOX_ENTRY_SCHEMA
+        and record.get("entry_id") == entry_id
+        and record.get("seq") == seq
+        and record.get("goal_id") == expected_goal
+        and record.get("partition") == expected_partition
+        and writer.get("runtime") in _WRITER_RUNTIMES
+        and isinstance(writer.get("write_class"), str)
+        and bool(writer.get("write_class"))
+        and source.get("kind") in _SOURCE_KINDS
+        and isinstance(root_digest, str)
+        and _DIGEST_PATTERN.match(root_digest) is not None
+        and source_ref is not None
+        and entry_identity(
+            goal_id=expected_goal,
+            partition=expected_partition,
+            seq=seq,
+            source_ref=source_ref,
+        )
+        == entry_id
+    )
+    if not bound:
+        raise OutboxError(
+            "outbox_file_invalid",
+            f"{path.name} does not bind its directory, identity, and source reference",
+        )
     return record
 
 
@@ -218,12 +262,56 @@ def _load_committed_record(path: Path | None, *, entry_id: str) -> dict[str, Any
     return record
 
 
-def list_entries(directory: Path) -> list[OutboxEntry]:
-    """All entries of one partition directory, oldest first."""
+def _retired_watermark(directory: Path) -> int:
+    cursor = read_cursor(directory)
+    return int(cursor.get("last_seq") or 0) if cursor is not None else 0
+
+
+def retired_residue(directory: Path) -> list[Path]:
+    """Entry files at or below the durable cursor.
+
+    The cursor is written before an entry's files are unlinked, so anything it
+    covers is already settled in the candidate store. A crash between the
+    cursor write and the unlinks, or between the two unlinks, leaves these
+    files behind; they are residue to reclaim, never entries to deliver or
+    markers to reject.
+    """
 
     if not directory.is_dir():
         return []
+    watermark = _retired_watermark(directory)
     prepared, committed = _index_entry_files(directory)
+    residue = [
+        path
+        for key, path in [*prepared.items(), *committed.items()]
+        if key[0] <= watermark
+    ]
+    return sorted(residue)
+
+
+def reclaim_retired_residue(directory: Path) -> int:
+    """Unlink retired residue; the caller must hold the goal's drain lock."""
+
+    residue = retired_residue(directory)
+    for path in residue:
+        path.unlink(missing_ok=True)
+    return len(residue)
+
+
+def list_entries(directory: Path) -> list[OutboxEntry]:
+    """All live entries of one partition directory, oldest first.
+
+    Files the durable cursor already covers are retired residue and are not
+    listed; a committed marker without a prepared entry above the cursor is
+    real corruption and fails closed.
+    """
+
+    if not directory.is_dir():
+        return []
+    watermark = _retired_watermark(directory)
+    prepared, committed = _index_entry_files(directory)
+    prepared = {key: path for key, path in prepared.items() if key[0] > watermark}
+    committed = {key: path for key, path in committed.items() if key[0] > watermark}
     orphan_markers = sorted(set(committed) - set(prepared))
     if orphan_markers:
         seq, entry_id = orphan_markers[0]
@@ -234,7 +322,9 @@ def list_entries(directory: Path) -> list[OutboxEntry]:
     entries: list[OutboxEntry] = []
     for seq, entry_id in sorted(prepared):
         key = (seq, entry_id)
-        prepared_record = _load_prepared_record(prepared[key], seq=seq, entry_id=entry_id)
+        prepared_record = _load_prepared_record(
+            prepared[key], directory=directory, seq=seq, entry_id=entry_id
+        )
         entries.append(
             OutboxEntry(
                 partition=str(prepared_record.get("partition") or directory.name),
@@ -318,7 +408,30 @@ def latest_partition_digest(directory: Path) -> str | None:
 
 
 def runtime_root_digest(runtime_root: Path) -> str:
-    return text_digest(str(runtime_root.resolve(strict=False)))
+    """Digest of the absolute, dot-normalized root; must match the TypeScript writer.
+
+    Symlinks are deliberately not resolved: both runtimes normalize the string
+    they were given, so a root passed through the effect runtime hashes the
+    same on either side.
+    """
+
+    return text_digest(os.path.abspath(str(runtime_root)))
+
+
+def record_source_ref(record: Mapping[str, Any]) -> str | None:
+    """The source reference an entry id binds: bytes digest, event id, or seed digest."""
+
+    source = _as_object(record.get("source"))
+    bytes_digest = source.get("bytes_digest")
+    if isinstance(bytes_digest, str) and bytes_digest:
+        return bytes_digest
+    event_id = source.get("event_id")
+    if isinstance(event_id, str) and event_id:
+        return f"event:{event_id}"
+    digest = record.get("partition_digest")
+    if isinstance(digest, str) and digest:
+        return f"seed:{digest}"
+    return None
 
 
 def read_lease_records(directory: Path) -> list[tuple[str, dict[str, Any]]]:
@@ -689,6 +802,7 @@ def outbox_summary(runtime_root: Path, goal_id: str) -> dict[str, Any]:
         summary[partition] = {
             "committed_pending": sum(1 for entry in entries if entry.is_committed),
             "prepared_only": sum(1 for entry in entries if not entry.is_committed),
+            "retired_residue": len(retired_residue(directory)),
             "next_seq": (max((entry.seq for entry in entries), default=0) if entries else 0),
             "cursor_last_seq": int(cursor.get("last_seq") or 0) if cursor else None,
             "cursor_last_entry_id": cursor.get("last_entry_id") if cursor else None,
@@ -810,8 +924,11 @@ __all__ = [
     "partition_directory",
     "read_cursor",
     "read_lease_records",
+    "reclaim_retired_residue",
+    "record_source_ref",
     "remove_entry_files",
     "resolve_prepared_only_entry",
+    "retired_residue",
     "runtime_root_digest",
     "utc_now_text",
     "write_cursor",

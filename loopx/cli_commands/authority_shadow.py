@@ -32,6 +32,7 @@ _DRAIN_FIELDS = (
     "reconciled",
     "no_op",
     "reseeded",
+    "reclaimed_residue",
     "pending_after",
     "prepared_only_after",
     "budget_exhausted",
