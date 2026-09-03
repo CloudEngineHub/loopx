@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import importlib
 import json
+import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -22,8 +23,31 @@ compile_catalog = contract.compile_catalog
 normalize_selector_request = contract.normalize_selector_request
 project_runtime_status = contract.project_runtime_status
 qualify_heartbeat_transport = contract.qualify_heartbeat_transport
+qualify_host_control_recovery = contract.qualify_host_control_recovery
 qualify_snapshot = contract.qualify_snapshot
 reconcile_integration_candidate = contract.reconcile_integration_candidate
+
+
+def _assert_layered_retry_templates() -> None:
+    app = (PACKAGE_ROOT / "templates" / "codex-app-config.toml").read_text()
+    local_cpa = app.split("[model_providers.local-cpa]", maxsplit=1)[1]
+    request_retries = re.search(r"(?m)^request_max_retries\s*=\s*(\d+)\s*$", local_cpa)
+    stream_retries = re.search(r"(?m)^stream_max_retries\s*=\s*(\d+)\s*$", local_cpa)
+    assert request_retries is not None and int(request_retries.group(1)) == 30
+    assert stream_retries is not None and int(stream_retries.group(1)) == 30
+
+    cpa = (PACKAGE_ROOT / "templates" / "cpa-config.public.yaml").read_text()
+    interval = re.search(r"(?m)^max-retry-interval:\s*(\d+)\s*$", cpa)
+    assert interval is not None and int(interval.group(1)) >= 60
+    compat = re.search(
+        r"(?ms)^openai-compatibility:\s*\n(?P<body>(?:^[ \t].*(?:\n|$))*)",
+        cpa,
+    )
+    assert compat is not None
+    provider_retry = re.search(
+        r"(?m)^\s{4}request-retry:\s*(\d+)\s*$", compat.group("body")
+    )
+    assert provider_retry is not None and int(provider_retry.group(1)) == 1
 
 
 def _source() -> dict[str, Any]:
@@ -192,6 +216,7 @@ def expect_error(action: Callable[[], Any], message: str) -> None:
 
 
 def main() -> int:
+    _assert_layered_retry_templates()
     heartbeat = qualify_heartbeat_transport(
         {
             "turn_trigger": "automation_heartbeat",
@@ -229,6 +254,94 @@ def main() -> int:
         ),
         "heartbeat user input accepted a non-user role",
     )
+
+    recovered_instruction = qualify_host_control_recovery(
+        {
+            "tool_name": "send_message_to_thread",
+            "call_id_present": False,
+            "matching_call_count": 0,
+            "semantic_output_present": True,
+            "observed_action": "project_as_user",
+            "projection": {
+                "type": "message",
+                "role": "user",
+                "tool_identity_removed": True,
+                "semantic_output_preserved": True,
+                "next_action_observed": True,
+                "next_action_matches_instruction": True,
+            },
+        }
+    )
+    assert recovered_instruction["qualified"] is True
+    assert recovered_instruction["expected_action"] == "project_as_user"
+    assert (
+        recovered_instruction["required_contract"][
+            "qualification_requires_instruction_follow_through"
+        ]
+        is True
+    )
+
+    silently_dropped_instruction = qualify_host_control_recovery(
+        {
+            "tool_name": "automation_update",
+            "call_id_present": False,
+            "matching_call_count": 0,
+            "semantic_output_present": True,
+            "observed_action": "project_as_user",
+            "projection": {
+                "type": "message",
+                "role": "user",
+                "tool_identity_removed": True,
+                "semantic_output_preserved": False,
+                "next_action_observed": True,
+                "next_action_matches_instruction": False,
+            },
+        },
+    )
+    assert silently_dropped_instruction["qualified"] is False
+    assert {
+        item["id"]
+        for item in silently_dropped_instruction["checks"]
+        if not item["passed"]
+    } == {"semantic_output_preserved", "instruction_follow_through"}
+
+    for rejected_observation in (
+        {
+            "tool_name": "unknown_host_tool",
+            "call_id_present": False,
+            "matching_call_count": 0,
+            "semantic_output_present": True,
+            "observed_action": "fail_closed",
+            "error_status": 409,
+        },
+        {
+            "tool_name": "send_message_to_thread",
+            "call_id_present": False,
+            "matching_call_count": 1,
+            "semantic_output_present": True,
+            "observed_action": "fail_closed",
+            "error_status": 409,
+        },
+        {
+            "tool_name": "automation_update",
+            "call_id_present": True,
+            "matching_call_count": 0,
+            "semantic_output_present": True,
+            "observed_action": "fail_closed",
+            "error_status": 409,
+        },
+        {
+            "tool_name": "automation_update",
+            "call_id_present": False,
+            "matching_call_count": 0,
+            "semantic_output_present": False,
+            "observed_action": "fail_closed",
+            "error_status": 409,
+        },
+    ):
+        rejected = qualify_host_control_recovery(rejected_observation)
+        assert rejected["qualified"] is True
+        assert rejected["expected_action"] == "fail_closed"
 
     catalog = compile_catalog(_source())
     assert catalog["credential_free"] is True
@@ -605,6 +718,8 @@ def main() -> int:
         "fork/reusable-http2-transport",
         "operator/modality-routing",
         "fork/route-specific-fallback",
+        "operator/compat-stream-repair",
+        "fork/openai-compat-bounded-rate-limit-waits",
     ]
     assert integration["deployment_contract"]["session_store_policy"] == (
         "preserve_in_place_never_copy_or_delete"
@@ -612,9 +727,9 @@ def main() -> int:
 
     moved_source = copy.deepcopy(integration_request["integration"])
     moved_source["observed"]["source_heads"]["transport-pool"] = (
-        "7777777777777777777777777777777777777777"
+        "9999999999999999999999999999999999999999"
     )
-    moved_source["sources"][1]["head_sha"] = "7777777777777777777777777777777777777777"
+    moved_source["sources"][1]["head_sha"] = "9999999999999999999999999999999999999999"
     integration = reconcile_integration_candidate(moved_source)
     assert integration["sync_required"] is True
     assert integration["drift_reasons"] == [
@@ -622,7 +737,7 @@ def main() -> int:
             "kind": "source_moved",
             "source_id": "transport-pool",
             "last_sync_sha": "3333333333333333333333333333333333333333",
-            "observed_sha": "7777777777777777777777777777777777777777",
+            "observed_sha": "9999999999999999999999999999999999999999",
         }
     ]
 
@@ -647,6 +762,7 @@ def main() -> int:
         "runtime-status.json",
         "qualification-snapshot.json",
         "heartbeat-transport.json",
+        "host-control-recovery.json",
         "integration-candidate.json",
         "upgrade-request.json",
     ):
