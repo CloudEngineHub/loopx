@@ -53,6 +53,13 @@ export type WorkspaceRepositoryContext = {
 export type WorkspaceGoal = {
   activationState: "active" | "stopped";
   agentId: string;
+  agentLanes?: Array<{
+    agentId: string;
+    label: string;
+    lastActivityAt?: string | null;
+    state?: string | null;
+  }>;
+  agentLaneCount?: number;
   agentLabel?: string;
   agentSentence: string;
   agentTodos: WorkspaceAgentTodo[];

@@ -152,6 +152,7 @@
 .personal-mobile-menu { display: none; }
 .personal-agent-select { display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 12px; border: 1px solid var(--pw-line-strong); border-radius: 10px; background: #fff; font-weight: 600; font-size: 13px; }
 .personal-agent-select:hover { border-color: var(--pw-faint); }
+.personal-agent-select > small { color: var(--pw-faint); font-size: 10px; font-weight: 600; letter-spacing: .02em; }
 .personal-agent-select select { max-width: 150px; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; appearance: none; }
 .personal-read-only-source { display: inline-flex; align-items: center; gap: 7px; max-width: 190px; height: 38px; padding: 0 10px; border: 1px solid var(--pw-line-strong); border-radius: 10px; background: #fff; color: var(--pw-text); font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; }
 .personal-read-only-source > svg { flex: 0 0 auto; color: var(--pw-muted); }
@@ -554,6 +555,13 @@
 .personal-task-empty { margin: 0; padding: 4px 15px 16px; color: var(--pw-muted); font-size: 12.5px; }
 
 /* Kanban layout for the goal Tasks tab: columns are task states. */
+.personal-task-lane-filter { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 50px; padding: 8px 12px; border: 1px solid var(--pw-line); border-radius: 10px; background: #fff; }
+.personal-task-lane-filter > div { display: flex; align-items: center; gap: 9px; min-width: 0; color: var(--pw-muted); }
+.personal-task-lane-filter > div > span { display: grid; gap: 1px; }
+.personal-task-lane-filter strong { color: var(--pw-text); font-size: 12px; }
+.personal-task-lane-filter small { color: var(--pw-faint); font-size: 10.5px; }
+.personal-task-lane-filter label { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 9px; border: 1px solid var(--pw-line-strong); border-radius: 8px; background: var(--pw-bg); }
+.personal-task-lane-filter select { max-width: 300px; border: 0; outline: 0; background: transparent; color: var(--pw-text); font: inherit; font-size: 11.5px; font-weight: 600; appearance: none; }
 .personal-task-kanban { display: grid; grid-template-columns: repeat(auto-fit, minmax(172px, 1fr)); gap: 12px; align-items: start; }
 .personal-task-chat-receipt { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 12px; border: 1px solid #d8e2f8; border-radius: 10px; background: #f8faff; box-shadow: 0 1px 3px rgb(47 102 233 / 4%); }
 .personal-task-chat-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--pw-blue-soft); color: var(--pw-blue-ink); }
@@ -917,6 +925,8 @@
   .personal-timeline-row .personal-priority-dot { display: none; }
   .personal-channel-composer { grid-template-columns: 40px 36px minmax(0, 1fr) 40px; }
   .personal-task-chat-receipt { grid-template-columns: 32px minmax(0, 1fr); padding: 11px; }
+  .personal-task-lane-filter { align-items: stretch; flex-direction: column; gap: 8px; }
+  .personal-task-lane-filter label, .personal-task-lane-filter select { width: 100%; max-width: none; }
   .personal-task-chat-icon { width: 32px; height: 32px; }
   .personal-task-chat-receipt footer { grid-column: 1 / -1; justify-content: flex-end; }
   .personal-channel-composer > span { min-width: 0; font-size: 0; padding: 0; justify-content: center; }
