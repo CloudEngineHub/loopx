@@ -134,6 +134,24 @@ def apply_local_authority_shadow_change(
         goal.pop("coordination", None)
 
 
+def effective_runtime_root(
+    registry_path: Path,
+    runtime_root_override: str | Path | None,
+) -> Path:
+    """Resolve the one runtime root every writer hook of a CLI call must share.
+
+    ``--runtime-root`` wins when given; otherwise the registry's
+    ``common_runtime_root`` applies, and a relative value resolves against the
+    registry's project root rather than the caller's working directory. Todo,
+    follow-up, handoff-mode, and task-lease hooks all consume this value so one
+    goal never splits into two candidate lineages.
+    """
+
+    registry = load_registry(registry_path)
+    override = str(runtime_root_override) if runtime_root_override is not None else None
+    return resolve_runtime_root(registry, override, registry_path=registry_path)
+
+
 def _base_evidence(
     *,
     goal_id: str,
@@ -433,8 +451,14 @@ def observe_todo_local_authority_commit(
     registry_path: Path,
     goal_id: str,
     write_class: str,
+    *,
+    runtime_root: Path | None = None,
 ) -> dict[str, Any]:
-    """Attach post-commit shadow evidence without changing the Todo verdict."""
+    """Attach post-commit shadow evidence without changing the Todo verdict.
+
+    ``runtime_root`` is the effective root the writer resolved for this call;
+    ``None`` falls back to the registry root exactly as the other hooks do.
+    """
 
     changed = any(
         payload.get(field)
@@ -446,7 +470,7 @@ def observe_todo_local_authority_commit(
     updated_at = str(payload.get("updated_at") or "unknown")
     evidence = observe_local_authority_commit(
         registry_path=registry_path,
-        runtime_root=None,
+        runtime_root=runtime_root,
         goal_id=goal_id,
         observation_trigger=f"{write_class}:{todo_id}:{updated_at}",
     )
@@ -459,6 +483,7 @@ __all__ = [
     "LOCAL_AUTHORITY_SHADOW_CONFIG_SCHEMA",
     "LOCAL_AUTHORITY_SHADOW_EVIDENCE_SCHEMA",
     "apply_local_authority_shadow_change",
+    "effective_runtime_root",
     "local_authority_shadow_summary",
     "observe_local_authority_commit",
     "observe_todo_local_authority_commit",

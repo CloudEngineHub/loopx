@@ -691,6 +691,7 @@ def handle_todo_command(
             )
             payload = add_goal_todo(
                 registry_path=registry_path,
+                runtime_root_arg=runtime_root_arg,
                 goal_id=args.goal_id,
                 role=args.role,
                 text=args.text,
@@ -751,6 +752,7 @@ def handle_todo_command(
             validate_todo_claim_options(args)
             payload = update_goal_todo(
                 registry_path=registry_path,
+                runtime_root_arg=runtime_root_arg,
                 goal_id=args.goal_id,
                 todo_id=args.todo_id,
                 role=args.role,
@@ -764,6 +766,7 @@ def handle_todo_command(
             validate_todo_update_options(args)
             payload = update_goal_todo(
                 registry_path=registry_path,
+                runtime_root_arg=runtime_root_arg,
                 goal_id=args.goal_id,
                 todo_id=args.todo_id,
                 text=args.text,
@@ -905,6 +908,7 @@ def handle_todo_command(
             if completion_error is None:
                 payload = complete_goal_todo(
                     registry_path=registry_path,
+                    runtime_root_arg=runtime_root_arg,
                     goal_id=args.goal_id,
                     todo_id=args.todo_id,
                     role=args.role,
@@ -944,6 +948,7 @@ def handle_todo_command(
             validate_todo_supersede_options(args)
             payload = supersede_goal_todo(
                 registry_path=registry_path,
+                runtime_root_arg=runtime_root_arg,
                 goal_id=args.goal_id,
                 todo_id=args.todo_id,
                 role=args.role,
@@ -969,6 +974,7 @@ def handle_todo_command(
             validate_todo_archive_completed_options(args)
             payload = archive_completed_todos(
                 registry_path=registry_path,
+                runtime_root_arg=runtime_root_arg,
                 goal_id=args.goal_id,
                 role=args.role or "agent",
                 max_active_done=args.max_active_done,
@@ -993,6 +999,7 @@ def handle_todo_command(
                 followups.append(args.text)
             payload = capture_followup_todos(
                 registry_path=registry_path,
+                runtime_root_arg=runtime_root_arg,
                 goal_id=args.goal_id,
                 followups=followups,
                 evidence=args.evidence or "",

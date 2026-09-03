@@ -122,6 +122,7 @@ from .control_plane.todos.handoff_mode import (
     resolve_todo_completion_handoff,
 )
 from .control_plane.coordination.local_authority_shadow_adapter import (
+    effective_runtime_root,
     observe_todo_local_authority_commit as _shadow_todo,
 )
 from .control_plane.work_items.task_lease import (
@@ -637,6 +638,7 @@ def add_goal_todo(
     *,
     registry_path: Path,
     goal_id: str,
+    runtime_root_arg: str | None = None,
     role: str,
     text: str,
     status: str | None = None,
@@ -672,6 +674,7 @@ def add_goal_todo(
     state_file: Path | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    shadow_runtime_root = effective_runtime_root(registry_path, runtime_root_arg)
     if role not in TODO_SECTION_HEADINGS:
         raise ValueError("todo role must be one of: user, agent")
     require_user_todo_task_class(
@@ -836,6 +839,7 @@ def add_goal_todo(
             text=todo_text,
             claimed_by=effective_claimed_by,
             actor_agent_id=effective_agent_id or effective_claimed_by,
+            runtime_root=shadow_runtime_root,
         )
         add_result = add_todo_to_lines(
             lines,
@@ -934,7 +938,7 @@ def add_goal_todo(
         write_class="todo_add",
         state_text=original,
     )
-    return _shadow_todo(payload, registry_path, goal_id, "todo_add")
+    return _shadow_todo(payload, registry_path, goal_id, "todo_add", runtime_root=shadow_runtime_root)
 
 
 def resolve_todo_state(
@@ -958,6 +962,7 @@ def update_goal_todo(
     *,
     registry_path: Path,
     goal_id: str,
+    runtime_root_arg: str | None = None,
     todo_id: str,
     text: str | None = None,
     status: str | None = None,
@@ -998,6 +1003,7 @@ def update_goal_todo(
     state_file: Path | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    shadow_runtime_root = effective_runtime_root(registry_path, runtime_root_arg)
     if excluded_agents and clear_excluded_agents:
         raise ValueError(
             "todo update accepts either excluded_agents or clear_excluded_agents, not both"
@@ -1137,6 +1143,7 @@ def update_goal_todo(
             mutation_authority=mutation_authority,
             actor_agent_id=effective_agent_id or effective_claimed_by,
             ownership_mutation=(claimed_by is not None or clear_claim) and target_role == "agent",
+            runtime_root=shadow_runtime_root,
         )
         target_task_class = task_class or str(existing_block.get("task_class") or "")
         if target_role == "user" and claimed_by:
@@ -1393,13 +1400,14 @@ def update_goal_todo(
         write_class=write_class,
         state_text=original,
     )
-    return _shadow_todo(payload, registry_path, goal_id, write_class)
+    return _shadow_todo(payload, registry_path, goal_id, write_class, runtime_root=shadow_runtime_root)
 
 
 def complete_goal_todo(
     *,
     registry_path: Path,
     goal_id: str,
+    runtime_root_arg: str | None = None,
     todo_id: str,
     role: str | None = None,
     decision_outcome: str | None = None,
@@ -1429,6 +1437,7 @@ def complete_goal_todo(
     state_file: Path | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    shadow_runtime_root = effective_runtime_root(registry_path, runtime_root_arg)
     if next_task_repository and not next_agent_todo:
         raise ValueError("--next-task-repository requires --next-agent-todo")
     if next_required_capabilities and not next_agent_todo:
@@ -1554,6 +1563,7 @@ def complete_goal_todo(
                     or task_lease_expected_version is not None
                 ),
                 handoff=completion_handoff,
+                runtime_root=shadow_runtime_root,
             )
         )
         completion_state = completion_transaction.get("completion_state")
@@ -1625,7 +1635,9 @@ def complete_goal_todo(
                     committed=bool(event_result.get("changed")) and not dry_run,
                 )
                 write_class = "todo_complete_event_projection"
-                return _shadow_todo(event_result, registry_path, goal_id, write_class)
+                return _shadow_todo(
+                    event_result, registry_path, goal_id, write_class, runtime_root=shadow_runtime_root
+                )
         if not isinstance(completion_state, dict):
             raise RuntimeError(
                 "TypeScript Todo completion transaction did not authorize a commit"
@@ -1783,12 +1795,13 @@ def complete_goal_todo(
     if effective_decision_outcome:
         result["decision_outcome"] = effective_decision_outcome
     result["self_merged"] = effective_self_merged
-    return _shadow_todo(result, registry_path, goal_id, "todo_complete")
+    return _shadow_todo(result, registry_path, goal_id, "todo_complete", runtime_root=shadow_runtime_root)
 
 def supersede_goal_todo(
     *,
     registry_path: Path,
     goal_id: str,
+    runtime_root_arg: str | None = None,
     todo_id: str,
     role: str | None = None,
     reason: str | None = None,
@@ -1808,6 +1821,7 @@ def supersede_goal_todo(
     state_file: Path | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    shadow_runtime_root = effective_runtime_root(registry_path, runtime_root_arg)
     if next_task_repository and not next_agent_todo:
         raise ValueError("--next-task-repository requires --next-agent-todo")
     if next_required_capabilities and not next_agent_todo:
@@ -1848,6 +1862,7 @@ def supersede_goal_todo(
             lease_fence_stack, registry_path=registry_path, goal_id=goal_id, todo_id=todo_id,
             todo=authority_todo, actor_agent_id=agent_id, state_text=original, mutation_authority=mutation_authority,
             idempotency_key=task_lease_idempotency_key, expected_version=task_lease_expected_version,
+            runtime_root=shadow_runtime_root,
         )
         effective_next_claimed_by = (
             require_registered_agent_id(registry_path=registry_path, goal_id=goal_id, agent_id=next_claimed_by, field="next_claimed_by")
@@ -1992,19 +2007,21 @@ def supersede_goal_todo(
         "project": str(resolved_project) if resolved_project else None,
         "updated_at": updated_at if changed else None,
     }
-    return _shadow_todo(result, registry_path, goal_id, "todo_supersede")
+    return _shadow_todo(result, registry_path, goal_id, "todo_supersede", runtime_root=shadow_runtime_root)
 
 
 def archive_completed_todos(
     *,
     registry_path: Path,
     goal_id: str,
+    runtime_root_arg: str | None = None,
     role: str = "agent",
     max_active_done: int = ARCHIVE_COMPLETED_DEFAULT_MAX_ACTIVE_DONE,
     project: Path | None = None,
     state_file: Path | None = None,
     dry_run: bool = True,
 ) -> dict[str, Any]:
+    shadow_runtime_root = effective_runtime_root(registry_path, runtime_root_arg)
     if role not in TODO_SECTION_HEADINGS:
         raise ValueError("todo role must be one of: user, agent")
     if max_active_done < 0:
@@ -2043,4 +2060,6 @@ def archive_completed_todos(
         "project": str(resolved_project) if resolved_project else None,
         "updated_at": updated_at if changed else None,
     }
-    return _shadow_todo(result, registry_path, goal_id, "todo_archive_completed")
+    return _shadow_todo(
+        result, registry_path, goal_id, "todo_archive_completed", runtime_root=shadow_runtime_root
+    )

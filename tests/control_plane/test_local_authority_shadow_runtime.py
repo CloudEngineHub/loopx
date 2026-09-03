@@ -521,3 +521,47 @@ def test_provider_revision_conflict_resamples_source_under_same_observation_lock
     assert requests[0]["observation_id"] != requests[1]["observation_id"]
     assert all(request["runtime_root"] == str(runtime_root) for request in requests)
     assert all("provider_directory" not in request for request in requests)
+
+
+def test_relative_common_runtime_root_resolves_against_the_project_root_for_every_hook(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from loopx.control_plane.work_items.task_lease import runtime_root_from_registry
+    from loopx.paths import registry_project_root
+
+    registry, _state, _absolute_runtime = _fixture(tmp_path, enabled=True)
+    document = json.loads(registry.read_text(encoding="utf-8"))
+    document["common_runtime_root"] = "runtime-relative"
+    registry.write_text(json.dumps(document), encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    expected_root = registry_project_root(registry) / "runtime-relative"
+
+    added = _add(registry)
+    lease = acquire_task_lease(
+        registry_path=registry,
+        runtime_root=runtime_root_from_registry(registry, None),
+        goal_id=GOAL_ID,
+        todo_id=str(added["todo_id"]),
+        owner=AGENT_A,
+        idempotency_key="relative-root",
+        ttl_seconds=120,
+    )
+    handoff = set_goal_handoff_mode(
+        registry_path=registry,
+        goal_id=GOAL_ID,
+        mode="hard_lease",
+    )
+
+    assert added["authority_shadow"]["outcome"] == "captured"
+    assert lease["authority_shadow"]["outcome"] == "captured"
+    assert handoff["changed"] is False
+    assert added["authority_shadow"]["store_identity"] == lease["authority_shadow"]["store_identity"]
+    assert (expected_root / "authority-shadow" / "file" / GOAL_ID).is_dir()
+    assert (expected_root / "goals" / GOAL_ID / "task-leases" / f"{added['todo_id']}.json").exists()
+    assert not (elsewhere / "runtime-relative").exists()
+    document = _shadow_document(expected_root)
+    assert document["cursor"] == "2"
+    assert len(document["head"]["leases"]) == 1

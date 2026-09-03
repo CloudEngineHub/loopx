@@ -106,9 +106,10 @@ def test_configure_goal_enables_and_clears_closed_file_shadow_config(
 def test_configure_goal_rejects_enable_and_clear_in_one_operation(
     tmp_path: Path,
 ) -> None:
+    registry = _registry(tmp_path)
     with pytest.raises(ValueError, match="cannot be combined"):
         configure_goal(
-            registry_path=_registry(tmp_path),
+            registry_path=registry,
             goal_id=GOAL_ID,
             local_authority_shadow_file=True,
             clear_local_authority_shadow=True,

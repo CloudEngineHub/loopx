@@ -341,3 +341,129 @@ def test_product_cli_loses_capture_between_commit_and_observer_then_refreshes_sn
     assert recovered["authority_shadow"]["parity_verdict"] == "not_evaluated"  # type: ignore[index]
     _store_path, store = _store_document(runtime_root, goal_id)
     assert len(store["head"]["todos"]) == 2  # type: ignore[index]
+
+
+def test_product_cli_runtime_root_override_keeps_one_candidate_lineage(
+    tmp_path: Path,
+) -> None:
+    """``--runtime-root`` differs from ``common_runtime_root``: one lineage, one head.
+
+    Every writer family of one CLI invocation must observe into the same
+    candidate store: Todo add, task-lease acquire, Todo update, follow-up
+    capture, and a leased completion. The registry root must not gain a
+    candidate lineage of its own.
+    """
+
+    goal_id = "shadow-cli-one-root"
+    registry, state, registry_runtime = _workspace(tmp_path, goal_id=goal_id)
+    override_runtime = tmp_path / f"{goal_id}-override-runtime"
+    assert override_runtime != registry_runtime
+    _cli(
+        registry,
+        override_runtime,
+        "configure-goal",
+        "--goal-id",
+        goal_id,
+        "--local-authority-shadow-file",
+        "--execute",
+    )
+
+    added = _add_todo(
+        registry,
+        override_runtime,
+        goal_id=goal_id,
+        text="Every hook of this call shares one runtime root.",
+    )
+    todo_id = str(added["todo_id"])
+    lease = _cli(
+        registry,
+        override_runtime,
+        "task-lease",
+        "acquire",
+        "--goal-id",
+        goal_id,
+        "--todo-id",
+        todo_id,
+        "--owner",
+        "agent-a",
+        "--idempotency-key",
+        "one-root-lease",
+        "--ttl-seconds",
+        "120",
+    )
+    assert lease["acquired"] is True
+    updated = _cli(
+        registry,
+        override_runtime,
+        "todo",
+        "update",
+        "--goal-id",
+        goal_id,
+        "--todo-id",
+        todo_id,
+        "--note",
+        "Observed under the override root.",
+        "--agent-id",
+        "agent-a",
+    )
+    assert updated["changed"] is True
+    followups = _cli(
+        registry,
+        override_runtime,
+        "todo",
+        "capture-followups",
+        "--goal-id",
+        goal_id,
+        "--follow-up",
+        "Verify that one goal keeps one candidate lineage.",
+        "--evidence",
+        "validation://one-root-followup",
+    )
+    assert followups["changed"] is True
+    completed = _cli(
+        registry,
+        override_runtime,
+        "todo",
+        "complete",
+        "--goal-id",
+        goal_id,
+        "--todo-id",
+        todo_id,
+        "--agent-id",
+        "agent-a",
+        "--task-lease-idempotency-key",
+        "one-root-lease",
+        "--task-lease-expected-version",
+        str(lease["lease"]["version"]),  # type: ignore[index]
+        "--evidence",
+        "validation://one-root-complete",
+        "--no-follow-up",
+    )
+    assert completed["completed"] is True
+
+    responses = {
+        "todo add": added,
+        "task-lease acquire": lease,
+        "todo update": updated,
+        "todo capture-followups": followups,
+        "todo complete": completed,
+    }
+    for label, payload in responses.items():
+        evidence = payload["authority_shadow"]
+        assert evidence["outcome"] == "captured", label  # type: ignore[index]
+    identities = {payload["authority_shadow"]["store_identity"] for payload in responses.values()}  # type: ignore[index]
+    assert len(identities) == 1
+    store_path, store = _store_document(override_runtime, goal_id)
+    assert store["store_identity"] == identities.pop()
+    assert store["cursor"] == str(len(responses))
+    head_todo_ids = {todo["todo_id"] for todo in store["head"]["todos"]}  # type: ignore[index]
+    assert todo_id in head_todo_ids
+    assert len(head_todo_ids) == 2
+    [lease_record] = store["head"]["leases"]  # type: ignore[index]
+    assert lease_record["todo_id"] == todo_id
+    assert lease_record["status"] == "released"
+    assert (override_runtime / "goals" / goal_id / "task-leases" / f"{todo_id}.json").exists()
+    assert not (registry_runtime / "authority-shadow").exists()
+    assert not (registry_runtime / "goals" / goal_id / "task-leases").exists()
+    assert store_path.is_relative_to(override_runtime)
+    assert todo_id in state.read_text(encoding="utf-8")

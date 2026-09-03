@@ -79,8 +79,9 @@ function decodeRequest(value: unknown): LocalAuthorityShadowRequest {
   const request = requireJsonObject(value, "local authority shadow request");
   const unexpected = Object.keys(request).filter((field) => !REQUEST_FIELDS.has(field));
   if (unexpected.length > 0) {
+    const listed = [...unexpected].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
     throw new EffectRuntimeRequestError(
-      `Local authority shadow request has unsupported fields: ${unexpected.sort().join(", ")}`,
+      `Local authority shadow request has unsupported fields: ${listed.join(", ")}`,
     );
   }
   if (request.schema_version !== LOCAL_AUTHORITY_SHADOW_REQUEST_SCHEMA) {
