@@ -1103,6 +1103,95 @@ def _verify_readback(
     result.candidate_readback_verified = verified
 
 
+def _drain_prelude(
+    result: DrainResult,
+    *,
+    registry_path: Path,
+    runtime_root: Path | None,
+    goal_id: str,
+) -> tuple[dict[str, Any], Path] | None:
+    """Validate the goal id and resolve the registry and root; typed failure on error."""
+
+    if not goal_id or goal_id in {".", ".."} or "/" in goal_id or "\\" in goal_id:
+        result.outcome = "failed"
+        result.reason_code = "invalid_shadow_goal_id"
+        return None
+    try:
+        registry = load_registry(registry_path)
+        result.config_enabled = _shadow_config(registry, goal_id) is not None
+        resolved = (
+            runtime_root
+            if runtime_root is not None
+            else resolve_runtime_root(registry, None, registry_path=registry_path)
+        )
+    except Exception:
+        result.outcome = "failed"
+        result.reason_code = "invalid_shadow_config"
+        return None
+    return registry, resolved
+
+
+def _outbox_is_idle(summary: Mapping[str, Mapping[str, Any]]) -> bool:
+    return all(
+        item["committed_pending"] == 0 and item["prepared_only"] == 0 and item["invalid"] is None
+        for item in summary.values()
+    )
+
+
+def _drain_partitions(
+    result: DrainResult,
+    *,
+    registry: dict[str, Any],
+    registry_path: Path,
+    runtime_root: Path,
+    goal_id: str,
+    max_entries: int,
+    budget_seconds: float,
+) -> None:
+    """Drain every partition in order under the held drain lock, then read back."""
+
+    sources = _goal_sources(registry, runtime_root=runtime_root, goal_id=goal_id)
+    result.cursor_before = _candidate_cursor(runtime_root, goal_id)
+    budget = _DrainBudget(max_entries=max_entries, budget_seconds=budget_seconds)
+    delivered_digests: dict[str, str] = {}
+    for partition in PARTITIONS:
+        if result.stopped_at is not None:
+            break
+        drainer = _PartitionDrainer(
+            registry_path=registry_path,
+            runtime_root=runtime_root,
+            goal_id=goal_id,
+            partition=partition,
+            sources=sources,
+            result=result,
+            budget=budget,
+        )
+        drainer.run()
+        if drainer.last_delivered_digest is not None:
+            delivered_digests[partition] = drainer.last_delivered_digest
+    if delivered_digests or result.drained_count:
+        _verify_readback(
+            result,
+            runtime_root=runtime_root,
+            goal_id=goal_id,
+            delivered_digests=delivered_digests,
+        )
+
+
+def _settle_drain_outcome(result: DrainResult) -> None:
+    if result.stopped_at is not None:
+        result.outcome = "stopped"
+        result.reason_code = str(result.stopped_at.get("reason_code") or result.stopped_at["outcome"])
+    else:
+        result.outcome = "drained"
+
+
+def _count_backlog(result: DrainResult, runtime_root: Path, goal_id: str) -> None:
+    summary_after = outbox.outbox_summary(runtime_root, goal_id)
+    result.pending_after = sum(int(item["committed_pending"]) for item in summary_after.values())
+    result.prepared_only_after = sum(int(item["prepared_only"]) for item in summary_after.values())
+
+
 def drain_local_authority_shadow_outbox(
     *,
     registry_path: Path,
@@ -1119,60 +1208,30 @@ def drain_local_authority_shadow_outbox(
     """
 
     result = DrainResult(goal_id=goal_id)
-    if not goal_id or goal_id in {".", ".."} or "/" in goal_id or "\\" in goal_id:
-        result.outcome = "failed"
-        result.reason_code = "invalid_shadow_goal_id"
+    prelude = _drain_prelude(
+        result, registry_path=registry_path, runtime_root=runtime_root, goal_id=goal_id
+    )
+    if prelude is None:
         return result
-    try:
-        registry = load_registry(registry_path)
-        result.config_enabled = _shadow_config(registry, goal_id) is not None
-        if runtime_root is None:
-            runtime_root = resolve_runtime_root(registry, None, registry_path=registry_path)
-    except Exception:
-        result.outcome = "failed"
-        result.reason_code = "invalid_shadow_config"
-        return result
-
-    summary_before = outbox.outbox_summary(runtime_root, goal_id)
-    if all(
-        item["committed_pending"] == 0 and item["prepared_only"] == 0 and item["invalid"] is None
-        for item in summary_before.values()
-    ):
+    registry, resolved_root = prelude
+    if _outbox_is_idle(outbox.outbox_summary(resolved_root, goal_id)):
         result.outcome = "nothing_pending"
         return result
-
     try:
         with exclusive_file_lock(
-            outbox.drain_lock_target(runtime_root, goal_id),
+            outbox.drain_lock_target(resolved_root, goal_id),
             timeout_seconds=lock_timeout_seconds,
             operation="local_authority_shadow_drain",
         ):
-            sources = _goal_sources(registry, runtime_root=runtime_root, goal_id=goal_id)
-            result.cursor_before = _candidate_cursor(runtime_root, goal_id)
-            budget = _DrainBudget(max_entries=max_entries, budget_seconds=budget_seconds)
-            delivered_digests: dict[str, str] = {}
-            for partition in PARTITIONS:
-                if result.stopped_at is not None:
-                    break
-                drainer = _PartitionDrainer(
-                    registry_path=registry_path,
-                    runtime_root=runtime_root,
-                    goal_id=goal_id,
-                    partition=partition,
-                    sources=sources,
-                    result=result,
-                    budget=budget,
-                )
-                drainer.run()
-                if drainer.last_delivered_digest is not None:
-                    delivered_digests[partition] = drainer.last_delivered_digest
-            if delivered_digests or result.delivered or result.replayed or result.reconciled:
-                _verify_readback(
-                    result,
-                    runtime_root=runtime_root,
-                    goal_id=goal_id,
-                    delivered_digests=delivered_digests,
-                )
+            _drain_partitions(
+                result,
+                registry=registry,
+                registry_path=registry_path,
+                runtime_root=resolved_root,
+                goal_id=goal_id,
+                max_entries=max_entries,
+                budget_seconds=budget_seconds,
+            )
     except LockAcquireTimeoutError:
         result.outcome = "drain_deferred"
         result.reason_code = "drain_lock_busy"
@@ -1183,14 +1242,8 @@ def drain_local_authority_shadow_outbox(
         result.outcome = "stopped"
         result.reason_code = "shadow_drain_failed"
     else:
-        if result.stopped_at is not None:
-            result.outcome = "stopped"
-            result.reason_code = str(result.stopped_at.get("reason_code") or result.stopped_at["outcome"])
-        else:
-            result.outcome = "drained"
-    summary_after = outbox.outbox_summary(runtime_root, goal_id)
-    result.pending_after = sum(int(item["committed_pending"]) for item in summary_after.values())
-    result.prepared_only_after = sum(int(item["prepared_only"]) for item in summary_after.values())
+        _settle_drain_outcome(result)
+    _count_backlog(result, resolved_root, goal_id)
     return result
 
 

@@ -483,8 +483,10 @@ def test_product_cli_authority_shadow_status_and_drain_read_without_creating_lin
     assert default_off["store_bytes"] == 0
     assert not (runtime_root / "authority-shadow").exists()
     idle = _cli(registry, runtime_root, "authority-shadow", "drain", "--goal-id", goal_id)
-    assert idle["ok"] is True and idle["outcome"] == "nothing_pending"
-    assert idle["drained_count"] == 0 and idle["config_enabled"] is False
+    assert idle["ok"] is True
+    assert idle["outcome"] == "nothing_pending"
+    assert idle["drained_count"] == 0
+    assert idle["config_enabled"] is False
     assert not (runtime_root / "authority-shadow").exists()
 
     _cli(
@@ -510,11 +512,13 @@ def test_product_cli_authority_shadow_status_and_drain_read_without_creating_lin
     assert candidate["head_schema_version"] == "loopx_local_authority_shadow_projection_v0"  # type: ignore[index]
     assert candidate["codec_agreement"] is True  # type: ignore[index]
     assert candidate["partitions"] == {"todos": None, "leases": None}  # type: ignore[index]
-    assert status["store_bytes"] > 0 and status["retention_pressure"] is False
+    assert status["store_bytes"] > 0
+    assert status["retention_pressure"] is False
     assert str(runtime_root) not in json.dumps(status)
 
     drained = _cli(registry, runtime_root, "authority-shadow", "drain", "--goal-id", goal_id)
-    assert drained["ok"] is True and drained["outcome"] == "nothing_pending"
+    assert drained["ok"] is True
+    assert drained["outcome"] == "nothing_pending"
     assert drained["config_enabled"] is True
     _store_path, store = _store_document(runtime_root, goal_id)
     assert store["cursor"] == "1"

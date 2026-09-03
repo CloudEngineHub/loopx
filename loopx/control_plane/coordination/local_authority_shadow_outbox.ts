@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type { JsonObject } from "../effect_program.ts";
 import { durableWriteJson } from "../effect_runtime_io.ts";
-import { canonicalAuthorityBytes } from "./authority_store_codec.ts";
+import { authorityUnicodeCompare, canonicalAuthorityBytes } from "./authority_store_codec.ts";
 
 /**
  * Lease-partition side of the local authority shadow outbox.
@@ -142,7 +142,7 @@ async function readLeasePartition(
   }
   records.set(plannedStem, plannedLease);
   const stems = [...records.keys()];
-  stems.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  stems.sort(authorityUnicodeCompare);
   return stems.map((stem) => ({ file_stem: stem, record: records.get(stem) as JsonObject }));
 }
 

@@ -11,10 +11,11 @@ import {
 } from "../runtime_decode.ts";
 import type {
   AuthorityStore,
+  AuthorityStoreCommittedTransaction,
   AuthorityStoreLoadResult,
   AuthorityStoreReceiptResult,
 } from "./authority_store.ts";
-import { canonicalAuthorityBytes } from "./authority_store_codec.ts";
+import { authorityUnicodeCompare, canonicalAuthorityBytes } from "./authority_store_codec.ts";
 import { FileAuthorityStore } from "./file_authority_store.ts";
 
 export const LOCAL_AUTHORITY_SHADOW_REQUEST_SCHEMA =
@@ -481,7 +482,7 @@ function rejectUnexpectedFields(
 ): void {
   const unexpected = Object.keys(record).filter((field) => !allowed.has(field));
   if (unexpected.length > 0) {
-    unexpected.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    unexpected.sort(authorityUnicodeCompare);
     throw new EffectRuntimeRequestError(
       `${label} has unsupported fields: ${unexpected.join(", ")}`,
     );
@@ -904,19 +905,10 @@ export async function commitLocalAuthorityShadowEntry(
   }
 }
 
-/**
- * Read-only view of the candidate store for drain readback and parity:
- * head, its comparison digest, and a page of committed transactions with the
- * projection reduced to its digest so responses stay bounded.
- */
-export async function readLocalAuthorityShadow(
-  value: unknown,
-  dependencies: LocalAuthorityShadowDependencies = {},
-): Promise<JsonObject> {
-  const request = decodeReadRequest(value);
-  const base: JsonObject = {
+function readResultBase(goalId: string): JsonObject {
+  return {
     schema_version: LOCAL_AUTHORITY_SHADOW_READ_RESULT_SCHEMA,
-    goal_id: request.goal_id,
+    goal_id: goalId,
     status: "unavailable",
     reason_code: null,
     store_identity: null,
@@ -927,6 +919,67 @@ export async function readLocalAuthorityShadow(
     partitions: null,
     scan: null,
   };
+}
+
+function loadedReadResult(
+  base: JsonObject,
+  storeIdentity: string,
+  loaded: Extract<AuthorityStoreLoadResult, { status: "loaded" | "missing" }>,
+): JsonObject {
+  const result: JsonObject = { ...base, status: loaded.status, store_identity: storeIdentity };
+  if (loaded.status === "loaded") {
+    result.provider_revision = loaded.provider_revision;
+    result.cursor = loaded.cursor;
+    result.head = structuredClone(loaded.head);
+    result.head_digest = localAuthorityShadowHeadDigest(loaded.head);
+    result.partitions = partitionsOf(loaded.head);
+  }
+  return result;
+}
+
+/** One committed transaction with its projection reduced to a digest. */
+function scanTransactionView(transaction: AuthorityStoreCommittedTransaction): JsonObject {
+  return {
+    cursor: transaction.cursor,
+    provider_revision: transaction.provider_revision,
+    operation_id: transaction.operation_id,
+    projection_digest: localAuthorityShadowHeadDigest(transaction.projection),
+    projection_partitions: partitionsOf(transaction.projection),
+    events: structuredClone(transaction.events) as JsonObject[],
+    receipts: structuredClone(transaction.receipts) as JsonObject[],
+  };
+}
+
+async function appendScanPage(
+  store: AuthorityStore,
+  request: ReadRequest,
+  result: JsonObject,
+): Promise<JsonObject> {
+  const page = await store.scanCommitted(request.scan_after_cursor, request.scan_limit);
+  if (page.status !== "page") {
+    return { ...result, status: page.status, reason_code: page.reason_code };
+  }
+  return {
+    ...result,
+    scan: {
+      transactions: page.transactions.map(scanTransactionView),
+      next_cursor: page.next_cursor,
+      has_more: page.has_more,
+    },
+  };
+}
+
+/**
+ * Read-only view of the candidate store for drain readback and parity:
+ * head, its comparison digest, and a page of committed transactions with the
+ * projection reduced to its digest so responses stay bounded.
+ */
+export async function readLocalAuthorityShadow(
+  value: unknown,
+  dependencies: LocalAuthorityShadowDependencies = {},
+): Promise<JsonObject> {
+  const request = decodeReadRequest(value);
+  const base = readResultBase(request.goal_id);
   let store: AuthorityStore;
   try {
     store = openShadowStore(request.runtime_root, request.goal_id, dependencies);
@@ -947,38 +1000,8 @@ export async function readLocalAuthorityShadow(
         store_identity: identity.store_identity,
       };
     }
-    const result: JsonObject = {
-      ...base,
-      status: loaded.status,
-      store_identity: identity.store_identity,
-    };
-    if (loaded.status === "loaded") {
-      result.provider_revision = loaded.provider_revision;
-      result.cursor = loaded.cursor;
-      result.head = structuredClone(loaded.head);
-      result.head_digest = localAuthorityShadowHeadDigest(loaded.head);
-      result.partitions = partitionsOf(loaded.head);
-    }
-    if (request.scan_limit > 0) {
-      const page = await store.scanCommitted(request.scan_after_cursor, request.scan_limit);
-      if (page.status !== "page") {
-        return { ...result, status: page.status, reason_code: page.reason_code };
-      }
-      result.scan = {
-        transactions: page.transactions.map((transaction) => ({
-          cursor: transaction.cursor,
-          provider_revision: transaction.provider_revision,
-          operation_id: transaction.operation_id,
-          projection_digest: localAuthorityShadowHeadDigest(transaction.projection),
-          projection_partitions: partitionsOf(transaction.projection),
-          events: structuredClone(transaction.events) as JsonObject[],
-          receipts: structuredClone(transaction.receipts) as JsonObject[],
-        })),
-        next_cursor: page.next_cursor,
-        has_more: page.has_more,
-      };
-    }
-    return result;
+    const result = loadedReadResult(base, identity.store_identity, loaded);
+    return request.scan_limit > 0 ? await appendScanPage(store, request, result) : result;
   } catch {
     return { ...base, reason_code: "provider_call_failed" };
   }

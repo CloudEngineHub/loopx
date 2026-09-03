@@ -24,6 +24,60 @@ PrintPayload = Callable[
 ]
 
 
+_DRAIN_FIELDS = (
+    "outcome",
+    "reason_code",
+    "delivered",
+    "replayed",
+    "reconciled",
+    "no_op",
+    "reseeded",
+    "pending_after",
+    "prepared_only_after",
+    "budget_exhausted",
+    "last_cursor",
+    "candidate_readback_verified",
+)
+
+
+def _drain_markdown_lines(payload: dict[str, object]) -> list[str]:
+    lines = [f"- {key}: `{payload.get(key)}`" for key in _DRAIN_FIELDS]
+    stopped_at = payload.get("stopped_at")
+    if isinstance(stopped_at, dict):
+        lines.append(
+            "- stopped_at: "
+            f"`{stopped_at.get('partition')}#{stopped_at.get('seq')}` "
+            f"→ `{stopped_at.get('outcome')}` ({stopped_at.get('reason_code')})"
+        )
+    return lines
+
+
+def _status_markdown_lines(payload: dict[str, object]) -> list[str]:
+    lines: list[str] = []
+    config = payload.get("config")
+    if isinstance(config, dict):
+        lines.append(f"- config: `{config.get('status')}`")
+    backlog = payload.get("outbox")
+    partitions = backlog.items() if isinstance(backlog, dict) else []
+    for partition, facts in partitions:
+        if isinstance(facts, dict):
+            lines.append(
+                f"- outbox.{partition}: committed_pending="
+                f"`{facts.get('committed_pending')}` prepared_only="
+                f"`{facts.get('prepared_only')}` cursor_last_seq="
+                f"`{facts.get('cursor_last_seq')}`"
+            )
+    candidate = payload.get("candidate")
+    if isinstance(candidate, dict):
+        lines.append(
+            f"- candidate: status=`{candidate.get('status')}` cursor="
+            f"`{candidate.get('cursor')}` store_identity=`{candidate.get('store_identity')}`"
+        )
+    lines.append(f"- store_bytes: `{payload.get('store_bytes')}`")
+    lines.append(f"- retention_pressure: `{payload.get('retention_pressure')}`")
+    return lines
+
+
 def render_authority_shadow_markdown(payload: dict[str, object]) -> str:
     lines = [
         "# LoopX Authority Shadow",
@@ -37,50 +91,9 @@ def render_authority_shadow_markdown(payload: dict[str, object]) -> str:
     if payload.get("error_code"):
         lines.append(f"- error_code: `{payload.get('error_code')}`")
     if payload.get("action") == "drain":
-        for key in (
-            "outcome",
-            "reason_code",
-            "delivered",
-            "replayed",
-            "reconciled",
-            "no_op",
-            "reseeded",
-            "pending_after",
-            "prepared_only_after",
-            "budget_exhausted",
-            "last_cursor",
-            "candidate_readback_verified",
-        ):
-            lines.append(f"- {key}: `{payload.get(key)}`")
-        stopped_at = payload.get("stopped_at")
-        if isinstance(stopped_at, dict):
-            lines.append(
-                "- stopped_at: "
-                f"`{stopped_at.get('partition')}#{stopped_at.get('seq')}` "
-                f"→ `{stopped_at.get('outcome')}` ({stopped_at.get('reason_code')})"
-            )
+        lines.extend(_drain_markdown_lines(payload))
     elif payload.get("action") == "status":
-        config = payload.get("config")
-        if isinstance(config, dict):
-            lines.append(f"- config: `{config.get('status')}`")
-        backlog = payload.get("outbox")
-        if isinstance(backlog, dict):
-            for partition, facts in backlog.items():
-                if isinstance(facts, dict):
-                    lines.append(
-                        f"- outbox.{partition}: committed_pending="
-                        f"`{facts.get('committed_pending')}` prepared_only="
-                        f"`{facts.get('prepared_only')}` cursor_last_seq="
-                        f"`{facts.get('cursor_last_seq')}`"
-                    )
-        candidate = payload.get("candidate")
-        if isinstance(candidate, dict):
-            lines.append(
-                f"- candidate: status=`{candidate.get('status')}` cursor="
-                f"`{candidate.get('cursor')}` store_identity=`{candidate.get('store_identity')}`"
-            )
-        lines.append(f"- store_bytes: `{payload.get('store_bytes')}`")
-        lines.append(f"- retention_pressure: `{payload.get('retention_pressure')}`")
+        lines.extend(_status_markdown_lines(payload))
     return "\n".join(lines) + "\n"
 
 

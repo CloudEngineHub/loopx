@@ -139,23 +139,28 @@ def test_drain_delivers_each_committed_entry_once_in_order_and_verifies_readback
     assert result.outcome == "drained"
     assert result.config_enabled is False
     assert (result.delivered, result.replayed, result.no_op) == (3, 0, 0)
-    assert result.pending_after == 0 and result.prepared_only_after == 0
+    assert result.pending_after == 0
+    assert result.prepared_only_after == 0
     assert result.budget_exhausted is False
     assert result.candidate_readback_verified is True
     assert result.last_cursor == "3"
     assert (result.cursor_before, result.cursor_after, result.drained_count) == (None, "3", 3)
     payload = result.to_payload()
-    assert payload["ok"] is True and payload["drained_count"] == 3 and payload["cursor_after"] == "3"
+    assert payload["ok"] is True
+    assert payload["drained_count"] == 3
+    assert payload["cursor_after"] == "3"
     assert [item["outcome"] for item in result.entries] == ["delivered"] * 3
     assert [item["cursor"] for item in result.entries] == ["1", "2", "3"]
     assert [item["entry_id"] for item in result.entries] == [
         capture.outcome.entry_id for capture in captures
     ]
-    assert result.store_identity is not None and result.store_identity.startswith("file:")
+    assert result.store_identity is not None
+    assert result.store_identity.startswith("file:")
     assert list(_todo_dir(runtime_root).iterdir()) == [_todo_dir(runtime_root) / "drain-cursor.json"]
     cursor = outbox.read_cursor(_todo_dir(runtime_root))
     assert cursor is not None
-    assert cursor["last_seq"] == 3 and cursor["last_entry_id"] == captures[-1].outcome.entry_id
+    assert cursor["last_seq"] == 3
+    assert cursor["last_entry_id"] == captures[-1].outcome.entry_id
     assert cursor["last_partition_digest"] == captures[-1].outcome.partition_digest
 
     view = adapter.read_local_authority_shadow(runtime_root=runtime_root, goal_id=GOAL_ID, scan_limit=10)
@@ -185,7 +190,8 @@ def test_drain_delivers_each_committed_entry_once_in_order_and_verifies_readback
     assert str(runtime_root) not in json.dumps(view)
 
     again = _drain(registry, runtime_root)
-    assert again.outcome == "nothing_pending" and again.ok is True
+    assert again.outcome == "nothing_pending"
+    assert again.ok is True
 
 
 def test_drain_replays_when_store_committed_but_cursor_was_not_written(
@@ -235,14 +241,16 @@ def test_drain_batch_is_bounded_and_reports_what_it_left(tmp_path: Path) -> None
         _record_todo_write(registry, state, runtime_root, f"Bounded {index}")
 
     first = _drain(registry, runtime_root, max_entries=2)
-    assert first.outcome == "drained" and first.ok is True
+    assert first.outcome == "drained"
+    assert first.ok is True
     assert first.delivered == 2
     assert first.budget_exhausted is True
     assert first.pending_after == 1
     assert first.candidate_readback_verified is True
 
     second = _drain(registry, runtime_root)
-    assert second.delivered == 1 and second.pending_after == 0
+    assert second.delivered == 1
+    assert second.pending_after == 0
     assert (second.cursor_before, second.cursor_after) == ("2", "3")
     view = adapter.read_local_authority_shadow(runtime_root=runtime_root, goal_id=GOAL_ID)
     assert view["cursor"] == "3"
@@ -276,7 +284,8 @@ def test_drain_stops_in_order_when_the_store_boundary_misbehaves(
     monkeypatch.undo()
 
     recovered = _drain(registry, runtime_root)
-    assert recovered.delivered == 2 and recovered.pending_after == 0
+    assert recovered.delivered == 2
+    assert recovered.pending_after == 0
 
 
 def test_prepared_only_entries_resolve_only_under_a_free_primary_lock(tmp_path: Path) -> None:
@@ -291,7 +300,8 @@ def test_prepared_only_entries_resolve_only_under_a_free_primary_lock(tmp_path: 
 
     result = _drain(registry, runtime_root)
     assert result.ok is True
-    assert result.delivered == 1 and result.no_op == 0
+    assert result.delivered == 1
+    assert result.no_op == 0
     assert result.entries[0]["resolution"] == "committed_proven_by_readback"
     assert result.entries[0]["entry_id"] == proven.outcome.entry_id
     view = adapter.read_local_authority_shadow(runtime_root=runtime_root, goal_id=GOAL_ID, scan_limit=5)
@@ -303,7 +313,8 @@ def test_prepared_only_entries_resolve_only_under_a_free_primary_lock(tmp_path: 
         registry, state, runtime_root, "Never landed", mark_committed=False, write_file=False
     )
     result = _drain(registry, runtime_root)
-    assert result.delivered == 1 and result.no_op == 1
+    assert result.delivered == 1
+    assert result.no_op == 1
     assert result.entries[0]["resolution"] == "abandoned"
     assert result.entries[0]["entry_id"] == abandoned.outcome.entry_id
     view = adapter.read_local_authority_shadow(runtime_root=runtime_root, goal_id=GOAL_ID, scan_limit=5)
@@ -395,10 +406,12 @@ def test_lease_partition_entries_are_compacted_at_drain(tmp_path: Path) -> None:
 
     result = _drain(registry, runtime_root)
 
-    assert result.ok is True and result.delivered == 1
+    assert result.ok is True
+    assert result.delivered == 1
     view = adapter.read_local_authority_shadow(runtime_root=runtime_root, goal_id=GOAL_ID, scan_limit=5)
     head = view["head"]
-    assert head["todos"] == [] and head["handoff_mode"] is None
+    assert head["todos"] == []
+    assert head["handoff_mode"] is None
     assert head["leases"] == [
         {
             "todo_id": record["todo_id"],
@@ -426,7 +439,8 @@ def test_status_reports_backlog_candidate_and_growth_facts(tmp_path: Path) -> No
     assert empty["ok"] is True
     assert empty["config"]["status"] == "disabled"
     assert empty["candidate"]["status"] == "missing"
-    assert empty["store_bytes"] == 0 and empty["retention_pressure"] is False
+    assert empty["store_bytes"] == 0
+    assert empty["retention_pressure"] is False
     assert str(runtime_root) not in json.dumps(empty)
 
     _record_todo_write(registry, state, runtime_root, "Status fact")
@@ -467,7 +481,8 @@ def test_capture_evidence_v1_reports_measured_facts_only(tmp_path: Path) -> None
     deferred = adapter.DrainResult(goal_id=GOAL_ID, outcome="drain_deferred", reason_code="drain_lock_busy")
     assert adapter.capture_evidence(goal_id=GOAL_ID, capture=capture.outcome, drain=deferred)["outcome"] == "drain_deferred"
     pending = adapter.capture_evidence(goal_id=GOAL_ID, capture=capture.outcome, drain=None)
-    assert pending["outcome"] == "pending" and pending["drain"] is None
+    assert pending["outcome"] == "pending"
+    assert pending["drain"] is None
 
     skipped = outbox.CaptureOutcome(partition="todos", skipped_reason="partition_unchanged")
     assert adapter.capture_evidence(goal_id=GOAL_ID, capture=skipped, drain=None)["outcome"] == "no_transaction"

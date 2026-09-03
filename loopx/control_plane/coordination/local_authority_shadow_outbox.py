@@ -180,61 +180,71 @@ class OutboxEntry:
         return None
 
 
-def list_entries(directory: Path) -> list[OutboxEntry]:
-    """All entries of one partition directory, oldest first."""
+_EntryKey = tuple[int, str]
 
-    if not directory.is_dir():
-        return []
-    prepared: dict[tuple[int, str], Path] = {}
-    committed: dict[tuple[int, str], Path] = {}
+
+def _index_entry_files(directory: Path) -> tuple[dict[_EntryKey, Path], dict[_EntryKey, Path]]:
+    """Map ``(seq, entry_id)`` to the prepared and committed files present."""
+
+    prepared: dict[_EntryKey, Path] = {}
+    committed: dict[_EntryKey, Path] = {}
     for path in directory.iterdir():
         match = _ENTRY_FILE.match(path.name)
         if match is None:
             continue
         key = (int(match.group("seq")), match.group("entry_id"))
-        if match.group("phase") == "prepared":
-            prepared[key] = path
-        else:
-            committed[key] = path
-    entries: list[OutboxEntry] = []
-    for key in sorted(prepared):
-        seq, entry_id = key
-        prepared_path = prepared[key]
-        prepared_record = _load_json(prepared_path)
-        if (
-            prepared_record.get("schema_version") != OUTBOX_ENTRY_SCHEMA
-            or prepared_record.get("entry_id") != entry_id
-            or prepared_record.get("seq") != seq
-        ):
-            raise OutboxError("outbox_file_invalid", f"{prepared_path.name} does not match its name")
-        committed_path = committed.get(key)
-        committed_record = None
-        if committed_path is not None:
-            committed_record = _load_json(committed_path)
-            if (
-                committed_record.get("schema_version") != OUTBOX_COMMIT_SCHEMA
-                or committed_record.get("entry_id") != entry_id
-            ):
-                raise OutboxError(
-                    "outbox_file_invalid", f"{committed_path.name} does not match its entry"
-                )
-        entries.append(
-            OutboxEntry(
-                partition=str(prepared_record.get("partition") or directory.name),
-                seq=seq,
-                entry_id=entry_id,
-                prepared_path=prepared_path,
-                committed_path=committed_path,
-                prepared=prepared_record,
-                committed=committed_record,
-            )
-        )
+        target = prepared if match.group("phase") == "prepared" else committed
+        target[key] = path
+    return prepared, committed
+
+
+def _load_prepared_record(path: Path, *, seq: int, entry_id: str) -> dict[str, Any]:
+    record = _load_json(path)
+    if (
+        record.get("schema_version") != OUTBOX_ENTRY_SCHEMA
+        or record.get("entry_id") != entry_id
+        or record.get("seq") != seq
+    ):
+        raise OutboxError("outbox_file_invalid", f"{path.name} does not match its name")
+    return record
+
+
+def _load_committed_record(path: Path | None, *, entry_id: str) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    record = _load_json(path)
+    if record.get("schema_version") != OUTBOX_COMMIT_SCHEMA or record.get("entry_id") != entry_id:
+        raise OutboxError("outbox_file_invalid", f"{path.name} does not match its entry")
+    return record
+
+
+def list_entries(directory: Path) -> list[OutboxEntry]:
+    """All entries of one partition directory, oldest first."""
+
+    if not directory.is_dir():
+        return []
+    prepared, committed = _index_entry_files(directory)
     orphan_markers = sorted(set(committed) - set(prepared))
     if orphan_markers:
         seq, entry_id = orphan_markers[0]
         raise OutboxError(
             "outbox_file_invalid",
             f"committed marker without prepared entry: {entry_file_name(seq, entry_id, 'committed')}",
+        )
+    entries: list[OutboxEntry] = []
+    for seq, entry_id in sorted(prepared):
+        key = (seq, entry_id)
+        prepared_record = _load_prepared_record(prepared[key], seq=seq, entry_id=entry_id)
+        entries.append(
+            OutboxEntry(
+                partition=str(prepared_record.get("partition") or directory.name),
+                seq=seq,
+                entry_id=entry_id,
+                prepared_path=prepared[key],
+                committed_path=committed.get(key),
+                prepared=prepared_record,
+                committed=_load_committed_record(committed.get(key), entry_id=entry_id),
+            )
         )
     return entries
 
@@ -590,6 +600,49 @@ SourceProbe = Callable[[OutboxEntry], str]
 """Return ``committed``, ``abandoned`` or ``unproved`` for a prepared-only entry."""
 
 
+_LEASE_FENCE_KEYS = ("version", "lease_epoch", "status", "updated_at")
+
+
+def _resolve_markdown_source(source: Mapping[str, Any], reader: Callable[[], str]) -> str:
+    current_digest = text_digest(reader())
+    if current_digest == source.get("bytes_digest"):
+        return "committed"
+    if current_digest == source.get("previous_bytes_digest"):
+        return "abandoned"
+    return "unproved"
+
+
+def _lease_matches(current: Mapping[str, Any] | None, expected: Mapping[str, Any]) -> bool:
+    if current is None or not expected:
+        return False
+    return all(current.get(key) == expected.get(key) for key in _LEASE_FENCE_KEYS)
+
+
+def _resolve_lease_source(
+    source: Mapping[str, Any],
+    reader: Callable[[str], dict[str, Any] | None],
+) -> str:
+    planned = _as_object(source.get("lease"))
+    if not planned:
+        return "unproved"
+    current = reader(str(planned.get("todo_id") or ""))
+    if _lease_matches(current, planned):
+        return "committed"
+    previous = _as_object(source.get("previous_lease"))
+    if (not previous and current is None) or _lease_matches(current, previous):
+        return "abandoned"
+    return "unproved"
+
+
+def _resolve_event_source(source: Mapping[str, Any], reader: Callable[[str], bool]) -> str:
+    event_id = source.get("event_id")
+    if isinstance(event_id, str) and event_id and reader(event_id):
+        # The append landed but the projection was never recorded; only a
+        # fresh full-partition capture can say what the state now is.
+        return "unproved"
+    return "abandoned"
+
+
 def resolve_prepared_only_entry(
     entry: OutboxEntry,
     *,
@@ -606,35 +659,11 @@ def resolve_prepared_only_entry(
     source = _as_object(entry.prepared.get("source"))
     kind = source.get("kind")
     if kind == SOURCE_MARKDOWN and markdown_text_reader is not None:
-        current_digest = text_digest(markdown_text_reader())
-        if current_digest == source.get("bytes_digest"):
-            return "committed"
-        if current_digest == source.get("previous_bytes_digest"):
-            return "abandoned"
-        return "unproved"
+        return _resolve_markdown_source(source, markdown_text_reader)
     if kind == SOURCE_TASK_LEASE and lease_record_reader is not None:
-        planned = _as_object(source.get("lease"))
-        if not planned:
-            return "unproved"
-        current = lease_record_reader(str(planned.get("todo_id") or ""))
-        keys = ("version", "lease_epoch", "status", "updated_at")
-        if current is not None and all(current.get(key) == planned.get(key) for key in keys):
-            return "committed"
-        previous = _as_object(source.get("previous_lease"))
-        if not previous and current is None:
-            return "abandoned"
-        if previous and current is not None and all(
-            current.get(key) == previous.get(key) for key in keys
-        ):
-            return "abandoned"
-        return "unproved"
+        return _resolve_lease_source(source, lease_record_reader)
     if kind == SOURCE_STATE_EVENT_LOG and event_presence_reader is not None:
-        event_id = source.get("event_id")
-        if isinstance(event_id, str) and event_id and event_presence_reader(event_id):
-            # The append landed but the projection was never recorded; only a
-            # fresh full-partition capture can say what the state now is.
-            return "unproved"
-        return "abandoned"
+        return _resolve_event_source(source, event_presence_reader)
     return "unproved"
 
 

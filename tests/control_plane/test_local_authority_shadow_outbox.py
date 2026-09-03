@@ -112,7 +112,8 @@ def test_capture_records_prepared_then_committed_and_skips_prose_only_writes(tmp
     capture = _capture(registry, state, runtime_root, original_text=original)
     capture.prepare(new_text)
     names = sorted(path.name for path in _todo_dir(runtime_root).iterdir())
-    assert len(names) == 1 and names[0].endswith(".prepared.json")
+    assert len(names) == 1
+    assert names[0].endswith(".prepared.json")
     assert capture.outcome.entry_id is not None
     assert capture.outcome.seq == 1
     assert capture.outcome.source_bytes_digest == text_digest(new_text)
@@ -320,7 +321,7 @@ def test_canonical_projection_rejects_floats_and_bad_lease_identity() -> None:
     with pytest.raises(ProjectionValueError):
         todo_partition_projection(handoff_mode="hard_lease", todos=[{"todo_id": "a", "status": 2.5}])
     assert canonical_bytes({"b": 1, "a": [True, None, "\u00e9"]}) == '{"a":[true,null,"\u00e9"],"b":1}'.encode("utf-8")
-    assert sha256_digest({"a": 1}) == sha256_digest({"a": 1})
+    assert sha256_digest({"b": [1, None], "a": "x"}) == sha256_digest({"a": "x", "b": [1, None]})
     with pytest.raises(ProjectionValueError):
         lease_partition_projection([("todo-a", {"goal_id": "other", "todo_id": "todo-a"})], goal_id=GOAL_ID)
     projection = lease_partition_projection(
