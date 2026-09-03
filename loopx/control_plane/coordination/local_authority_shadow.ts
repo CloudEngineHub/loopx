@@ -11,6 +11,7 @@ import {
 } from "../runtime_decode.ts";
 import type {
   AuthorityStore,
+  AuthorityStoreCommitResult,
   AuthorityStoreCommittedTransaction,
   AuthorityStoreLoadResult,
   AuthorityStoreReceiptResult,
@@ -814,6 +815,100 @@ function openShadowStore(
   );
 }
 
+type CommitAttempt =
+  | { kind: "final"; result: LocalAuthorityShadowCommitEntryResult }
+  | { kind: "retry"; result: LocalAuthorityShadowCommitEntryResult };
+
+async function settleCommitOutcome(
+  store: AuthorityStore,
+  request: CommitEntryRequest,
+  storeIdentity: string,
+  committed: AuthorityStoreCommitResult,
+  headDigest: string,
+): Promise<CommitAttempt> {
+  if (committed.status === "applied") {
+    return {
+      kind: "final",
+      result: commitEntryResult(request, "delivered", {
+        storeIdentity,
+        providerRevision: committed.provider_revision,
+        cursor: committed.cursor,
+        headDigest,
+      }),
+    };
+  }
+  if (committed.status === "ambiguous") {
+    return {
+      kind: "final",
+      result: await reconcileTransactionReceipt(store, request, storeIdentity, "ambiguous_reconciled"),
+    };
+  }
+  if (committed.status === "failed") {
+    return {
+      kind: "final",
+      result: commitEntryResult(request, "failed", {
+        reasonCode: committed.reason_code,
+        storeIdentity,
+      }),
+    };
+  }
+  if (committed.conflict_kind === "operation_id_exists") {
+    return {
+      kind: "final",
+      result: await reconcileTransactionReceipt(store, request, storeIdentity, "replayed"),
+    };
+  }
+  return {
+    kind: "retry",
+    result: commitEntryResult(request, "conflict_retry_required", {
+      reasonCode: "provider_revision_mismatch",
+      storeIdentity,
+      providerRevision: committed.current_provider_revision,
+      cursor: committed.current_cursor,
+    }),
+  };
+}
+
+/** One load-compose-commit attempt against the current provider revision. */
+async function attemptCommitEntry(
+  store: AuthorityStore,
+  request: CommitEntryRequest,
+  storeIdentity: string,
+  noOp: boolean,
+): Promise<CommitAttempt> {
+  const loaded = await store.loadAuthority();
+  if (loaded.status === "unavailable" || loaded.status === "failed") {
+    return {
+      kind: "final",
+      result: commitEntryResult(request, loaded.status, {
+        reasonCode: loaded.reason_code,
+        storeIdentity,
+      }),
+    };
+  }
+  const nextHead = composeLocalAuthorityShadowHead(
+    loaded.status === "loaded" ? loaded.head : null,
+    request.goal_id,
+    request.entry,
+    request.partition_projection,
+    request.partition_digest,
+  );
+  const committed = await store.commitAuthority({
+    expected_provider_revision: loaded.status === "loaded" ? loaded.provider_revision : null,
+    operation_id: request.entry.entry_id,
+    events: [transactionEvent(request, noOp)],
+    next_projection: nextHead,
+    receipts: [transactionReceipt(request, noOp)],
+  });
+  return await settleCommitOutcome(
+    store,
+    request,
+    storeIdentity,
+    committed,
+    localAuthorityShadowHeadDigest(nextHead),
+  );
+}
+
 /**
  * Commit one drained outbox entry as exactly one candidate transaction.
  *
@@ -841,65 +936,12 @@ export async function commitLocalAuthorityShadowEntry(
     if (identity.status !== "available") {
       return commitEntryResult(request, identity.status, { reasonCode: identity.reason_code });
     }
-    const storeIdentity = identity.store_identity;
-    let lastConflict: LocalAuthorityShadowCommitEntryResult | null = null;
-    for (let attempt = 0; attempt < REVISION_RETRY_ATTEMPTS; attempt += 1) {
-      const loaded = await store.loadAuthority();
-      if (loaded.status === "unavailable" || loaded.status === "failed") {
-        return commitEntryResult(request, loaded.status, {
-          reasonCode: loaded.reason_code,
-          storeIdentity,
-        });
-      }
-      const currentHead = loaded.status === "loaded" ? loaded.head : null;
-      const nextHead = composeLocalAuthorityShadowHead(
-        currentHead,
-        request.goal_id,
-        request.entry,
-        request.partition_projection,
-        request.partition_digest,
-      );
-      const headDigest = localAuthorityShadowHeadDigest(nextHead);
-      const committed = await store.commitAuthority({
-        expected_provider_revision: loaded.status === "loaded" ? loaded.provider_revision : null,
-        operation_id: request.entry.entry_id,
-        events: [transactionEvent(request, noOp)],
-        next_projection: nextHead,
-        receipts: [transactionReceipt(request, noOp)],
-      });
-      if (committed.status === "applied") {
-        return commitEntryResult(request, "delivered", {
-          storeIdentity,
-          providerRevision: committed.provider_revision,
-          cursor: committed.cursor,
-          headDigest,
-        });
-      }
-      if (committed.status === "ambiguous") {
-        return await reconcileTransactionReceipt(
-          store,
-          request,
-          storeIdentity,
-          "ambiguous_reconciled",
-        );
-      }
-      if (committed.status === "failed") {
-        return commitEntryResult(request, "failed", {
-          reasonCode: committed.reason_code,
-          storeIdentity,
-        });
-      }
-      if (committed.conflict_kind === "operation_id_exists") {
-        return await reconcileTransactionReceipt(store, request, storeIdentity, "replayed");
-      }
-      lastConflict = commitEntryResult(request, "conflict_retry_required", {
-        reasonCode: "provider_revision_mismatch",
-        storeIdentity,
-        providerRevision: committed.current_provider_revision,
-        cursor: committed.current_cursor,
-      });
+    let attempt: CommitAttempt | null = null;
+    for (let index = 0; index < REVISION_RETRY_ATTEMPTS; index += 1) {
+      attempt = await attemptCommitEntry(store, request, identity.store_identity, noOp);
+      if (attempt.kind === "final") return attempt.result;
     }
-    return lastConflict as LocalAuthorityShadowCommitEntryResult;
+    return (attempt as CommitAttempt).result;
   } catch {
     return commitEntryResult(request, "unavailable", { reasonCode: "provider_call_failed" });
   }
