@@ -111,6 +111,23 @@ def read_machine_configuration(
     return normalized
 
 
+def read_stored_machine_configuration(runtime_root: Path) -> dict[str, Any] | None:
+    """Read the exact stored envelope for fenced repair and rollback.
+
+    Normal reads remain fail-closed through ``read_machine_configuration``.
+    Mutation planning needs the prior bytes even when one namespace became
+    legacy, otherwise the transactional API cannot replace or restore it.
+    """
+
+    path = machine_configuration_store_path(runtime_root)
+    if not path.is_file():
+        return None
+    payload = read_json(path)
+    if not isinstance(payload, dict):
+        raise ValueError("machine_configuration must be an object")
+    return payload
+
+
 def inspect_machine_configuration(
     runtime_root: Path, *, registry: MachineConfigurationRegistry
 ) -> dict[str, Any]:
@@ -145,14 +162,10 @@ def _update_plan(
         if desired is not None
         else None
     )
-    normalized_current = (
-        normalize_machine_configuration(current, registry=registry)
-        if current is not None
-        else None
-    )
+    stored_current = dict(current) if current is not None else None
     current_revision = (
-        machine_configuration_revision(normalized_current)
-        if normalized_current is not None
+        machine_configuration_revision(stored_current)
+        if stored_current is not None
         else _MISSING_REVISION
     )
     desired_revision = (
@@ -162,7 +175,7 @@ def _update_plan(
     )
     action = (
         "create"
-        if normalized_current is None and normalized_desired is not None
+        if stored_current is None and normalized_desired is not None
         else "unchanged"
         if current_revision == desired_revision
         else "delete"
@@ -177,8 +190,8 @@ def _update_plan(
         "changed_namespaces": sorted(
             namespace
             for namespace in set((normalized_desired or {}).get("namespaces", {}))
-            | set((normalized_current or {}).get("namespaces", {}))
-            if (normalized_current or {}).get("namespaces", {}).get(namespace)
+            | set((stored_current or {}).get("namespaces", {}))
+            if (stored_current or {}).get("namespaces", {}).get(namespace)
             != (normalized_desired or {}).get("namespaces", {}).get(namespace)
         ),
     }
@@ -204,7 +217,7 @@ def plan_machine_configuration_update(
     registry: MachineConfigurationRegistry,
 ) -> dict[str, Any]:
     return _update_plan(
-        current=read_machine_configuration(runtime_root, registry=registry),
+        current=read_stored_machine_configuration(runtime_root),
         desired=configuration,
         registry=registry,
     )
@@ -247,7 +260,7 @@ def configure_machine_configuration(
 
     store_path = machine_configuration_store_path(runtime_root)
     with exclusive_file_lock(store_path, operation="configure_machine_configuration"):
-        current = read_machine_configuration(runtime_root, registry=registry)
+        current = read_stored_machine_configuration(runtime_root)
         plan = _update_plan(current=current, desired=configuration, registry=registry)
         if plan["plan_revision"] != expected:
             raise ValueError(
@@ -372,11 +385,9 @@ def _read_backup(
     ):
         raise ValueError("machine-configuration transaction backup is invalid")
     prior = backup.get("prior_machine_configuration")
-    normalized_prior = (
-        normalize_machine_configuration(prior, registry=registry)
-        if prior is not None
-        else None
-    )
+    if prior is not None and not isinstance(prior, Mapping):
+        raise ValueError("machine-configuration transaction backup is invalid")
+    normalized_prior = dict(prior) if prior is not None else None
     prior_revision = (
         machine_configuration_revision(normalized_prior)
         if normalized_prior is not None
@@ -440,7 +451,7 @@ def plan_machine_configuration_rollback(
     safe_id = _safe_transaction_id(transaction_id)
     receipt = _read_transaction(runtime_root, safe_id)
     backup = _read_backup(runtime_root, safe_id, receipt, registry=registry)
-    current = read_machine_configuration(runtime_root, registry=registry)
+    current = read_stored_machine_configuration(runtime_root)
     return _rollback_plan(
         transaction_id=safe_id,
         receipt=receipt,
@@ -475,7 +486,7 @@ def rollback_machine_configuration(
     with exclusive_file_lock(store_path, operation="rollback_machine_configuration"):
         receipt = _read_transaction(runtime_root, safe_id)
         backup = _read_backup(runtime_root, safe_id, receipt, registry=registry)
-        current = read_machine_configuration(runtime_root, registry=registry)
+        current = read_stored_machine_configuration(runtime_root)
         plan = _rollback_plan(
             transaction_id=safe_id,
             receipt=receipt,
@@ -504,7 +515,7 @@ def rollback_machine_configuration(
         rollback_path = _runtime_root(runtime_root) / _transaction_ref(rollback_id)
         try:
             _restore_prior_state(store_path=store_path, prior=prior, writer=writer)
-            readback = read_machine_configuration(runtime_root, registry=registry)
+            readback = read_stored_machine_configuration(runtime_root)
             if readback != prior:
                 raise RuntimeError(
                     "machine-configuration rollback readback did not match backup"
@@ -550,5 +561,6 @@ __all__ = [
     "plan_machine_configuration_rollback",
     "plan_machine_configuration_update",
     "read_machine_configuration",
+    "read_stored_machine_configuration",
     "rollback_machine_configuration",
 ]

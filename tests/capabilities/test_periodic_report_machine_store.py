@@ -401,9 +401,7 @@ def test_canonical_machine_config_cli_uses_the_same_store_and_projection(
     assert main([*common, "describe"]) == 0
     catalog = json.loads(capsys.readouterr().out)
     assert catalog["schema_version"] == "machine_configuration_catalog_v0"
-    assert [item["namespace"] for item in catalog["namespaces"]] == [
-        "periodic_report"
-    ]
+    assert [item["namespace"] for item in catalog["namespaces"]] == ["periodic_report"]
 
     assert (
         main(
@@ -600,6 +598,90 @@ def test_canonical_machine_config_cli_accepts_one_namespace_patch(
     )
     applied = json.loads(capsys.readouterr().out)
     assert applied["status"] == "applied"
+
+
+def test_namespace_patch_transactionally_replaces_legacy_installed_value(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    registry_path = tmp_path / "registry.json"
+    registry_path.write_text('{"goals": []}', encoding="utf-8")
+    runtime_root = tmp_path / "runtime"
+    store_path = machine_defaults_store_path(runtime_root)
+    store_path.parent.mkdir(parents=True)
+    legacy = _defaults()
+    legacy["namespaces"]["periodic_report"]["inheritance"] = (
+        "materialize_on_goal_connect"
+    )
+    store_path.write_text(json.dumps(legacy), encoding="utf-8")
+    namespace_path = tmp_path / "periodic-report.json"
+    namespace_path.write_text(
+        json.dumps(_defaults()["namespaces"]["periodic_report"]), encoding="utf-8"
+    )
+    common = [
+        "--registry",
+        str(registry_path),
+        "--runtime-root",
+        str(runtime_root),
+        "--format",
+        "json",
+        "machine-config",
+    ]
+
+    assert main([*common, "inspect"]) == 2
+    assert (
+        "must be live_machine_default" in json.loads(capsys.readouterr().out)["error"]
+    )
+
+    assert (
+        main(
+            [
+                *common,
+                "preview",
+                "--namespace",
+                "periodic_report",
+                "--config-json",
+                str(namespace_path),
+            ]
+        )
+        == 0
+    )
+    preview = json.loads(capsys.readouterr().out)
+    assert preview["action"] == "update"
+    assert preview["changed_namespaces"] == ["periodic_report"]
+
+    assert (
+        main(
+            [
+                *common,
+                "apply",
+                "--namespace",
+                "periodic_report",
+                "--config-json",
+                str(namespace_path),
+                "--expected-plan-revision",
+                preview["plan_revision"],
+                "--execute",
+            ]
+        )
+        == 0
+    )
+    applied = json.loads(capsys.readouterr().out)
+    assert applied["status"] == "applied"
+    assert applied["rollback_available"] is True
+    assert json.loads(store_path.read_text(encoding="utf-8")) == _defaults()
+
+    rollback_preview = plan_periodic_report_machine_defaults_rollback(
+        runtime_root=runtime_root,
+        transaction_id=applied["transaction_id"],
+    )
+    restored = rollback_periodic_report_machine_defaults(
+        runtime_root=runtime_root,
+        transaction_id=applied["transaction_id"],
+        execute=True,
+        expected_plan_revision=rollback_preview["plan_revision"],
+    )
+    assert restored["status"] == "rolled_back"
+    assert json.loads(store_path.read_text(encoding="utf-8")) == legacy
 
 
 def test_inspection_is_path_free_and_reports_absence(tmp_path: Path) -> None:
