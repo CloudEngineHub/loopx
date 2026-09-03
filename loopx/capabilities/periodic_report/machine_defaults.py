@@ -138,6 +138,19 @@ def periodic_report_machine_configuration_namespace() -> MachineConfigurationNam
         schema_versions=frozenset({PERIODIC_REPORT_MACHINE_DEFAULTS_SCHEMA}),
         normalize=normalize_periodic_report_machine_defaults,
         project_public=lambda value: dict(value),
+        apply_public_update=lambda _current, update: dict(update),
+        title="Periodic reports",
+        description=(
+            "Live default for Goals without an explicit periodic-report override. "
+            "Goal overrides remain fixed; changing or removing this policy updates "
+            "inherited behavior on the next plan."
+        ),
+        default_configuration={
+            "schema_version": PERIODIC_REPORT_MACHINE_DEFAULTS_SCHEMA,
+            "enabled": False,
+            "inheritance": _INHERITANCE_MODE,
+            "timezone": "UTC",
+        },
     )
 
 
