@@ -457,3 +457,39 @@ export async function appendJsonLine(
     await handle.close();
   }
 }
+
+async function syncDirectoryForDurableWrite(directory: string): Promise<void> {
+  if (process.platform === "win32") return;
+  const handle = await open(directory, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Write JSON so that a crash cannot leave a torn or unlinked file behind:
+ * temp file in the same directory, fsync, atomic rename, directory fsync.
+ */
+export async function durableWriteJson(
+  path: string,
+  payload: JsonObject,
+): Promise<void> {
+  const directory = dirname(path);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  const handle = await open(temporary, "wx", 0o600);
+  try {
+    try {
+      await handle.writeFile(`${JSON.stringify(payload, null, 1)}\n`, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(temporary, path);
+    await syncDirectoryForDurableWrite(directory);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}

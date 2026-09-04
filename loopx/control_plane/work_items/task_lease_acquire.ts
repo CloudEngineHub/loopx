@@ -17,6 +17,11 @@ import {
   type JsonObject,
 } from "../effect_program.ts";
 import { requireJsonObject } from "../runtime_decode.ts";
+import {
+  beginLeaseOutboxEntry,
+  decodeLocalAuthorityShadowBinding,
+  type LocalAuthorityShadowBinding,
+} from "../coordination/local_authority_shadow_outbox.ts";
 
 export const TASK_LEASE_ACQUIRE_REQUEST_SCHEMA_VERSION =
   "loopx_task_lease_acquire_native_v0";
@@ -74,6 +79,7 @@ interface AcquireRequest {
   ttl_seconds: number;
   expected_version: number | null;
   authority: AuthorityFacts;
+  runtime_shadow: LocalAuthorityShadowBinding | null;
 }
 
 export interface LeaseRecord extends JsonObject {
@@ -441,6 +447,7 @@ function decodeRequest(value: unknown): AcquireRequest {
     ttl_seconds: normalizeTtl(request.ttl_seconds),
     expected_version: optionalInteger(request.expected_version, "expected_version"),
     authority,
+    runtime_shadow: decodeLocalAuthorityShadowBinding(request.runtime_shadow),
   };
 }
 
@@ -1336,8 +1343,29 @@ async function commitAcquire(
   };
   await dependencies.beforeWrite?.(lease);
   await revalidateAuthoritySources(request.authority.source_receipts);
+  const shadowCapture = request.runtime_shadow === null
+    ? null
+    : await beginLeaseOutboxEntry({
+      runtime_root: request.runtime_root,
+      goal_id: request.goal_id,
+      lease_directory: taskLeaseDirectory(request),
+      write_class: "task_lease_acquire",
+      operation_id: request.idempotency_key,
+      previous_lease: existing,
+      planned_lease: lease,
+    });
   await atomicWriteJson(leasePath, lease);
-  return successEnvelope(request, lease, leasePath, acquireEffectId(request), false);
+  await shadowCapture?.commit();
+  const response = successEnvelope(request, lease, leasePath, acquireEffectId(request), false);
+  if (shadowCapture !== null) {
+    response.coordination_runtime_shadow_capture = {
+      entry_id: shadowCapture.entry_id,
+      seq: shadowCapture.seq,
+      source_bytes_digest: shadowCapture.source_bytes_digest,
+      failure: shadowCapture.failure,
+    };
+  }
+  return response;
 }
 
 export async function executeTaskLeaseAcquire(

@@ -2134,14 +2134,14 @@ write that cannot preserve the contract.
   fence, run `promote`, render the projections, and record the declaration of
   question 11; refuse a rerun whose source digest changed unless the abandoned
   store is explicitly discarded.
-- A transaction-bound capture (question 14): the runtime shadow samples the
-  source after the commit, from outside the writer's lock, so a concurrent
-  writer can land inside the sampled projection and a crash between the commit
-  and the dispatch loses the mirror. The parity-half outbox closes both: the
-  prepared entry is written inside the lock the writer already holds, the
-  committed marker after the primary write returns, and a bounded drain turns
-  each entry into exactly one shadow transaction whose `operation_id` is the
-  entry id. `qualify` then counts entries, not samples.
+- Full transaction-capture qualification (question 14): Todo add, update,
+  complete, supersede, and archive plus native lease acquire, renew, transfer,
+  release, auto-acquire, and fence-close now emit prepared/committed outbox
+  entries around their primary write. The bounded drain commits complete
+  versioned records into the existing `coordination.runtime_shadow` file-v0
+  lineage; it does not create the former second local-shadow candidate. Before
+  promotion, add sustained mixed-writer parity runs, event-only Todo coverage,
+  and the selected provider profile's recovery/capacity evidence.
 - The provider-neutral authority binding, compatibility projection outbox,
   and conformance rows for file, NoKV, and PostgreSQL. This does not require all
   providers to promote together; each profile must pass the same contract
@@ -2172,6 +2172,6 @@ one document is acceptable only for promotion bootstrap and bounded test goals.
 | Lane | May start | Scope and exit condition | Dependency |
 | --- | --- | --- | --- |
 | P. PostgreSQL provider plane | Now, from current `main` | Keep the existing `AuthorityStore` contract; finish schema migration/install ownership, authenticated service and tenant authorization, restore-incarnation rotation, pool/cancellation/failover behavior, and reviewed indexes, partitioning, retention, and measured capacity. Live PostgreSQL conformance remains mandatory. | Does not depend on #3870 and must not stack on its branch. This lane alone creates no runtime caller or promotion claim. |
-| C. Canonical transaction capture | Now, by revising or replacing #3870 | Make the outbox transport complete versioned Todo/lease records into `coordination.runtime_shadow.commit`; retire the duplicate observation/local-shadow lineage and prove omission/explicit-clear behavior. | Can run in parallel with P, but both C and the selected provider profile must finish before parity or promotion integration. |
+| C. Canonical transaction capture | In implementation, based on #3870 | Transaction-bound outbox capture now targets the one `coordination.runtime_shadow` lineage and retains complete versioned Todo/lease records. Finish sustained mixed-writer parity, explicit-clear/omission coverage, and event-only Todo recovery evidence. | Can run in parallel with P, but both C and the selected provider profile must finish before parity or promotion integration. |
 | I. Binding and qualification integration | After P and C | Bind one exact provider lineage, field manifest, source revision, digest, and cursor; run sustained transaction parity and provider-specific recovery/capacity qualification without consulting legacy state for missing fields. | This is the merge point between provider work and capture work. |
 | F. Promotion and cleanup | After I and explicit maintainer approval | Add provider-first CLI routing, the lock-owning promotion orchestrator, compatibility projection outbox, post-promotion fenced export/rollback, then delete duplicate reference aggregates and flip the reviewed stage/hold declarations. | No profile is eligible until its exact implementation and lineage pass P, C, and I. |
