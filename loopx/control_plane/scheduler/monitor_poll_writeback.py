@@ -115,6 +115,7 @@ def resolve_monitor_todo_item(
     *,
     registry_path: Path,
     goal_id: str,
+    runtime_root: Path | None = None,
     todo_id: str | None = None,
     target_key: str | None = None,
 ) -> dict[str, Any]:
@@ -124,7 +125,12 @@ def resolve_monitor_todo_item(
     safe_target_key = str(target_key or "").strip()
     if not normalized_todo_id and not safe_target_key:
         raise ValueError("monitor todo writeback requires --todo-id or --target-key")
-    payload = list_goal_todos(registry_path=registry_path, goal_id=goal_id, role="agent")
+    payload = list_goal_todos(
+        registry_path=registry_path,
+        goal_id=goal_id,
+        role="agent",
+        runtime_root_arg=str(runtime_root) if runtime_root is not None else None,
+    )
     items = payload.get("todos") if isinstance(payload.get("todos"), list) else []
     if normalized_todo_id:
         matches = [
@@ -202,9 +208,17 @@ def write_monitor_poll_todo_state(
     """
 
     from ...todos import add_goal_todo, update_goal_todo
+    from ..coordination.legacy_writer_fence import (
+        require_legacy_coordination_write_allowed,
+    )
 
     if not todo_id and not target_key:
         return None
+    if execute:
+        require_legacy_coordination_write_allowed(
+            runtime_root=runtime_root,
+            goal_id=goal_id,
+        )
     safe_result_hash = str(result_hash or "").strip()
     if not safe_result_hash:
         raise ValueError("monitor todo writeback requires --result-hash")
@@ -223,6 +237,7 @@ def write_monitor_poll_todo_state(
     item = resolve_monitor_todo_item(
         registry_path=registry_path,
         goal_id=goal_id,
+        runtime_root=runtime_root,
         todo_id=todo_id,
         target_key=target_key,
     )
