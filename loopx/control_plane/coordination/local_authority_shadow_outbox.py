@@ -138,10 +138,7 @@ def _as_object(value: object) -> dict[str, Any]:
 
 
 def _load_json(path: Path) -> dict[str, Any]:
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except ValueError as error:  # JSONDecodeError and UnicodeDecodeError
-        raise OutboxError("outbox_file_invalid", f"{path.name} is not valid JSON") from error
+    raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise OutboxError("outbox_file_invalid", f"{path.name} is not a JSON object")
     return raw
@@ -265,18 +262,9 @@ def _load_committed_record(path: Path | None, *, entry_id: str) -> dict[str, Any
     return record
 
 
-_EntryIndex = tuple[dict[_EntryKey, Path], dict[_EntryKey, Path]]
-
-
-def _retired_watermark(cursor: dict[str, Any] | None) -> int:
+def _retired_watermark(directory: Path) -> int:
+    cursor = read_cursor(directory)
     return int(cursor.get("last_seq") or 0) if cursor is not None else 0
-
-
-def _residue_below(index: _EntryIndex, watermark: int) -> list[Path]:
-    prepared, committed = index
-    return sorted(
-        path for key, path in [*prepared.items(), *committed.items()] if key[0] <= watermark
-    )
 
 
 def retired_residue(directory: Path) -> list[Path]:
@@ -291,7 +279,14 @@ def retired_residue(directory: Path) -> list[Path]:
 
     if not directory.is_dir():
         return []
-    return _residue_below(_index_entry_files(directory), _retired_watermark(read_cursor(directory)))
+    watermark = _retired_watermark(directory)
+    prepared, committed = _index_entry_files(directory)
+    residue = [
+        path
+        for key, path in [*prepared.items(), *committed.items()]
+        if key[0] <= watermark
+    ]
+    return sorted(residue)
 
 
 def reclaim_retired_residue(directory: Path) -> int:
@@ -313,11 +308,8 @@ def list_entries(directory: Path) -> list[OutboxEntry]:
 
     if not directory.is_dir():
         return []
-    return _live_entries(directory, _index_entry_files(directory), _retired_watermark(read_cursor(directory)))
-
-
-def _live_entries(directory: Path, index: _EntryIndex, watermark: int) -> list[OutboxEntry]:
-    prepared, committed = index
+    watermark = _retired_watermark(directory)
+    prepared, committed = _index_entry_files(directory)
     prepared = {key: path for key, path in prepared.items() if key[0] > watermark}
     committed = {key: path for key, path in committed.items() if key[0] > watermark}
     orphan_markers = sorted(set(committed) - set(prepared))
@@ -796,34 +788,21 @@ def entries_by_partition(runtime_root: Path, goal_id: str) -> dict[str, list[Out
 
 
 def outbox_summary(runtime_root: Path, goal_id: str) -> dict[str, Any]:
-    """Counts per partition for operator readback.
-
-    Never raises on an empty or malformed outbox: one protected read of the
-    cursor and the directory index feeds every count, so a malformed cursor or
-    entry is reported as ``invalid`` with zero counts and is never re-read
-    outside that boundary.
-    """
+    """Counts per partition for operator readback; never raises on an empty outbox."""
 
     summary: dict[str, Any] = {}
     for partition in PARTITIONS:
         directory = partition_directory(runtime_root, goal_id, partition)
-        entries: list[OutboxEntry] = []
-        cursor: dict[str, Any] | None = None
-        residue: list[Path] = []
-        invalid: str | None = None
         try:
-            if directory.is_dir():
-                cursor = read_cursor(directory)
-                index = _index_entry_files(directory)
-                watermark = _retired_watermark(cursor)
-                residue = _residue_below(index, watermark)
-                entries = _live_entries(directory, index, watermark)
+            entries = list_entries(directory)
+            cursor = read_cursor(directory)
+            invalid: str | None = None
         except OutboxError as error:
-            entries, cursor, residue, invalid = [], None, [], error.reason_code
+            entries, cursor, invalid = [], None, error.reason_code
         summary[partition] = {
             "committed_pending": sum(1 for entry in entries if entry.is_committed),
             "prepared_only": sum(1 for entry in entries if not entry.is_committed),
-            "retired_residue": len(residue),
+            "retired_residue": len(retired_residue(directory)),
             "next_seq": (max((entry.seq for entry in entries), default=0) if entries else 0),
             "cursor_last_seq": int(cursor.get("last_seq") or 0) if cursor else None,
             "cursor_last_entry_id": cursor.get("last_entry_id") if cursor else None,

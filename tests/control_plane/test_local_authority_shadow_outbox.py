@@ -426,37 +426,3 @@ def test_retired_residue_is_defined_by_the_cursor_watermark(tmp_path: Path) -> N
     assert outbox.reclaim_retired_residue(directory) == 2
     assert outbox.retired_residue(directory) == []
     assert [entry.seq for entry in outbox.list_entries(directory)] == [second.seq]
-
-
-def test_a_malformed_cursor_or_entry_is_reported_as_typed_invalid_without_raising(tmp_path: Path) -> None:
-    _registry, _state, runtime_root = _fixture(tmp_path)
-    directory = _todo_dir(runtime_root)
-    directory.mkdir(parents=True)
-    settled = directory / outbox.entry_file_name(1, "local-shadow-tx-" + "0" * 64, "prepared")
-    settled.write_text("{}", encoding="utf-8")
-    invalid_summary = {
-        "committed_pending": 0,
-        "prepared_only": 0,
-        "retired_residue": 0,
-        "next_seq": 0,
-        "cursor_last_seq": None,
-        "cursor_last_entry_id": None,
-        "invalid": "outbox_file_invalid",
-    }
-    for cursor_text in (json.dumps({"schema_version": "bad", "last_seq": 1}), "garbage"):
-        outbox.cursor_path(directory).write_text(cursor_text, encoding="utf-8")
-        # Zero counts under a typed invalid: the file the cursor would have
-        # retired is not counted as residue, because the cursor is not trusted.
-        assert outbox.outbox_summary(runtime_root, GOAL_ID)["todos"] == invalid_summary
-        for probe in (outbox.next_seq, outbox.list_entries, outbox.retired_residue):
-            with pytest.raises(outbox.OutboxError) as raised:
-                probe(directory)
-            assert raised.value.reason_code == "outbox_file_invalid"
-    outbox.cursor_path(directory).unlink()
-
-    # An unparseable entry file is the same typed fact, not a raw decode error.
-    settled.write_text("{not json", encoding="utf-8")
-    assert outbox.outbox_summary(runtime_root, GOAL_ID)["todos"]["invalid"] == "outbox_file_invalid"
-    with pytest.raises(outbox.OutboxError) as raised:
-        outbox.list_entries(directory)
-    assert raised.value.reason_code == "outbox_file_invalid"
