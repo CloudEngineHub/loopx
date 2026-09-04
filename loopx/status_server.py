@@ -176,6 +176,7 @@ class StatusHTTPServer(ThreadingHTTPServer):
     configure_goal_dry_run_path: str
     configure_goal_apply_path: str
     control_plane_write_enabled: bool
+    goal_subagent_configuration_enabled: bool
     ssh_config_path: Path | None
     verbose: bool
 
@@ -971,6 +972,13 @@ class StatusRequestHandler(BaseHTTPRequestHandler):
                 scan_roots=self.server.scan_roots,
                 limit=self.server.limit,
                 include_public_boundary_scan=False,
+                include_goal_subagent_configuration=(
+                    getattr(
+                        self.server,
+                        "goal_subagent_configuration_enabled",
+                        False,
+                    )
+                ),
                 activation_state_filter=activation_state_filter,
             )
             payload["local_dashboard_api"] = self._local_dashboard_api_payload()
@@ -1040,6 +1048,7 @@ def serve_status(
     enable_reward_write_api: bool,
     enable_control_plane_write_api: bool,
     verbose: bool,
+    enable_goal_subagent_configuration: bool = False,
 ) -> None:
     normalized_path = normalize_status_path(status_path)
     if enable_reward_write_api and not is_loopback_host(host):
@@ -1058,6 +1067,9 @@ def serve_status(
     server.configure_goal_dry_run_path = DEFAULT_CONFIGURE_GOAL_DRY_RUN_PATH
     server.configure_goal_apply_path = DEFAULT_CONFIGURE_GOAL_APPLY_PATH
     server.control_plane_write_enabled = enable_control_plane_write_api
+    server.goal_subagent_configuration_enabled = (
+        enable_goal_subagent_configuration
+    )
     server.ssh_config_path = None
     server.verbose = verbose
     print(f"Serving LoopX status at http://{host}:{port}{normalized_path}", flush=True)

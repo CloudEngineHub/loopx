@@ -24,6 +24,7 @@ export type WorkspaceAgentTodo = {
   priority?: string | null;
   status?: string | null;
   taskClass?: string | null;
+  taskDomain?: string | null;
   text: string;
   todoId: string;
 };
@@ -50,6 +51,16 @@ export type WorkspaceRepositoryContext = {
   readOnly: true;
 };
 
+export type WorkspaceGoalSubagentConfiguration = {
+  allowedDomains: string[];
+  domainCandidates?: Array<{
+    domain: string;
+    matchingTodoCount: number;
+  }>;
+  enabled: boolean;
+  maxChildren: number;
+};
+
 export type WorkspaceGoal = {
   activationState: "active" | "stopped";
   agentId: string;
@@ -72,6 +83,7 @@ export type WorkspaceGoal = {
   nextSentence: string;
   repository?: WorkspaceRepositoryContext;
   state: WorkspaceGoalState;
+  subagentExecution?: WorkspaceGoalSubagentConfiguration;
   title: string;
   usage?: WorkspaceGoalUsage | null;
 };
@@ -333,6 +345,16 @@ export type PersonalWorkspaceCallbacks = {
   onOpenGoalView?: (tab: WorkspaceGoalTab) => void;
   onOpenRunSession?: (run: WorkspaceRun) => void | Promise<void>;
   onOpenOutput?: (output: WorkspaceOutput) => void;
+  onPreviewGoalSubagentConfiguration?: (
+    request: WorkspaceGoalSubagentConfiguration & { goalId: string },
+  ) => Promise<{
+    changed: boolean;
+    configuration: WorkspaceGoalSubagentConfiguration;
+    previewId: string;
+  }>;
+  onApplyGoalSubagentConfiguration?: (
+    request: WorkspaceGoalSubagentConfiguration & { goalId: string; previewId: string },
+  ) => Promise<WorkspaceGoalSubagentConfiguration>;
   onGoalActivationStateChange?: (goalId: string, activationState: "active" | "stopped") => void;
   onGoalDeleted?: (goalId: string) => void;
   onReconcileStatus?: () => void | Promise<void>;

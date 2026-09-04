@@ -28,6 +28,7 @@ import {
 } from "../data/local-status-query";
 import {
   ChatApiError,
+  applyGoalSubagentConfiguration,
   applyTypedAction,
   applyTodo,
   closeChatSession,
@@ -37,6 +38,7 @@ import {
   fetchChatSession,
   fetchChatSessions,
   interruptChatTurn,
+  previewGoalSubagentConfiguration,
   previewTodo,
   previewTypedAction,
   recordProjectionExchange,
@@ -195,6 +197,7 @@ type PersonalAgentTodoItem = {
   priority?: string | null;
   status?: string | null;
   taskClass?: string | null;
+  taskDomain?: string | null;
   text: string;
   todoId: string;
 };
@@ -435,6 +438,15 @@ type PersonalGoalItem = {
   nextSentence: string;
   runEvidence?: PersonalRunEvidence | null;
   state: PersonalGoalState;
+  subagentExecution?: {
+    allowedDomains: string[];
+    domainCandidates: Array<{
+      domain: string;
+      matchingTodoCount: number;
+    }>;
+    enabled: boolean;
+    maxChildren: number;
+  };
   title: string;
   usage?: WorkspaceGoalUsage | null;
 };
@@ -694,6 +706,7 @@ function personalAgentTodoFromItem(todo: TodoItem, row: GoalDirectoryRow): Perso
     priority: todo.priority ?? null,
     status: todo.status ?? null,
     taskClass: todo.task_class ?? null,
+    taskDomain: todo.task_domain ?? null,
     text: personalTodoText(todo),
     todoId: todo.todo_id?.trim() || `${row.goal.id}:agent:${todo.index}`,
   };
@@ -701,6 +714,31 @@ function personalAgentTodoFromItem(todo: TodoItem, row: GoalDirectoryRow): Perso
 
 function personalAgentTodos(row: GoalDirectoryRow): PersonalAgentTodoItem[] {
   return (getShareTodos(row, "agent")?.items ?? []).map((todo) => personalAgentTodoFromItem(todo, row));
+}
+
+function personalSubagentDomainCandidates(
+  payload: StatusPayload,
+  row: GoalDirectoryRow,
+  fallbackTodos: PersonalAgentTodoItem[],
+) {
+  const candidateTodos = new Map<string, PersonalAgentTodoItem>();
+  for (const todo of payload.todo_index?.items ?? []) {
+    if (todo.goal_id !== row.goal.id || todo.role !== "agent") continue;
+    const projected = personalAgentTodoFromItem(todo, row);
+    candidateTodos.set(projected.todoId, projected);
+  }
+  for (const todo of fallbackTodos) {
+    if (!candidateTodos.has(todo.todoId)) candidateTodos.set(todo.todoId, todo);
+  }
+
+  const counts = new Map<string, number>();
+  for (const todo of candidateTodos.values()) {
+    if (todo.done || todo.taskClass !== "advancement_task") continue;
+    const domain = todo.taskDomain?.trim();
+    if (!domain) continue;
+    counts.set(domain, (counts.get(domain) ?? 0) + 1);
+  }
+  return [...counts].map(([domain, matchingTodoCount]) => ({ domain, matchingTodoCount }));
 }
 
 function personalAgentTodoFromProjection(
@@ -1075,7 +1113,11 @@ function answerPersonalManagerQuestion(
 }
 
 
-function buildPersonalHomeModel(payload: StatusPayload, rows: GoalDirectoryRow[]): PersonalHomeModel {
+function buildPersonalHomeModel(
+  payload: StatusPayload,
+  rows: GoalDirectoryRow[],
+  goalSubagentConfigurationEnabled = false,
+): PersonalHomeModel {
   const rowById = new Map(rows.map((row) => [row.goal.id, row]));
   const stoppedGoalIds = new Set(
     payload.run_history.goals
@@ -1174,6 +1216,16 @@ function buildPersonalHomeModel(payload: StatusPayload, rows: GoalDirectoryRow[]
       nextSentence,
       runEvidence: personalRunEvidence(payload, row),
       state,
+      ...(goalSubagentConfigurationEnabled ? {
+        subagentExecution: {
+          allowedDomains: goal.spawn_policy?.allowed_domains ?? [],
+          domainCandidates: personalSubagentDomainCandidates(payload, row, goalAgentTodos),
+          enabled: goal.spawn_policy?.mode === "multi_subagent"
+            && goal.spawn_policy.spawn_allowed === true
+            && goal.spawn_policy.max_children > 0,
+          maxChildren: goal.spawn_policy?.max_children ?? 0,
+        },
+      } : {}),
       title: personalGoalTitle(goal.id, goal.display_name),
       usage: (() => {
         const goalUsage = usageById.get(goal.id);
@@ -1293,7 +1345,12 @@ function PersonalGoalHome({
     tool_calls?: boolean;
     trust_scope?: string;
   }>>([]);
-  const model = buildPersonalHomeModel(payload, rows);
+  const [goalSubagentConfigurationEnabled, setGoalSubagentConfigurationEnabled] = useState(false);
+  const model = buildPersonalHomeModel(
+    payload,
+    rows,
+    goalSubagentConfigurationEnabled,
+  );
   const selectedGoal = model.goals.find((goal) => goal.goalId === selectedGoalId) ?? null;
   const [periodicReport, setPeriodicReport] = useState<PeriodicReportProjection | null>(null);
   const [periodicReportError, setPeriodicReportError] = useState<string | null>(null);
@@ -1453,14 +1510,21 @@ function PersonalGoalHome({
   useEffect(() => {
     if (readOnly) {
       setRuntimeAgents([]);
+      setGoalSubagentConfigurationEnabled(false);
       return;
     }
     let cancelled = false;
     void fetchChatCapabilities()
       .then((capabilities) => {
-        if (!cancelled) setRuntimeAgents(capabilities.adapters ?? []);
+        if (!cancelled) {
+          setRuntimeAgents(capabilities.adapters ?? []);
+          setGoalSubagentConfigurationEnabled(
+            capabilities.goal_subagent_configuration === "preview_locked",
+          );
+        }
       })
       .catch(() => {
+        if (!cancelled) setGoalSubagentConfigurationEnabled(false);
         // The Codex fallback stays visible while the local control plane reconnects.
       });
     return () => {
@@ -2529,6 +2593,28 @@ function PersonalGoalHome({
             });
           },
           onOpenOutput: (output) => openGoalChat(output.goalId),
+          ...(goalSubagentConfigurationEnabled ? {
+          onPreviewGoalSubagentConfiguration: async (request) => {
+            const preview = await previewGoalSubagentConfiguration(request);
+            return {
+              changed: preview.changed,
+              configuration: {
+                allowedDomains: preview.after.orchestration.allowed_domains,
+                enabled: preview.feature_summary.multi_subagent === "enabled",
+                maxChildren: preview.after.orchestration.max_children,
+              },
+              previewId: preview.preview_id,
+            };
+          },
+          onApplyGoalSubagentConfiguration: async ({ previewId, ...request }) => {
+            const result = await applyGoalSubagentConfiguration(request, previewId);
+            return {
+              allowedDomains: result.after.orchestration.allowed_domains,
+              enabled: result.feature_summary.multi_subagent === "enabled",
+              maxChildren: result.after.orchestration.max_children,
+            };
+          },
+          } : {}),
           onGoalActivationStateChange,
           onGoalDeleted,
           onReconcileStatus,

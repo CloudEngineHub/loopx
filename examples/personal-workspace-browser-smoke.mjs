@@ -65,6 +65,18 @@ async function visibleElementCount(locator) {
   }).length);
 }
 
+async function waitForInputValue(locator, expected, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  let actual = await locator.inputValue();
+  while (actual !== expected && Date.now() < deadline) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+    actual = await locator.inputValue();
+  }
+  if (actual !== expected) {
+    throw new Error(`Timed out waiting for input value ${expected}; received ${actual}`);
+  }
+}
+
 function capturedStatusGeneration(state) {
   if (!state.captureNextStatusGeneration) return state.goalActivationStates;
   if (!state.capturedStatusGeneration) {
@@ -100,9 +112,9 @@ function filterStatusFixtureToScope(fixture, statusGeneration, scope) {
   }
 }
 
-async function installApi(page) {
+async function installApi(page, { goalSubagentConfigurationEnabled = true } = {}) {
   let turnCounter = 0;
-  const runtime = page.__loopxRuntime ??= { actionProposals: new Map(), larkConnections: [], messages: new Map(), sessions: new Map(), turnMessages: new Map() };
+  const runtime = page.__loopxRuntime ??= { actionProposals: new Map(), goalSubagentConfigurations: new Map(), larkConnections: [], messages: new Map(), sessions: new Map(), turnMessages: new Map() };
   const actionProposals = runtime.actionProposals;
   const sessions = runtime.sessions;
   const messages = runtime.messages;
@@ -115,15 +127,20 @@ async function installApi(page) {
     durableResources: new Set(),
     durableWriteCount: 0,
     failNextLifecycleApply: false,
+    failNextGoalSubagentResponse: false,
     failNextLifecyclePreview: false,
     failNextActionPreview: false,
     failNextStatusRequest: false,
+    freezeGoalSubagentStatusProjection: false,
+    goalSubagentConfigurationEnabled,
     goalActivationStates: new Map([
       ["product-release", "active"],
       ["research-monitor", "active"],
       ["legacy-benchmark", "stopped"],
       ["archived-notes", "stopped"],
     ]),
+    goalSubagentPreviews: [],
+    goalSubagentWrites: [],
     interrupts: [],
     goalConfigurationRequests: [],
     larkWrites: [],
@@ -141,10 +158,15 @@ async function installApi(page) {
     statusRequestCount: 0,
     turnRequests: [],
     get larkConnections() { return runtime.larkConnections; },
+    get goalSubagentConfigurations() { return runtime.goalSubagentConfigurations; },
   };
   await page.route(`http://127.0.0.1:${port}/status.json*`, async (route) => {
     state.statusRequestCount += 1;
     const fixture = structuredClone(require(resolve(repoRoot, "examples/status.example.json")));
+    const defaultSubagentConfiguration = { mode: "default", spawn_allowed: false, max_children: 0, allowed_domains: [] };
+    const projectedSubagentConfiguration = (goalId, fallback) => state.freezeGoalSubagentStatusProjection
+      ? fallback ?? defaultSubagentConfiguration
+      : runtime.goalSubagentConfigurations.get(goalId) ?? fallback ?? defaultSubagentConfiguration;
     const statusGeneration = capturedStatusGeneration(state);
     fixture.local_dashboard_api = {
       ...(fixture.local_dashboard_api ?? {}),
@@ -163,6 +185,11 @@ async function installApi(page) {
       const existingGoal = fixture.run_history.goals.find((goal) => goal.id === directoryGoal.id);
       if (existingGoal) {
         existingGoal.activation_state = activation_state;
+        if (state.goalSubagentConfigurationEnabled) {
+          existingGoal.spawn_policy = projectedSubagentConfiguration(directoryGoal.id, existingGoal.spawn_policy);
+        } else {
+          delete existingGoal.spawn_policy;
+        }
         continue;
       }
       fixture.run_history.goals.push({
@@ -170,9 +197,19 @@ async function installApi(page) {
         status: "active-read-only", registry_member: true,
         legacy_runtime_goal: false, adapter_kind: "generic_project_goal_v0", adapter_status: "connected",
         lifecycle_phase: "registered", lifecycle_flags: ["registered"],
+        ...(state.goalSubagentConfigurationEnabled
+          ? { spawn_policy: projectedSubagentConfiguration(directoryGoal.id) }
+          : {}),
         quota: { compute: 1, window_hours: 24, slot_minutes: 1, allowed_slots: 1440, spent_slots: 0, state: activation_state === "stopped" ? "paused" : "waiting" },
         index_exists: false, raw_index_records: 0, unique_runs: 0, latest_runs: [],
       });
+    }
+    for (const fixtureGoal of fixture.run_history.goals) {
+      if (state.goalSubagentConfigurationEnabled) {
+        fixtureGoal.spawn_policy = projectedSubagentConfiguration(fixtureGoal.id, fixtureGoal.spawn_policy);
+      } else {
+        delete fixtureGoal.spawn_policy;
+      }
     }
     if (!fixture.run_history.goals.some((goal) => goal.id === "stale-browser-goal")) {
       fixture.run_history.goals.push({
@@ -190,6 +227,21 @@ async function installApi(page) {
         source_section: "User Todo",
         total_count: 1,
       };
+      const domainTodos = (first.project_asset?.agent_todos?.items ?? first.agent_todos?.items ?? [])
+        .filter((todo) => !todo.done)
+        .slice(0, 2);
+      for (const [index, todo] of domainTodos.entries()) {
+        todo.task_class = "advancement_task";
+        todo.task_domain = index === 0 ? "code" : "validation";
+        const indexedTodo = fixture.todo_index?.items?.find((item) => item.todo_id === todo.todo_id);
+        if (indexedTodo) {
+          indexedTodo.role = "agent";
+          indexedTodo.task_class = todo.task_class;
+          indexedTodo.task_domain = todo.task_domain;
+        } else if (fixture.todo_index?.items) {
+          fixture.todo_index.items.push({ ...todo, goal_id: first.goal_id, role: "agent", source: "browser-smoke" });
+        }
+      }
     }
     if (!fixture.attention_queue.items.some((item) => item.goal_id === "progress-projection")) {
       const idlessLongTitle = `Idless long Todo ${"projection identity ".repeat(16)}keeps one card`;
@@ -603,10 +655,57 @@ async function installApi(page) {
       await route.fulfill({ contentType: "application/json", json: { ok: true, status: "disconnected" }, status: 200 });
       return;
     }
+    if (["/api/chat/goal-subagents/dry-run", "/api/chat/goal-subagents/apply"].includes(url.pathname) && request.method() === "POST") {
+      if (state.failNextGoalSubagentResponse) {
+        state.failNextGoalSubagentResponse = false;
+        await route.fulfill({ body: "", contentType: "text/plain", status: 502 });
+        return;
+      }
+      const body = request.postDataJSON();
+      const apply = url.pathname.endsWith("/apply");
+      const before = runtime.goalSubagentConfigurations.get(body.goal_id)
+        ?? { mode: "default", spawn_allowed: false, max_children: 0, allowed_domains: [] };
+      const after = body.enabled
+        ? { mode: "multi_subagent", spawn_allowed: true, max_children: body.max_children, allowed_domains: body.allowed_domains }
+        : { mode: "default", spawn_allowed: false, max_children: 0 };
+      const changed = JSON.stringify(before) !== JSON.stringify(after);
+      const previewId = `goal-subagents-${body.goal_id}-${JSON.stringify(after)}`;
+      if (apply && body.preview_id !== previewId) {
+        await route.fulfill({ contentType: "application/json", json: { ok: false, error: "stale Goal sub-agent preview", error_code: "stale_goal_subagent_preview" }, status: 409 });
+        return;
+      }
+      if (apply && changed) {
+        runtime.goalSubagentConfigurations.set(body.goal_id, after);
+        state.goalSubagentWrites.push({ ...body });
+        state.durableWriteCount += 1;
+      } else if (!apply) {
+        state.goalSubagentPreviews.push({ ...body, preview_id: previewId });
+      }
+      await route.fulfill({ contentType: "application/json", json: {
+        ok: true,
+        dry_run: !apply,
+        execute: apply,
+        written: apply && changed,
+        changed,
+        goal_id: body.goal_id,
+        changed_fields: changed ? ["orchestration"] : [],
+        before: { orchestration: before },
+        after: { orchestration: after },
+        preview_id: previewId,
+        feature_summary: { multi_subagent: body.enabled ? "enabled" : "off" },
+        global_sync: {
+          required: changed,
+          executed: apply && changed,
+          readback: { status: apply && changed ? "verified" : changed ? "not_executed" : "not_required", verified: apply && changed },
+        },
+      }, status: 200 });
+      return;
+    }
     if (url.pathname === "/api/chat/capabilities") {
       await route.fulfill({ contentType: "application/json", json: {
         ok: true, schema_version: "loopx_chat_capabilities_v1", agent_backend: "multi_adapter",
         sandbox: "read-only", approval_policy: "never", todo_write: "preview_locked",
+        ...(state.goalSubagentConfigurationEnabled ? { goal_subagent_configuration: "preview_locked" } : {}),
         goal_id: null, streaming: true, resume: true, interrupt: true, typed_actions: true,
         action_kinds: ["goal.create", "goal.lifecycle", "agent.bind", "heartbeat.bind", "monitor.create", "run.correct"],
         adapters: [
@@ -878,7 +977,7 @@ async function installApi(page) {
 async function main() {
   const { chromium } = loadPlaywright();
   await mkdir(outputDir, { recursive: true });
-  const results = new Map(Array.from({ length: 20 }, (_, index) => [index + 1, { status: "UNTESTED", note: "" }]));
+  const results = new Map(Array.from({ length: 24 }, (_, index) => [index + 1, { status: "UNTESTED", note: "" }]));
   const observations = [];
   const pass = (criterion, note) => results.set(criterion, { status: "PASS", note });
   const fail = (criterion, note) => results.set(criterion, { status: "FAIL", note });
@@ -888,6 +987,18 @@ async function main() {
     const url = `http://127.0.0.1:${port}/${packaged ? "chat/" : ""}?statusUrl=/status.json`;
     await waitForHttp(url);
     browser = await launchBrowser(chromium);
+    const capabilityOffPage = await browser.newPage({ viewport: { width: 1512, height: 982 } });
+    await installApi(capabilityOffPage, { goalSubagentConfigurationEnabled: false });
+    await capabilityOffPage.goto(url, { waitUntil: "networkidle" });
+    await capabilityOffPage.getByTestId("personal-goal-home").waitFor({ state: "visible", timeout: 15_000 });
+    await capabilityOffPage.locator(".personal-goal-link").first().click();
+    await capabilityOffPage.getByRole("button", { name: "打开 Goal 详情或能力配置" }).click();
+    await capabilityOffPage.getByRole("group", { name: "Goal 设置" }).getByRole("button", { name: /Goal 详情/ }).click();
+    await capabilityOffPage.locator(".personal-drawer-header").waitFor({ state: "visible" });
+    if (await capabilityOffPage.locator(".personal-goal-subagents").count()) {
+      throw new Error("Capability-off Dashboard exposed Goal sub-agent controls");
+    }
+    await capabilityOffPage.close();
     const page = await browser.newPage({ viewport: { width: 1512, height: 982 } });
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -1007,9 +1118,189 @@ async function main() {
     pass(1, "Goal stop applies directly without a redundant confirmation, while resume stays reviewed; both update optimistically, roll back rejected applies, and reconcile status in the background.");
     if (await page.locator(".personal-timeline-row").filter({ hasText: /纠偏/u }).count()) throw new Error("Browse rows expose repeated correction actions");
     pass(2, "Browse rows are full-row click targets and Session rows state that they open execution progress and results.");
+    const workspaceSettingsEntry = page.getByRole("button", { name: "设置", exact: true });
+    const settingsEntryVisual = await workspaceSettingsEntry.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const icon = element.querySelector(".personal-sidebar-utility-icon")?.getBoundingClientRect();
+      const rect = element.getBoundingClientRect();
+      return {
+        backgroundColor: style.backgroundColor,
+        borderTopWidth: style.borderTopWidth,
+        height: rect.height,
+        iconHeight: icon?.height ?? 0,
+        width: rect.width,
+      };
+    });
+    if (settingsEntryVisual.height < 52 || settingsEntryVisual.iconHeight < 32 || settingsEntryVisual.width < 180) {
+      throw new Error(`Settings entry is not a prominent navigation target: ${JSON.stringify(settingsEntryVisual)}`);
+    }
+    if (settingsEntryVisual.borderTopWidth === "0px" || settingsEntryVisual.backgroundColor === "rgba(0, 0, 0, 0)") {
+      throw new Error(`Settings entry still renders as a weak transparent footer row: ${JSON.stringify(settingsEntryVisual)}`);
+    }
     await page.screenshot({ path: resolve(outputDir, "desktop-first-screen.png"), fullPage: false, animations: "disabled" });
     pass(4, "First viewport exposes needs-you, running, observing, and scheduled Goal lanes with collapsed history.");
     pass(15, "Desktop viewport matches the approved single-sidebar/channel/drawer composition.");
+
+    await page.locator(".personal-goal-link").first().click();
+    await page.getByRole("button", { name: "打开 Goal 详情或能力配置" }).click();
+    await page.getByRole("group", { name: "Goal 设置" }).getByRole("button", { name: /Goal 详情/ }).click();
+    const drawerHeaderVisual = await page.locator(".personal-drawer-header").evaluate((element) => {
+      const close = element.querySelector(".personal-drawer-close")?.getBoundingClientRect();
+      const header = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        closeHeight: close?.height ?? 0,
+        closeTopInset: close ? close.top - header.top : 0,
+        closeWidth: close?.width ?? 0,
+        headerHeight: header.height,
+        paddingTop: Number.parseFloat(style.paddingTop),
+      };
+    });
+    if (drawerHeaderVisual.closeHeight < 44 || drawerHeaderVisual.closeWidth < 44) {
+      throw new Error(`Goal drawer close control is below the 44px target: ${JSON.stringify(drawerHeaderVisual)}`);
+    }
+    if (drawerHeaderVisual.headerHeight < 84 || drawerHeaderVisual.paddingTop < 18 || drawerHeaderVisual.closeTopInset < 18) {
+      throw new Error(`Goal drawer header is still pinned too close to the top edge: ${JSON.stringify(drawerHeaderVisual)}`);
+    }
+    const goalDrawerOrder = await page.locator(".personal-drawer-body").evaluate((element) => {
+      const lark = element.querySelector(".personal-goal-notification");
+      const session = element.querySelector(".personal-goal-session");
+      const actions = element.querySelector(".personal-drawer-action-grid");
+      const subagents = element.querySelector(".personal-goal-subagents");
+      const precedes = (earlier, later) => Boolean(earlier && later
+        && (earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING));
+      return {
+        actionsBeforeSubagents: precedes(actions, subagents),
+        larkBeforeSession: precedes(lark, session),
+        sessionBeforeSubagents: precedes(session, subagents),
+        subagentsLast: subagents?.nextElementSibling === null,
+      };
+    });
+    if (!goalDrawerOrder.larkBeforeSession
+      || !goalDrawerOrder.sessionBeforeSubagents
+      || !goalDrawerOrder.actionsBeforeSubagents
+      || !goalDrawerOrder.subagentsLast) {
+      throw new Error(`Goal drawer did not keep Lark and Session ahead of advanced sub-agent settings: ${JSON.stringify(goalDrawerOrder)}`);
+    }
+    const subagentSwitch = page.getByRole("switch", { name: "预览开启子代理执行" });
+    await subagentSwitch.waitFor({ state: "visible" });
+    if (await subagentSwitch.getAttribute("aria-checked") !== "false") throw new Error("Per-Goal sub-agent execution did not default off");
+    if (!(await subagentSwitch.isEnabled())) throw new Error("Per-Goal sub-agent execution still required a task-domain selection");
+    await page.getByLabel("最多子代理数").selectOption("2");
+    const writesBeforeSubagentPreview = api.durableWriteCount;
+    api.freezeGoalSubagentStatusProjection = true;
+    await subagentSwitch.click();
+    await page.getByText("预览已锁定，确认后才会写入这个 Goal。", { exact: true }).waitFor({ state: "visible" });
+    if (api.durableWriteCount !== writesBeforeSubagentPreview) throw new Error("Unrestricted sub-agent preview mutated durable Goal state");
+    if (api.goalSubagentPreviews.at(-1)?.allowed_domains.length !== 0) throw new Error("Unrestricted sub-agent preview invented a task-domain filter");
+    await page.getByText("最多允许创建 2 个子代理；任务领域限制：不限制任务领域。", { exact: true }).waitFor({ state: "visible" });
+    const previewPlacement = await page.locator(".personal-goal-subagents").evaluate((element) => {
+      const preview = element.querySelector(".personal-subagent-preview");
+      const currentSummary = element.querySelector("dl");
+      const switchBounds = element.querySelector(".personal-subagent-switch")?.getBoundingClientRect();
+      const previewBounds = preview?.getBoundingClientRect();
+      return {
+        gapFromSwitch: switchBounds && previewBounds ? previewBounds.top - switchBounds.bottom : Number.POSITIVE_INFINITY,
+        previewBeforeCurrentSummary: Boolean(preview && currentSummary
+          && (preview.compareDocumentPosition(currentSummary) & Node.DOCUMENT_POSITION_FOLLOWING)),
+      };
+    });
+    if (!previewPlacement.previewBeforeCurrentSummary || previewPlacement.gapFromSwitch > 150) {
+      throw new Error(`Sub-agent confirmation is detached from its switch: ${JSON.stringify(previewPlacement)}`);
+    }
+    await page.locator(".personal-subagent-preview").getByRole("button", { name: "确认", exact: true }).click();
+    await page.getByText("已写入，并通过共享 Goal 状态读回校验。", { exact: true }).waitFor({ state: "visible" });
+    const enabledSubagentSwitch = page.getByRole("switch", { name: "预览关闭子代理执行" });
+    await enabledSubagentSwitch.waitFor({ state: "visible" });
+    if (await enabledSubagentSwitch.getAttribute("aria-checked") !== "true") throw new Error("Verified apply receipt did not keep the per-Goal switch on while the status projection remained stale");
+    if (api.durableWriteCount !== writesBeforeSubagentPreview + 1) throw new Error("Unrestricted sub-agent apply did not produce exactly one durable Goal write");
+    api.freezeGoalSubagentStatusProjection = false;
+    const echoedStatusResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/status.json",
+    );
+    await page.getByRole("button", { name: "刷新状态", exact: true }).click();
+    await echoedStatusResponse;
+    const configuredGoalId = api.goalSubagentPreviews.at(-1)?.goal_id;
+    if (!configuredGoalId) throw new Error("Sub-agent apply did not retain its Goal identity");
+    api.goalSubagentConfigurations.set(configuredGoalId, {
+      mode: "multi_subagent",
+      spawn_allowed: true,
+      max_children: 3,
+      allowed_domains: ["validation"],
+    });
+    const supersedingStatusResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/status.json",
+    );
+    await page.getByRole("button", { name: "刷新状态", exact: true }).click();
+    await supersedingStatusResponse;
+    const maxChildrenInput = page.getByLabel("最多子代理数");
+    try {
+      await waitForInputValue(maxChildrenInput, "3");
+    } catch (error) {
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}; preview=${JSON.stringify(api.goalSubagentPreviews.at(-1))}; authoritative=${JSON.stringify(api.goalSubagentConfigurations.get(configuredGoalId))}`,
+      );
+    }
+    const supersededMaxChildren = await maxChildrenInput.inputValue();
+    if (supersededMaxChildren !== "3") {
+      throw new Error(
+        `A later authoritative status did not supersede the verified apply receipt: max_children=${supersededMaxChildren}, status_requests=${api.statusRequestCount}, preview=${JSON.stringify(api.goalSubagentPreviews.at(-1))}, authoritative=${JSON.stringify(api.goalSubagentConfigurations.get(configuredGoalId))}`,
+      );
+    }
+    if (!(await page.getByRole("checkbox", { name: /validation/u }).isChecked())) {
+      throw new Error("The superseding authoritative status did not update allowed domains");
+    }
+    if (api.durableWriteCount !== writesBeforeSubagentPreview + 1) throw new Error("Status supersession produced a durable write");
+
+    const codeDomain = page.getByRole("checkbox", { name: /code/u });
+    const validationDomain = page.getByRole("checkbox", { name: /validation/u });
+    await codeDomain.waitFor({ state: "visible" });
+    await validationDomain.waitFor({ state: "visible" });
+    await codeDomain.check();
+    await validationDomain.check();
+    await page.getByRole("button", { name: "预览边界调整", exact: true }).click();
+    await page.getByText("预览已锁定，确认后才会写入这个 Goal。", { exact: true }).waitFor({ state: "visible" });
+    if (api.durableWriteCount !== writesBeforeSubagentPreview + 1) throw new Error("Restricted sub-agent preview mutated durable Goal state");
+    if ([...(api.goalSubagentPreviews.at(-1)?.allowed_domains ?? [])].sort((a, b) => a.localeCompare(b)).join(",") !== "code,validation") throw new Error("Sub-agent preview lost the bounded task domains");
+    await page.locator(".personal-subagent-preview").getByRole("button", { name: "确认", exact: true }).click();
+    await page.getByText("已写入，并通过共享 Goal 状态读回校验。", { exact: true }).waitFor({ state: "visible" });
+    if (api.durableWriteCount !== writesBeforeSubagentPreview + 2) throw new Error("Restricted sub-agent apply did not produce exactly one additional Goal write");
+    await page.screenshot({ path: resolve(outputDir, "goal-subagent-toggle.png"), fullPage: false, animations: "disabled" });
+
+    await enabledSubagentSwitch.click();
+    await page.locator(".personal-subagent-preview").getByRole("button", { name: "确认", exact: true }).click();
+    const disabledSubagentSwitch = page.getByRole("switch", { name: "预览开启子代理执行" });
+    await disabledSubagentSwitch.waitFor({ state: "visible" });
+    if (await disabledSubagentSwitch.getAttribute("aria-checked") !== "false") throw new Error("Verified status readback did not turn the per-Goal switch off");
+    if (api.durableWriteCount !== writesBeforeSubagentPreview + 3) throw new Error("Sub-agent disable did not produce exactly one additional durable Goal write");
+    await page.getByRole("button", { name: /关闭详情/ }).click();
+    const productReleaseGoal = page.locator(".personal-goal-link", { hasText: "Product Release" }).first();
+    if (!await productReleaseGoal.isVisible()) {
+      const stoppedGoals = page.locator(".personal-stopped-goals");
+      if (await stoppedGoals.getAttribute("open") === null) await stoppedGoals.locator("summary").click();
+    }
+    await productReleaseGoal.waitFor({ state: "visible" });
+    await productReleaseGoal.click();
+    await page.getByRole("button", { name: "打开 Goal 详情或能力配置" }).click();
+    await page.getByRole("group", { name: "Goal 设置" }).getByRole("button", { name: /Goal 详情/ }).click();
+    await page.getByText("当前没有开放的 advancement Todo 声明 task_domain", { exact: false }).waitFor({ state: "visible" });
+    const emptyDomainSwitch = page.getByRole("switch", { name: "预览开启子代理执行" });
+    if (!(await emptyDomainSwitch.isEnabled())) throw new Error("A Goal without projected task domains could not enable unrestricted sub-agent execution");
+    api.failNextGoalSubagentResponse = true;
+    await emptyDomainSwitch.click();
+    await page.getByText("LoopX Chat 服务暂时不可用（HTTP 502）。请确认 Dashboard 与 Chat 服务已启动且来自同一版本。", { exact: true }).waitFor({ state: "visible" });
+    if ((await page.locator(".personal-goal-subagents").innerText()).includes("Unexpected end of JSON input")) {
+      throw new Error("Empty Chat API responses still expose a raw JSON parser failure");
+    }
+    if (api.durableWriteCount !== writesBeforeSubagentPreview + 3) throw new Error("A failed Goal sub-agent preview wrote Goal state");
+    await emptyDomainSwitch.click();
+    await page.getByText("预览已锁定，确认后才会写入这个 Goal。", { exact: true }).waitFor({ state: "visible" });
+    if (api.goalSubagentPreviews.at(-1)?.allowed_domains.length !== 0) throw new Error("A Goal without task-domain candidates invented a restriction");
+    await page.locator(".personal-subagent-preview").getByRole("button", { name: "取消", exact: true }).click();
+    if (api.durableWriteCount !== writesBeforeSubagentPreview + 3) throw new Error("Canceling an unrestricted preview wrote Goal state");
+    await page.getByRole("button", { name: /关闭详情/ }).click();
+    api.freezeGoalSubagentStatusProjection = false;
+    pass(22, "Per-Goal sub-agent execution supports unrestricted and restricted policies, previews before writing, verifies shared-state readback, leaves no-domain Goals usable, and can be disabled again.");
 
     if (await page.locator("html").getAttribute("lang") !== "zh-CN") throw new Error("Desktop did not start in Simplified Chinese");
     await page.getByRole("button", { name: "设置", exact: true }).click();
@@ -2024,7 +2315,7 @@ async function main() {
     const progressiveStoppedCount = await progressive.locator(".personal-stopped-goals .personal-goal-row").count();
     if (progressiveStoppedCount !== 2) throw new Error(`Stopped Goals archive loaded the wrong count: ${progressiveStoppedCount}`);
     if ((await progressive.locator(".personal-goal-list:not(.is-stopped) .personal-goal-row").count()) !== 5) throw new Error("Active Goal directory regressed after the stopped archive loaded");
-    pass(21, "The stopped archive loads after active Goals: active Goals are interactive first, the stopped section shows an accessible loading state, then stopped Goals arrive without replacing the page.");
+    pass(23, "The stopped archive loads after active Goals: active Goals are interactive first, the stopped section shows an accessible loading state, then stopped Goals arrive without replacing the page.");
     await progressive.close();
 
     const revisionRace = await browser.newPage({ viewport: { width: 1512, height: 982 } });
@@ -2058,7 +2349,7 @@ async function main() {
     await progressiveError.locator(".personal-stopped-goals .personal-goal-row").first().waitFor({ state: "attached", timeout: 6_000 });
     const errorRecoveredCount = await progressiveError.locator(".personal-stopped-goals .personal-goal-row").count();
     if (errorRecoveredCount !== 2) throw new Error(`Retry did not recover the stopped archive: ${errorRecoveredCount}`);
-    pass(22, "A stopped-archive failure keeps active Goals usable and offers a retry that restores the stopped section without a full-page error.");
+    pass(24, "A stopped-archive failure keeps active Goals usable and offers a retry that restores the stopped section without a full-page error.");
     await progressiveError.close();
 
     if (await page.locator(".personal-workspace-shell").getAttribute("data-pw-theme") !== "loopx") throw new Error("Personal workspace did not start with the LoopX standard theme");

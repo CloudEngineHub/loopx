@@ -137,14 +137,15 @@ def test_chat_options_exposes_loopback_preflight_only() -> None:
 
 
 def test_chat_status_forwards_valid_goal_activation_scope(monkeypatch) -> None:
-    calls: list[str | None] = []
+    calls: list[dict[str, object]] = []
 
     def fake_collect_status(**kwargs):
-        calls.append(kwargs.get("activation_state_filter"))
+        calls.append(kwargs)
         return {"ok": True, "scope": kwargs.get("activation_state_filter")}
 
     monkeypatch.setattr("loopx.chat_status_api.collect_status", fake_collect_status)
     server, thread = _start_server()
+    server.goal_subagent_configuration_enabled = True
     try:
         response = _request(
             server.server_address[1],
@@ -156,7 +157,8 @@ def test_chat_status_forwards_valid_goal_activation_scope(monkeypatch) -> None:
 
         assert response.status == 200
         assert payload == {"ok": True, "scope": "active"}
-        assert calls == ["active"]
+        assert calls[0]["activation_state_filter"] == "active"
+        assert calls[0]["include_goal_subagent_configuration"] is True
     finally:
         server.shutdown()
         thread.join(timeout=5)

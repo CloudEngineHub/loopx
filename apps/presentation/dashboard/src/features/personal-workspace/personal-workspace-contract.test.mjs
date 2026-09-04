@@ -174,7 +174,7 @@ assert.match(dashboard, /statusRequestCanCommit\(statusRequestFenceRef\.current,
 assert.match(sidebar, /Trash2/, "Stopped Goals expose a delete icon");
 assert.match(sidebar, /onRequestGoalLifecycle\(goal, "delete"\)/, "Goal deletion stays behind the lifecycle request boundary");
 assert.match(page, /\{ select: operation !== "stop" \}/, "Goal stop suppresses the confirmation drawer while other lifecycle actions retain it");
-assert.match(page, /await applyProposal\(proposal,\s*\{[\s\S]*?presentation: "feedback"/, "Goal stop reuses the canonical apply state machine and surfaces its receipt as feedback");
+assert.match(page, /await applyProposal\(proposal, \{[\s\S]*lifecycleProjection: stopProjection \?\? undefined,[\s\S]*presentation: "feedback",[\s\S]*\}\)/, "Goal stop reuses the canonical apply state machine with its optimistic lifecycle projection and surfaces the receipt as feedback");
 assert.match(page, /if \(proposal\.status === "ready"\)[\s\S]*setSelection\(\{ item: proposal, kind: "proposal" \}\)/, "A stop action only bypasses review when its typed preview is ready");
 assert.match(page, /A newly discovered authority gate always deserves review/, "A direct action escalates a newly discovered authority gate to the drawer");
 assert.match(sidebar, /disabled=\{lifecycleBusyGoalIds\?\.has\(goal\.goalId\)\}/, "An in-flight Goal stop cannot be submitted twice from the sidebar");
@@ -214,6 +214,32 @@ assert.match(model, /repository\??:\s*WorkspaceRepositoryContext/, "Goal exposes
 assert.match(drawer, /t\("drawer\.repository"\)/, "Goal settings display the localized repository label");
 assert.match(drawer, /t\("common\.readOnly"\)/, "Repository is visibly read-only");
 assert.doesNotMatch(drawer, /Add repository/, "Goal settings do not imply repository binding controls");
+assert.match(model, /subagentExecution\??:\s*WorkspaceGoalSubagentConfiguration/, "Goal exposes the projected sub-agent execution boundary");
+for (const callback of ["onPreviewGoalSubagentConfiguration", "onApplyGoalSubagentConfiguration"]) {
+  assert.match(model, new RegExp(`${callback}\\??:`), `Goal sub-agent settings expose ${callback}`);
+  assert.match(drawer, new RegExp(`callbacks\\.${callback}`), `Goal drawer calls ${callback}`);
+}
+assert.match(drawer, /role="switch"/, "Goal sub-agent control uses an accessible switch");
+assert.match(model, /domainCandidates\??:\s*Array/, "Goal carries finite domain choices projected from current Todos");
+assert.match(drawer, /type="checkbox"/, "Goal sub-agent domains use an accessible multi-select instead of free text");
+assert.match(drawer, /subagentDomainsEmpty/, "Goal sub-agent domains expose an explicit optional empty state");
+assert.doesNotMatch(drawer, /!currentSubagentConfiguration\.enabled && subagentAllowedDomains\.length === 0/, "Goal sub-agent execution does not require a task-domain selection");
+assert.match(drawer, /subagentPreview && subagentMutationState === "ready"/, "Goal sub-agent writes require a visible preview state");
+assert.match(drawer, /normalize.*SubagentDomains|normalizedSubagentDomains/, "Goal sub-agent domains are validated before preview");
+assert.match(chatData, /\/api\/chat\/goal-subagents\/dry-run/, "Dashboard uses the local preview-locked Goal sub-agent API");
+assert.match(chatData, /\/api\/chat\/goal-subagents\/apply/, "Dashboard applies Goal sub-agent settings through the same local API");
+assert.match(chatData, /global_sync\.readback\.verified/, "Goal sub-agent success requires shared-state readback verification");
+assert.match(dashboard, /goal\.spawn_policy\?\.mode === "multi_subagent"/, "Rendered switch state comes from the status spawn-policy projection");
+assert.match(dashboard, /capabilities\.goal_subagent_configuration === "preview_locked"/, "Goal sub-agent UI requires the authoritative Chat capability opt-in");
+assert.match(dashboard, /goalSubagentConfigurationEnabled \? \{[\s\S]*subagentExecution:/, "Capability-off models omit the Goal sub-agent UI contract");
+assert.match(dashboard, /personalSubagentDomainCandidates\(payload, row, goalAgentTodos\)/, "Goal domain choices use the full Todo index with compact-row fallback");
+assert.match(dashboard, /previewGoalSubagentConfiguration/, "Goal setting preview delegates to the canonical Chat data adapter");
+assert.match(dashboard, /applyGoalSubagentConfiguration/, "Goal setting apply delegates to the canonical Chat data adapter");
+assert.match(page, /selection\?\.kind === "goal"[\s\S]*workspaceGoals\.find/, "An open Goal drawer follows refreshed status readback");
+assert.doesNotMatch(drawer, /localStorage[\s\S]{0,120}subagent|subagent[\s\S]{0,120}localStorage/i, "Goal sub-agent state is never stored in browser-local authority");
+assert.match(drawer, /authoritativeSupersedesReceipt/, "A newer authoritative status supersedes an apply receipt without closing the drawer");
+assert.match(drawer, /!subagentConfigurationsMatch\([\s\S]*baseline,[\s\S]*authoritativeSubagentConfiguration/, "Status changes away from the pre-apply baseline supersede the receipt even when they do not echo it");
+assert.match(i18n, /drawer\.subagentDescription/, "Sub-agent authority boundaries are localized in the Goal drawer");
 
 for (const lane of ["needs_you", "running", "observing", "scheduled", "history"]) {
   assert.match(model, new RegExp(`"${lane}"`), `Manager home models the ${lane} lane`);

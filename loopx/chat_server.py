@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from . import chat_configuration_api as config_api
 from .attached_session_api import AttachedSessionRequestMixin
 from .chat import (
     TodoReviewPreviewConflict,
@@ -22,9 +23,13 @@ from .chat_agent import CodexChatAgentError
 from .chat_attachments import normalize_chat_image_attachments
 from .chat_actions import ChatActionService, ProtectedActionGate
 from .chat_action_store import ACTION_KINDS, ActionConflictError, ChatActionStore
-from . import chat_configuration_api as config_api
-from .chat_runtime import ChatRuntimeController, TERMINAL_TURN_STATES
+from .chat_goal_subagent_api import (
+    GoalSubagentConfigurationRequestMixin,
+    add_goal_subagent_capability,
+    add_goal_subagent_routes,
+)
 from .chat_status_api import ChatStatusRequestMixin
+from .chat_runtime import ChatRuntimeController, TERMINAL_TURN_STATES
 from .chat_ssh_source_api import SSH_SOURCE_ENSURE_PATH, SshSourceRequestMixin
 from .chat_store import ChatSessionStore
 from .control_plane.status.ssh_host_catalog import (
@@ -102,6 +107,8 @@ CHAT_LARK_CHATS_PATH = "/api/chat/lark/chats"
 CHAT_LARK_CONNECTIONS_PATH = "/api/chat/lark/connections"
 CHAT_ACTIONS_PATH = "/api/actions"
 CHAT_ACTION_PREVIEW_PATH = f"{CHAT_ACTIONS_PATH}/preview"
+
+
 def chat_cors_response_headers(origin: str | None) -> dict[str, str]:
     headers = cors_response_headers(origin)
     if headers:
@@ -413,6 +420,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
     lark_app_setup_manager: LarkAppSetupManager
     lark_goal_topic_runtime: LarkGoalTopicRuntimeService
     ssh_config_path: Path | None
+    goal_subagent_configuration_enabled: bool
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -430,6 +438,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
 class ChatRequestHandler(
     AttachedSessionRequestMixin,
     SshSourceRequestMixin,
+    GoalSubagentConfigurationRequestMixin,
     LarkChatRequestMixin,
     config_api.ChatConfigurationRequestMixin,
     ChatStatusRequestMixin,
@@ -1260,26 +1269,26 @@ class ChatRequestHandler(
             self._send_json({"ok": True})
             return
         if path == CHAT_CAPABILITIES_PATH:
-            self._send_json(
-                {
-                    "ok": True,
-                    "schema_version": "loopx_chat_capabilities_v1",
-                    "runtime_identity": release_runtime_identity(),
-                    "agent_backend": "multi_adapter",
-                    "sandbox": "read-only",
-                    "approval_policy": "never",
-                    "todo_write": "preview_locked",
-                    "goal_id": self.server.selected_goal_id,
-                    "streaming": True,
-                    "resume": True,
-                    "interrupt": True,
-                    "typed_actions": True,
-                    "attached_session_broker": True,
-                    "action_kinds": sorted(ACTION_KINDS),
-                    "adapters": self.server.runtime_controller.capabilities(),
-                    "lark_cli": self.server.lark_cli_resolution.public_snapshot(),
-                }
-            )
+            capabilities = {
+                "ok": True,
+                "schema_version": "loopx_chat_capabilities_v1",
+                "runtime_identity": release_runtime_identity(),
+                "agent_backend": "multi_adapter",
+                "sandbox": "read-only",
+                "approval_policy": "never",
+                "todo_write": "preview_locked",
+                "goal_id": self.server.selected_goal_id,
+                "streaming": True,
+                "resume": True,
+                "interrupt": True,
+                "typed_actions": True,
+                "attached_session_broker": True,
+                "action_kinds": sorted(ACTION_KINDS),
+                "adapters": self.server.runtime_controller.capabilities(),
+                "lark_cli": self.server.lark_cli_resolution.public_snapshot(),
+            }
+            add_goal_subagent_capability(capabilities, server=self.server)
+            self._send_json(capabilities)
             return
         if path == CHAT_ENDPOINTS_PATH:
             return self._send_json(
@@ -1340,6 +1349,7 @@ class ChatRequestHandler(
             **self._configuration_post_routes(),
             SSH_SOURCE_ENSURE_PATH: self._ssh_source_ensure,
         }
+        add_goal_subagent_routes(post_dispatch, handler=self)
         if path in post_dispatch:
             return post_dispatch[path]()
         session_action_parts = path.strip("/").split("/")
@@ -1405,6 +1415,7 @@ def serve_chat(
     assets_dir: Path | None = None,
     open_browser: bool = False,
     verbose: bool = False,
+    enable_goal_subagent_configuration: bool = False,
 ) -> None:
     if not is_loopback_host(host):
         raise ValueError("loopx chat requires a loopback --host such as 127.0.0.1")
@@ -1435,6 +1446,9 @@ def serve_chat(
     server.assets_dir = resolved_assets
     server.verbose = verbose
     server.ssh_config_path = None
+    server.goal_subagent_configuration_enabled = (
+        enable_goal_subagent_configuration
+    )
     server.lark_cli_resolution = lark_cli_resolution
     server.lark_runner = build_lark_command_runner(server.lark_cli_resolution)
     server.lark_app_setup_manager = LarkAppSetupManager(
@@ -1477,6 +1491,8 @@ def serve_chat(
     print(f"Serving LoopX Chat at {url}", flush=True)
     print("Agent boundary: local adapters, read-only sandbox, approval policy never", flush=True)
     print("Todo writes: preview-locked on loopback", flush=True)
+    if enable_goal_subagent_configuration:
+        print("Goal sub-agent configuration: preview-locked opt-in enabled", flush=True)
     if open_browser:
         webbrowser.open(url)
     try:
