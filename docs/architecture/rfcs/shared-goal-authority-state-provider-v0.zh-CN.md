@@ -1698,11 +1698,12 @@ integrity chain、确定性 scan 与 recovery readback。物理 profile 可以�
   片）：取 Todo 与 lease 两把 legacy 锁，要求 `qualify` 在当前 revision 与 digest 上
   为 `qualified`，engage fence，执行 `promote`，渲染投影，写入问题 11 的声明；源
   digest 已变时拒绝重跑，除非显式丢弃被放弃的 store。
-- 事务绑定的捕获（问题 14）：runtime shadow 在提交之后、写者锁之外采样源，并发写者
-  可能落进被采样的投影，commit 与 dispatch 之间崩溃则丢失镜像。parity 半段的 outbox
-  同时关闭两者：prepared entry 在写者已持有的锁内写入，committed 标记在主写返回后
-  写入，有界 drain 把每条 entry 变成恰好一笔 `operation_id` 为 entry id 的 shadow
-  事务。此后 `qualify` 数的是 entry，不是采样。
+- 完成事务捕获资格验证（问题 14）：Todo add、update、complete、supersede、archive，
+  以及 native lease acquire、renew、transfer、release、auto-acquire、fence-close，现已在
+  主写前后生成 prepared/committed outbox entry。有界 drain 把完整、带版本的 record
+  提交到既有 `coordination.runtime_shadow` file-v0 lineage，不再创建第二套 local-shadow
+  candidate。晋升前仍需补持续 mixed-writer parity、event-only Todo 覆盖和所选 provider
+  profile 的 recovery/capacity 证据。
 - provider-neutral authority binding、兼容投影 outbox，以及 file、NoKV、PostgreSQL
   的 conformance row。三个 provider 不必同时晋升，但每个 profile 都必须先通过同一
   合同才具备资格。
@@ -1727,6 +1728,6 @@ latency、response size 与 recovery。单文档全量保留只适用于 promoti
 | Lane | 何时开始 | 范围与退出条件 | 依赖 |
 | --- | --- | --- | --- |
 | P. PostgreSQL provider plane | 现在，从当前 `main` 开始 | 保持既有 `AuthorityStore` 合同；完成 schema migration/install ownership、authenticated service 与 tenant authorization、restore-incarnation rotation、pool/cancellation/failover 行为，以及经评审的 index、partition、retention 与实测 capacity。真实 PostgreSQL conformance 始终是强制门禁。 | 不依赖 #3870，也不得叠在其分支上。仅完成本 lane 不产生 runtime caller 或 promotion 声明。 |
-| C. Canonical transaction capture | 现在，通过修订或替代 #3870 | 让 outbox 把完整、带版本的 Todo/lease record 传给 `coordination.runtime_shadow.commit`；退役重复 observation/local-shadow lineage，并证明 omission/explicit-clear 行为。 | 可与 P 并行；但 C 与选定 provider profile 都完成后，才能进入 parity 或 promotion 集成。 |
+| C. Canonical transaction capture | 实现中，基于 #3870 | transaction-bound outbox 已指向唯一 `coordination.runtime_shadow` lineage，并保留完整带版本的 Todo/lease record；继续完成 sustained mixed-writer parity、explicit-clear/omission 与 event-only Todo recovery 证据。 | 可与 P 并行；但 C 与选定 provider profile 都完成后，才能进入 parity 或 promotion 集成。 |
 | I. Binding 与资格集成 | P 与 C 完成后 | 绑定一个精确 provider lineage、field manifest、source revision、digest 与 cursor；运行持续 transaction parity，以及 provider-specific recovery/capacity qualification；缺字段时不得查询 legacy state 补齐。 | 这是 provider 工作与 capture 工作的汇合点。 |
 | F. Promotion 与清理 | I 完成且 maintainer 显式批准后 | 加入 provider-first CLI routing、持锁 promotion orchestrator、兼容投影 outbox、晋升后 fenced export/rollback；随后删除重复 reference aggregate，并翻转经评审的 stage/hold 声明。 | 一个 profile 的精确实现与 lineage 通过 P、C、I 前，不具备晋升资格。 |
