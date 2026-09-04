@@ -49,7 +49,7 @@ assert.match(styles, /personal-channel-title h1 { font-size: 20px/, "LoopX stand
 assert.match(select, /aria-haspopup="listbox"/, "Workspace select exposes combobox semantics");
 assert.match(select, /event.key === "ArrowDown"/, "Workspace select supports arrow-key navigation");
 assert.match(select, /event.key === "Escape"/, "Workspace select supports keyboard dismissal");
-assert.doesNotMatch(header, /<select/, "The primary Agent selector is not browser-native");
+assert.doesNotMatch(header, /<select/, "The chat runtime selector is not browser-native");
 assert.doesNotMatch(statusSource, /<select/, "The primary control-plane selector is not browser-native");
 assert.match(header, /<WorkspaceSelect/, "The Agent selector uses the shared menu");
 assert.match(header, /prefixLabel={t\("header.chatRuntime"\)}/, "The chat runtime remains visibly distinct from work-Agent lanes");

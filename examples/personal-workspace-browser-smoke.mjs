@@ -125,6 +125,7 @@ async function installApi(page) {
       ["archived-notes", "stopped"],
     ]),
     interrupts: [],
+    goalConfigurationRequests: [],
     larkWrites: [],
     actionTransitions: [],
     allowNextHeartbeatApply: false,
@@ -429,6 +430,90 @@ async function installApi(page) {
   await page.route("**/api/chat/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.pathname === "/api/chat/goal-configuration" && request.method() === "GET") {
+      const goalId = url.searchParams.get("goal_id");
+      const periodicConfiguration = {
+        schema_version: "periodic_report_machine_defaults_v0",
+        enabled: true,
+        inheritance: "live_machine_default",
+        profile_preset: "weekly-progress",
+        route_ref: "loopx-manager",
+        timezone: "Asia/Shanghai",
+      };
+      await route.fulfill({ contentType: "application/json", json: {
+        ok: true,
+        schema_version: "goal_configuration_inspection_v0",
+        status: "configured",
+        goal_id: goalId,
+        revision: "sha256:goal-current",
+        available_capabilities: ["periodic_report"],
+        capability_catalog: {
+          schema_version: "capability_configuration_catalog_v0",
+          capabilities: [{
+            capability_id: "periodic_report",
+            display_name: "Periodic reports",
+            description: "Publish bounded progress reports.",
+            available_scopes: ["machine", "goal"],
+            machine_namespace: "periodic_report",
+            goal_feature_id: "periodic_report",
+            effective_value_policy: "goal_override_over_live_machine_default",
+            default: { enabled: false, timezone: "UTC" },
+            machine_current: periodicConfiguration,
+            effective_configuration: {
+              schema_version: "capability_configuration_resolution_v0",
+              capability_id: "periodic_report",
+              source: "machine_default",
+              configuration: periodicConfiguration,
+              inherited: true,
+              goal_override_present: false,
+              machine_default_present: true,
+              effective_revision: "sha256:periodic-effective",
+            },
+            configuration_editor: {
+              schema_version: "capability_configuration_editor_v0",
+              editable: true,
+              supported_scopes: ["machine", "goal"],
+              writable_scopes: ["machine", "goal"],
+              fields: [
+                { key: "enabled", label: "Enabled", description: "", input_kind: "boolean", required: false },
+                { key: "profile_preset", label: "Profile preset", description: "", input_kind: "text", required: false },
+                { key: "route_ref", label: "Goal Channel route", description: "", input_kind: "text", required: false },
+                { key: "timezone", label: "Timezone", description: "", input_kind: "text", required: true },
+              ],
+            },
+          }],
+        },
+      }, status: 200 });
+      return;
+    }
+    if (url.pathname === "/api/chat/goal-configuration/preview" && request.method() === "POST") {
+      const body = request.postDataJSON();
+      state.goalConfigurationRequests.push({ phase: "preview", ...body });
+      await route.fulfill({ contentType: "application/json", json: {
+        ok: true, schema_version: "goal_configuration_update_plan_v0", status: "preview",
+        action: "create", current_revision: "absent", desired_revision: "sha256:desired",
+        base_revision: "sha256:goal-current", plan_revision: "sha256:goal-plan", writes_required: 1,
+        goal_id: body.goal_id, capability_id: body.capability_id,
+        changed_fields: ["periodic_report"], goal_configuration: body.configuration,
+        capability_catalog: { schema_version: "capability_configuration_catalog_v0", capabilities: [] },
+      }, status: 201 });
+      return;
+    }
+    if (url.pathname === "/api/chat/goal-configuration/apply" && request.method() === "POST") {
+      const body = request.postDataJSON();
+      state.goalConfigurationRequests.push({ phase: "apply", ...body });
+      await route.fulfill({ contentType: "application/json", json: {
+        ok: false, schema_version: "goal_configuration_transaction_v0", status: "partial_write",
+        goal_id: body.goal_id, capability_id: body.capability_id,
+        plan_revision: body.expected_plan_revision, applied_revision: "sha256:goal-applied",
+        source_written: true, shared_sync_pending: true, readback_verified: true,
+        changed_fields: ["periodic_report"], goal_configuration: body.configuration,
+        capability_catalog: { schema_version: "capability_configuration_catalog_v0", capabilities: [] },
+        error: "shared projection did not synchronize",
+        recommended_action: `rerun loopx sync-global --goal-id ${body.goal_id}`,
+      }, status: 207 });
+      return;
+    }
     const resumedEvents = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)\/turns\/([^/]+)\/events$/);
     if (resumedEvents && request.method() === "GET") {
       const sessionId = resumedEvents[1];
@@ -941,7 +1026,8 @@ async function main() {
     await page.getByText("LoopX Manager", { exact: true }).first().waitFor({ state: "visible" });
     if (await page.locator("html").getAttribute("lang") !== "en") throw new Error("English locale did not survive reload");
     await page.locator(".personal-goal-link").first().click();
-    await page.getByRole("button", { name: "Goal details" }).click();
+    await page.getByRole("button", { name: "Open Goal details or capability settings" }).click();
+    await page.getByRole("group", { name: "Goal settings" }).getByRole("button", { name: /Goal details/ }).click();
     await page.getByText("Repository", { exact: true }).waitFor({ state: "visible" });
     await page.getByText("Execution Session", { exact: true }).waitFor({ state: "visible" });
     await page.getByText("Read only", { exact: true }).waitFor({ state: "visible" });
@@ -1006,7 +1092,8 @@ async function main() {
     if (api.durableWriteCount !== writesBeforeEnglishPreviews) throw new Error("English write previews mutated durable state before confirmation");
     await page.getByRole("button", { name: "Close", exact: true }).click();
 
-    await page.getByRole("button", { name: "Goal details" }).click();
+    await page.getByRole("button", { name: "Open Goal details or capability settings" }).click();
+    await page.getByRole("group", { name: "Goal settings" }).getByRole("button", { name: /Goal details/ }).click();
     await page.getByRole("button", { name: "Set up Heartbeat", exact: true }).click();
     const englishHeartbeatDraft = await page.getByLabel("Send a message to LoopX").inputValue();
     for (const field of ["Frequency: Daily", "Stop condition: Goal completes", "Notification: Only notify me when needed"]) {
@@ -1183,7 +1270,6 @@ async function main() {
     await page.setViewportSize({ width: 900, height: 720 });
     const compactHeaderButtons = [
       page.locator(".personal-mobile-menu"),
-      page.locator(".personal-channel-header > .personal-icon-button:not(.personal-mobile-menu)"),
       page.locator(".personal-refresh-control .personal-icon-button"),
     ];
     for (const button of compactHeaderButtons) {
@@ -1191,6 +1277,10 @@ async function main() {
       if (!box || Math.abs(box.width - 36) > 0.5 || Math.abs(box.height - 36) > 0.5) {
         throw new Error(`Compact header icon button was compressed: ${JSON.stringify(box)}`);
       }
+    }
+    const compactGoalSettingsBox = await page.locator(".personal-goal-tools-trigger").boundingBox();
+    if (!compactGoalSettingsBox || compactGoalSettingsBox.width < 40 || compactGoalSettingsBox.height < 36) {
+      throw new Error(`Compact Goal settings trigger was compressed: ${JSON.stringify(compactGoalSettingsBox)}`);
     }
     const compactHeaderLayout = await page.evaluate(() => {
       const live = document.querySelector(".personal-live-indicator");
@@ -1297,7 +1387,31 @@ async function main() {
     await page.waitForTimeout(200);
     await selectFirstGoal();
     await page.locator(".personal-object-list").first().waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "Goal 详情" }).click();
+    if (await page.locator(".personal-task-capability-callout").count()) throw new Error("Goal capability settings still consume a full-width Tasks row");
+    await page.getByRole("button", { name: "打开 Goal 详情或能力配置" }).click();
+    const goalSettingsMenu = page.getByRole("group", { name: "Goal 设置" });
+    const capabilityMenuItem = goalSettingsMenu.getByRole("button", { name: /能力配置/ });
+    await capabilityMenuItem.waitFor({ state: "visible" });
+    await page.screenshot({ path: resolve(outputDir, "goal-settings-unified-menu.png"), fullPage: false, animations: "disabled" });
+    await capabilityMenuItem.click();
+    await page.getByRole("heading", { level: 1, name: "Goal 能力", exact: true }).waitFor({ state: "visible" });
+    if (await page.locator(".personal-workspace-shell").count()) throw new Error("Unified Goal capability action did not open the Settings surface");
+    await page.getByRole("button", { name: "预览变更", exact: true }).click();
+    await page.getByText("锁定 revision 的变更预览", { exact: true }).waitFor({ state: "visible" });
+    const goalConfigurationPreview = api.goalConfigurationRequests.find((item) => item.phase === "preview");
+    const projectedKeys = Object.keys(goalConfigurationPreview?.configuration ?? {}).sort((left, right) => left.localeCompare(right));
+    if (JSON.stringify(projectedKeys) !== JSON.stringify(["enabled", "profile_preset", "route_ref", "timezone"])) {
+      throw new Error(`Goal configuration preview leaked hidden machine fields: ${JSON.stringify(goalConfigurationPreview)}`);
+    }
+    await page.getByRole("button", { name: "应用此预览", exact: true }).click();
+    await page.getByText("Goal 值已保存；共享投影仍需修复", { exact: true }).waitFor({ state: "visible" });
+    if (!(await page.getByText(/loopx sync-global --goal-id/u).isVisible())) throw new Error("Partial Goal write did not expose its reconciliation action");
+    const goalConfigurationApply = api.goalConfigurationRequests.find((item) => item.phase === "apply");
+    if (goalConfigurationApply?.expected_plan_revision !== "sha256:goal-plan") throw new Error("Goal configuration apply lost its reviewed plan revision");
+    await page.getByRole("button", { name: "返回工作区", exact: true }).click();
+    await page.getByRole("button", { name: "Tasks", current: "page" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "打开 Goal 详情或能力配置" }).click();
+    await page.getByRole("group", { name: "Goal 设置" }).getByRole("button", { name: /Goal 详情/ }).click();
     await page.getByText("仓库", { exact: true }).waitFor({ state: "visible" });
     await page.getByText("执行 Session", { exact: true }).waitFor({ state: "visible" });
     await page.getByText("只读", { exact: true }).waitFor({ state: "visible" });
@@ -1515,7 +1629,8 @@ async function main() {
     if (!heartbeatPreview) throw new Error("Continuation intent did not map to heartbeat.bind");
     await page.getByRole("button", { name: "关闭", exact: true }).click();
 
-    await page.getByRole("button", { name: "Goal 详情" }).click();
+    await page.getByRole("button", { name: "打开 Goal 详情或能力配置" }).click();
+    await page.getByRole("group", { name: "Goal 设置" }).getByRole("button", { name: /Goal 详情/ }).click();
     await page.getByRole("button", { name: "Tasks" }).click();
     const taskCards = page.locator(".personal-object-list", { hasText: "进行中" }).locator(".personal-task-card");
     const taskRow = taskCards.first().locator(":scope > button");
@@ -1877,6 +1992,20 @@ async function main() {
     }
     await mobileManagerLink.click();
     await mobile.locator(".personal-home-board").waitFor({ state: "visible" });
+    await mobileNavigationTrigger.click();
+    await mobile.getByRole("dialog", { name: "Goal 导航" }).waitFor({ state: "visible" });
+    await mobile.locator(".personal-goal-link").first().click();
+    await mobile.getByRole("button", { name: "Tasks", current: "page" }).waitFor({ state: "visible" });
+    await mobile.getByRole("button", { name: "打开 Goal 详情或能力配置" }).click();
+    const mobileGoalToolsMenu = mobile.getByRole("group", { name: "Goal 设置" });
+    await mobileGoalToolsMenu.waitFor({ state: "visible" });
+    const mobileMenuBox = await mobileGoalToolsMenu.boundingBox();
+    if (!mobileMenuBox || mobileMenuBox.x < 0 || mobileMenuBox.x + mobileMenuBox.width > 390) {
+      throw new Error(`Mobile Goal settings menu escaped the viewport: ${JSON.stringify(mobileMenuBox)}`);
+    }
+    const mobileGoalOverflow = await mobile.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    if (mobileGoalOverflow > 1) throw new Error(`Mobile Goal header has ${mobileGoalOverflow}px horizontal overflow`);
+    await mobile.screenshot({ path: resolve(outputDir, "mobile-goal-settings-menu.png"), fullPage: false, animations: "disabled" });
     await mobile.close();
     const progressive = await browser.newPage({ viewport: { width: 1512, height: 982 } });
     const progressiveApi = await installApi(progressive);
