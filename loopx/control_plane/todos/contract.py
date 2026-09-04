@@ -11,7 +11,7 @@ from ...repository_identity import normalize_repository_identity
 from .completion_state import (
     normalize_todo_completion_continuation,
     normalize_todo_completion_recovery,
-    normalize_todo_no_followup,
+    normalize_todo_no_followup as normalize_todo_no_followup,
     require_todo_completion_metadata,
 )
 from .resume_condition import (

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 import re
 from typing import Any, Callable, Optional
 
@@ -628,19 +629,23 @@ def todo_item_is_actionable_open(item: dict[str, Any]) -> bool:
     return projection_todo_item_is_actionable_open(item)
 
 
-def todo_item_next_due_at(item: dict[str, Any]):
+def todo_item_next_due_at(item: dict[str, Any]) -> datetime | None:
     return projection_todo_item_next_due_at(item)
 
 
-def todo_item_expires_at(item: dict[str, Any]):
+def todo_item_expires_at(item: dict[str, Any]) -> datetime | None:
     return projection_todo_item_expires_at(item)
 
 
-def todo_item_is_due_monitor(item: dict[str, Any], *, now=None) -> bool:
+def todo_item_is_due_monitor(
+    item: dict[str, Any], *, now: datetime | None = None
+) -> bool:
     return projection_todo_item_is_due_monitor(item, now=now, task_text_keys=("text",))
 
 
-def todo_item_missing_monitor_schedule(item: dict[str, Any], *, now=None) -> bool:
+def todo_item_missing_monitor_schedule(
+    item: dict[str, Any], *, now: datetime | None = None
+) -> bool:
     return projection_todo_item_missing_monitor_schedule(item, now=now, task_text_keys=("text",))
 
 
@@ -778,7 +783,8 @@ def dependency_blocker_summary(
         goal_id = str(item.get("goal_id") or "")
         if not goal_id or goal_id == current_goal_id:
             continue
-        user_todos = item.get("user_todos") if isinstance(item.get("user_todos"), dict) else {}
+        raw_user_todos = item.get("user_todos")
+        user_todos = raw_user_todos if isinstance(raw_user_todos, dict) else {}
         for todo in user_todos.get("items") or []:
             if not isinstance(todo, dict) or todo.get("done"):
                 continue
@@ -940,8 +946,9 @@ def todo_item_is_succession_tracked_completion(item: dict[str, Any]) -> bool:
 
 
 def _completed_succession_sort_key(item: dict[str, Any]) -> tuple[str, int]:
+    raw_index = item.get("index")
     try:
-        index = int(item.get("index"))
+        index = int(raw_index) if raw_index is not None else 0
     except (TypeError, ValueError):
         index = 0
     timestamp = str(item.get("updated_at") or item.get("completed_at") or "")
@@ -1193,7 +1200,7 @@ def compact_todo_group(
         for item in lanes.open_items
         if normalize_todo_id(item.get("todo_id")) not in watch_only_ids
     ]
-    summary = {
+    summary: dict[str, Any] = {
         "schema_version": "todo_summary_v0",
         "source_section": source_section,
         "total_count": len(items),
