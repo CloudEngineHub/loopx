@@ -58,7 +58,7 @@ function todoEntry(seq: number, digest: string, resolution = "committed") {
 function commitRequest(root: string, seq: number, todos: object[], resolution = "committed") {
   const projection = { handoff_mode: "hard_lease", todos };
   return {
-    schema_version: "loopx_local_authority_shadow_commit_entry_request_v0",
+    schema_version: "loopx_coordination_runtime_shadow_commit_entry_request_v0",
     runtime_root: root,
     goal_id: GOAL,
     entry: todoEntry(seq, `sha256:${HEX}`, resolution),
@@ -69,7 +69,7 @@ function commitRequest(root: string, seq: number, todos: object[], resolution = 
 
 function noOpRequest(root: string, seq: number, resolution: "abandoned" | "unproved") {
   return {
-    schema_version: "loopx_local_authority_shadow_commit_entry_request_v0",
+    schema_version: "loopx_coordination_runtime_shadow_commit_entry_request_v0",
     runtime_root: root,
     goal_id: GOAL,
     entry: todoEntry(seq, `sha256:${HEX}`, resolution),
@@ -94,7 +94,7 @@ test("commit_entry folds one partition into a v1 head and binds the receipt to t
   assert.equal(result.outcome, "delivered");
   assert.equal(result.no_op, false);
   assert.equal(result.cursor, "1");
-  const store = new FileAuthorityStore(join(root, "authority-shadow", "file", GOAL), GOAL);
+  const store = new FileAuthorityStore(join(root, "authority-shadow", "file-v0"), GOAL);
   const loaded = await store.loadAuthority();
   assert.equal(loaded.status, "loaded");
   if (loaded.status !== "loaded") return;
@@ -136,7 +136,7 @@ test("commit_entry replays only when the existing receipt carries the same parti
   assert.equal(mismatch.outcome, "protocol_mismatch");
   assert.equal(mismatch.reason_code, "transaction_receipt_mismatch");
 
-  const page = await new FileAuthorityStore(join(root, "authority-shadow", "file", GOAL), GOAL)
+  const page = await new FileAuthorityStore(join(root, "authority-shadow", "file-v0"), GOAL)
     .scanCommitted(null, 10);
   assert.equal(page.status, "page");
   if (page.status === "page") assert.equal(page.transactions.length, 1);
@@ -155,7 +155,7 @@ test("no-op resolutions keep the sequence auditable without touching compared fi
   assert.equal(unproved.no_op, true);
   assert.equal(unproved.cursor, "3");
   assert.equal(abandoned.head_digest, first.head_digest);
-  const store = new FileAuthorityStore(join(root, "authority-shadow", "file", GOAL), GOAL);
+  const store = new FileAuthorityStore(join(root, "authority-shadow", "file-v0"), GOAL);
   const page = await store.scanCommitted(null, 10);
   assert.equal(page.status, "page");
   if (page.status !== "page") return;
@@ -220,7 +220,7 @@ test("a v0 observation head is accepted as the starting point for partition fold
 test("read returns head, comparison digest, and a bounded scan page", async (t) => {
   const root = await tempRoot(t);
   const missing = await readLocalAuthorityShadow({
-    schema_version: "loopx_local_authority_shadow_read_request_v0",
+    schema_version: "loopx_coordination_runtime_shadow_outbox_read_v0",
     runtime_root: root,
     goal_id: GOAL,
     scan_after_cursor: null,
@@ -234,7 +234,7 @@ test("read returns head, comparison digest, and a bounded scan page", async (t) 
   await commitLocalAuthorityShadowEntry(commitRequest(root, 1, todos));
   await commitLocalAuthorityShadowEntry(noOpRequest(root, 2, "abandoned"));
   const view = await readLocalAuthorityShadow({
-    schema_version: "loopx_local_authority_shadow_read_request_v0",
+    schema_version: "loopx_coordination_runtime_shadow_outbox_read_v0",
     runtime_root: root,
     goal_id: GOAL,
     scan_after_cursor: null,
@@ -261,13 +261,13 @@ test("lease outbox entries are two-phase, durable, and skipped without a binding
   const planned = { goal_id: GOAL, todo_id: "todo-a", version: 2, lease_epoch: 1, status: "active", updated_at: "t2" };
 
   assert.equal(decodeLocalAuthorityShadowBinding(undefined), null);
-  assert.equal(decodeLocalAuthorityShadowBinding({ mode: "file_one_way" }), null);
+  assert.equal(decodeLocalAuthorityShadowBinding({ provider: "file_v0" }), null);
   assert.deepEqual(
     decodeLocalAuthorityShadowBinding({
-      schema_version: "loopx_local_authority_shadow_binding_v0",
-      mode: "file_one_way",
+      schema_version: "loopx_coordination_runtime_shadow_binding_v0",
+      provider: "file_v0",
     }),
-    { schema_version: "loopx_local_authority_shadow_binding_v0", mode: "file_one_way" },
+    { schema_version: "loopx_coordination_runtime_shadow_binding_v0", provider: "file_v0" },
   );
 
   const capture = await beginLeaseOutboxEntry({

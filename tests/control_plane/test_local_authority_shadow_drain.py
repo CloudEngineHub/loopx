@@ -166,7 +166,7 @@ def test_drain_delivers_each_committed_entry_once_in_order_and_verifies_readback
     view = adapter.read_local_authority_shadow(runtime_root=runtime_root, goal_id=GOAL_ID, scan_limit=10)
     assert view["status"] == "loaded"
     head = view["head"]
-    assert head["schema_version"] == "loopx_local_authority_shadow_projection_v1"
+    assert head["schema_version"] == "loopx_coordination_runtime_shadow_projection_v0"
     assert head["partitions"]["todos"] == {
         "seq": 3,
         "partition_digest": captures[-1].outcome.partition_digest,
@@ -268,7 +268,7 @@ def test_drain_stops_in_order_when_the_store_boundary_misbehaves(
 
     def flaky(method: str, params: object, **kwargs: object) -> object:
         calls.append(method)
-        if method == "coordination.local_authority_shadow.commit_entry" and len(calls) == 2:
+        if method == "coordination.runtime_shadow.commit_entry" and len(calls) == 2:
             return {"schema_version": "garbage"}
         return real(method, params, **kwargs)
 
@@ -355,7 +355,7 @@ def test_unexplained_prepared_only_entry_triggers_reseed_under_the_primary_lock(
     assert seed_receipt["source_bytes_digest"] == text_digest(state.read_text(encoding="utf-8"))
 
 
-def test_lease_partition_entries_are_compacted_at_drain(tmp_path: Path) -> None:
+def test_lease_partition_entries_retain_complete_records_at_drain(tmp_path: Path) -> None:
     registry, _state, runtime_root = _fixture(tmp_path)
     directory = outbox.partition_directory(runtime_root, GOAL_ID, "leases")
     record = {
@@ -412,25 +412,11 @@ def test_lease_partition_entries_are_compacted_at_drain(tmp_path: Path) -> None:
     head = view["head"]
     assert head["todos"] == []
     assert head["handoff_mode"] is None
-    assert head["leases"] == [
-        {
-            "todo_id": record["todo_id"],
-            "owner": "agent-a",
-            "idempotency_key": "k1",
-            "write_scopes": ["loopx/**"],
-            "version": 2,
-            "lease_epoch": 1,
-            "acquired_at": record["acquired_at"],
-            "updated_at": record["updated_at"],
-            "expires_at": record["expires_at"],
-            "released_at": None,
-            "status": "active",
-        }
-    ]
+    assert head["leases"] == [record]
     expected_digest = partition_digest({"leases": head["leases"]})
     assert head["partitions"]["leases"] == {"seq": 1, "partition_digest": expected_digest}
     assert result.entries[0]["partition_digest"] == expected_digest
-    assert "/should/never/be/compared" not in json.dumps(view)
+    assert "/should/never/be/compared" in json.dumps(view)
 
 
 def test_status_reports_backlog_candidate_and_growth_facts(tmp_path: Path) -> None:
@@ -461,7 +447,7 @@ def test_status_reports_backlog_candidate_and_growth_facts(tmp_path: Path) -> No
     assert drained["candidate"]["status"] == "loaded"
     assert drained["candidate"]["cursor"] == "1"
     assert drained["candidate"]["codec_agreement"] is True
-    assert drained["candidate"]["head_schema_version"] == "loopx_local_authority_shadow_projection_v1"
+    assert drained["candidate"]["head_schema_version"] == "loopx_coordination_runtime_shadow_projection_v0"
     assert drained["store_bytes"] > 0
 
 
@@ -553,7 +539,7 @@ def test_crash_between_the_two_unlinks_leaves_residue_the_next_drain_reclaims(
     assert second.outcome == "drained"
     assert second.reclaimed_residue == 1
     assert (second.delivered, second.replayed) == (0, 0)
-    assert "coordination.local_authority_shadow.commit_entry" not in calls
+    assert "coordination.runtime_shadow.commit_entry" not in calls
     assert list(_todo_dir(runtime_root).iterdir()) == [_todo_dir(runtime_root) / "drain-cursor.json"]
     view = adapter.read_local_authority_shadow(runtime_root=runtime_root, goal_id=GOAL_ID, scan_limit=5)
     assert view["cursor"] == "1"
@@ -592,7 +578,7 @@ def test_crash_after_the_cursor_but_before_any_unlink_is_reclaimed_without_a_sto
     result = _drain(registry, runtime_root)
     assert result.ok is True
     assert result.reclaimed_residue == 2
-    assert "coordination.local_authority_shadow.commit_entry" not in calls
+    assert "coordination.runtime_shadow.commit_entry" not in calls
     assert list(_todo_dir(runtime_root).iterdir()) == [_todo_dir(runtime_root) / "drain-cursor.json"]
 
 

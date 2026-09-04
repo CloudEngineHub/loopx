@@ -8,7 +8,6 @@ import pytest
 from loopx.control_plane.coordination import local_authority_shadow_adapter as adapter
 from loopx.control_plane.coordination import local_authority_shadow_outbox as outbox
 from loopx.control_plane.coordination.local_authority_shadow_projection import (
-    LEASE_FIELDS,
     ProjectionValueError,
     canonical_bytes,
     lease_partition_projection,
@@ -326,12 +325,12 @@ def test_canonical_projection_rejects_floats_and_bad_lease_identity() -> None:
     with pytest.raises(ProjectionValueError):
         lease_partition_projection([("todo-a", {"goal_id": "other", "todo_id": "todo-a"})], goal_id=GOAL_ID)
     projection = lease_partition_projection(
-        [("todo-b", {"goal_id": GOAL_ID, "todo_id": "todo-b", "version": 1, "extra": "dropped"}),
+        [("todo-b", {"goal_id": GOAL_ID, "todo_id": "todo-b", "version": 1, "extra": "retained"}),
          ("todo-a", {"goal_id": GOAL_ID, "todo_id": "todo-a", "version": 2, "status": "active"})],
         goal_id=GOAL_ID,
     )
     assert [lease["todo_id"] for lease in projection["leases"]] == ["todo-a", "todo-b"]
-    assert set(projection["leases"][1]) <= set(LEASE_FIELDS)
+    assert projection["leases"][1]["extra"] == "retained"
 
 
 def test_capture_failure_is_typed_and_never_raises(tmp_path: Path) -> None:
