@@ -586,6 +586,12 @@ class TodoPartitionCapture:
     def enabled(self) -> bool:
         return self._enabled and self._directory is not None
 
+    def skip(self, reason: str) -> None:
+        """Record why this writer deliberately did not open a transaction."""
+
+        if self.enabled and self.outcome.entry_id is None:
+            self.outcome.skipped_reason = reason
+
     def _project(self, state_text: str) -> dict[str, Any]:
         if self._projector is None:
             raise OutboxError("outbox_prepare_failed", "a todo partition projector is required")

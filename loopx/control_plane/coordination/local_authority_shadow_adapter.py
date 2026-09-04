@@ -38,6 +38,7 @@ from .local_authority_shadow_projection import (
     text_digest,
     todo_partition_projection,
 )
+from .runtime_shadow import resolve_coordination_runtime_shadow_config
 
 
 LOCAL_AUTHORITY_SHADOW_CONFIG_SCHEMA = "loopx_local_authority_shadow_config_v0"
@@ -522,13 +523,13 @@ __all__ = [
 
 LOCAL_AUTHORITY_SHADOW_EVIDENCE_SCHEMA_V1 = "loopx_local_authority_shadow_evidence_v1"
 LOCAL_AUTHORITY_SHADOW_COMMIT_ENTRY_REQUEST_SCHEMA = (
-    "loopx_local_authority_shadow_commit_entry_request_v0"
+    "loopx_coordination_runtime_shadow_commit_entry_request_v0"
 )
 LOCAL_AUTHORITY_SHADOW_COMMIT_ENTRY_RESULT_SCHEMA = (
-    "loopx_local_authority_shadow_commit_entry_result_v0"
+    "loopx_coordination_runtime_shadow_commit_entry_result_v0"
 )
-LOCAL_AUTHORITY_SHADOW_READ_REQUEST_SCHEMA = "loopx_local_authority_shadow_read_request_v0"
-LOCAL_AUTHORITY_SHADOW_READ_RESULT_SCHEMA = "loopx_local_authority_shadow_read_result_v0"
+LOCAL_AUTHORITY_SHADOW_READ_REQUEST_SCHEMA = "loopx_coordination_runtime_shadow_outbox_read_v0"
+LOCAL_AUTHORITY_SHADOW_READ_RESULT_SCHEMA = "loopx_coordination_runtime_shadow_outbox_read_result_v0"
 INLINE_DRAIN_MAX_ENTRIES = 16
 INLINE_DRAIN_BUDGET_SECONDS = 2.0
 INLINE_DRAIN_LOCK_TIMEOUT_SECONDS = 0.25
@@ -846,17 +847,19 @@ def read_local_authority_shadow(
     *,
     runtime_root: Path,
     goal_id: str,
+    store_kind: str = "runtime_shadow",
     scan_after_cursor: str | None = None,
     scan_limit: int = 0,
 ) -> dict[str, Any]:
     """Read-only candidate view through the TypeScript store boundary."""
 
     result = effect_runtime_result(
-        "coordination.local_authority_shadow.read",
+        "coordination.runtime_shadow.outbox_read",
         {
             "schema_version": LOCAL_AUTHORITY_SHADOW_READ_REQUEST_SCHEMA,
             "runtime_root": str(runtime_root),
             "goal_id": goal_id,
+            "store_kind": store_kind,
             "scan_after_cursor": scan_after_cursor,
             "scan_limit": scan_limit,
         },
@@ -1007,7 +1010,7 @@ class _PartitionDrainer:
             digest=digest,
         )
         raw = effect_runtime_result(
-            "coordination.local_authority_shadow.commit_entry",
+            "coordination.runtime_shadow.commit_entry",
             request,
             timeout=15.0,
         )
@@ -1079,7 +1082,8 @@ class _PartitionDrainer:
 def _candidate_cursor(runtime_root: Path, goal_id: str) -> str | None:
     """Current candidate cursor, or None when the store has no document yet."""
 
-    if not (runtime_root / "authority-shadow" / "file" / goal_id).is_dir():
+    directory = runtime_root / "authority-shadow" / "file-v0"
+    if not directory.is_dir() or not any(directory.glob("authority-store-*.json")):
         return None
     try:
         view = read_local_authority_shadow(runtime_root=runtime_root, goal_id=goal_id)
@@ -1131,7 +1135,12 @@ def _drain_prelude(
         return None
     try:
         registry = load_registry(registry_path)
-        result.config_enabled = _shadow_config(registry, goal_id) is not None
+        result.config_enabled = (
+            resolve_coordination_runtime_shadow_config(
+                find_registry_goal(registry, goal_id)
+            ).enabled
+            or _shadow_config(registry, goal_id) is not None
+        )
         resolved = (
             runtime_root
             if runtime_root is not None
@@ -1267,8 +1276,12 @@ class _CandidateMissing(Exception):
     """The candidate store directory does not exist yet."""
 
 
-def _store_bytes(runtime_root: Path, goal_id: str) -> int:
-    directory = runtime_root / "authority-shadow" / "file" / goal_id
+def _store_bytes(runtime_root: Path, goal_id: str, *, legacy_observation: bool) -> int:
+    directory = (
+        runtime_root / "authority-shadow" / "file" / goal_id
+        if legacy_observation
+        else runtime_root / "authority-shadow" / "file-v0"
+    )
     if not directory.is_dir():
         return 0
     return sum(path.stat().st_size for path in directory.iterdir() if path.is_file())
@@ -1289,14 +1302,24 @@ def local_authority_shadow_status(
     if runtime_root is None:
         runtime_root = resolve_runtime_root(registry, None, registry_path=registry_path)
     config = local_authority_shadow_summary(goal)
+    legacy_observation = config["enabled"] is True
     backlog = outbox.outbox_summary(runtime_root, goal_id)
     candidate: dict[str, Any]
     try:
-        if not (runtime_root / "authority-shadow" / "file" / goal_id).is_dir():
+        directory = (
+            runtime_root / "authority-shadow" / "file" / goal_id
+            if legacy_observation
+            else runtime_root / "authority-shadow" / "file-v0"
+        )
+        if not directory.is_dir() or not any(directory.glob("authority-store-*.json")):
             # Reading through the store boundary would mint a store identity;
             # a status probe must not create candidate lineage.
             raise _CandidateMissing
-        view = read_local_authority_shadow(runtime_root=runtime_root, goal_id=goal_id)
+        view = read_local_authority_shadow(
+            runtime_root=runtime_root,
+            goal_id=goal_id,
+            store_kind=("legacy_observation" if legacy_observation else "runtime_shadow"),
+        )
         head = view.get("head") if isinstance(view.get("head"), dict) else None
         candidate = {
             "status": view.get("status"),
@@ -1333,7 +1356,11 @@ def local_authority_shadow_status(
             "partitions": None,
             "codec_agreement": None,
         }
-    store_bytes = _store_bytes(runtime_root, goal_id)
+    store_bytes = _store_bytes(
+        runtime_root,
+        goal_id,
+        legacy_observation=legacy_observation,
+    )
     return {
         "ok": all(item["invalid"] is None for item in backlog.values()),
         "action": "status",

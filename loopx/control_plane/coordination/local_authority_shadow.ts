@@ -17,6 +17,9 @@ import type {
   AuthorityStoreReceiptResult,
 } from "./authority_store.ts";
 import { authorityUnicodeCompare, canonicalAuthorityBytes } from "./authority_store_codec.ts";
+import {
+  TODO_CANONICAL_READ_RECORD_FIELDS,
+} from "./coordination_projection.ts";
 import { FileAuthorityStore } from "./file_authority_store.ts";
 
 export const LOCAL_AUTHORITY_SHADOW_REQUEST_SCHEMA =
@@ -343,18 +346,19 @@ export async function recordLocalAuthorityShadow(
 // ---------------------------------------------------------------------------
 
 export const LOCAL_AUTHORITY_SHADOW_PROJECTION_SCHEMA_V1 =
-  "loopx_local_authority_shadow_projection_v1";
+  "loopx_coordination_runtime_shadow_projection_v0";
 export const LOCAL_AUTHORITY_SHADOW_COMMIT_ENTRY_REQUEST_SCHEMA =
-  "loopx_local_authority_shadow_commit_entry_request_v0";
+  "loopx_coordination_runtime_shadow_commit_entry_request_v0";
 export const LOCAL_AUTHORITY_SHADOW_COMMIT_ENTRY_RESULT_SCHEMA =
-  "loopx_local_authority_shadow_commit_entry_result_v0";
+  "loopx_coordination_runtime_shadow_commit_entry_result_v0";
 export const LOCAL_AUTHORITY_SHADOW_READ_REQUEST_SCHEMA =
-  "loopx_local_authority_shadow_read_request_v0";
+  "loopx_coordination_runtime_shadow_outbox_read_v0";
 export const LOCAL_AUTHORITY_SHADOW_READ_RESULT_SCHEMA =
-  "loopx_local_authority_shadow_read_result_v0";
-export const LOCAL_AUTHORITY_SHADOW_EVENT_SCHEMA_V1 = "loopx_local_authority_shadow_event_v1";
+  "loopx_coordination_runtime_shadow_outbox_read_result_v0";
+export const LOCAL_AUTHORITY_SHADOW_EVENT_SCHEMA_V1 =
+  "loopx_coordination_runtime_shadow_outbox_event_v0";
 export const LOCAL_AUTHORITY_SHADOW_TRANSACTION_RECEIPT_SCHEMA =
-  "loopx_local_authority_shadow_transaction_receipt_v0";
+  "loopx_coordination_runtime_shadow_outbox_receipt_v0";
 
 const SHADOW_PARTITIONS = ["todos", "leases"] as const;
 const ENTRY_RESOLUTIONS = [
@@ -390,6 +394,7 @@ const READ_REQUEST_FIELDS = new Set([
   "schema_version",
   "runtime_root",
   "goal_id",
+  "store_kind",
   "scan_after_cursor",
   "scan_limit",
 ]);
@@ -462,6 +467,7 @@ export interface LocalAuthorityShadowCommitEntryResult extends JsonObject {
 interface ReadRequest {
   runtime_root: string;
   goal_id: string;
+  store_kind: "runtime_shadow" | "legacy_observation";
   scan_after_cursor: string | null;
   scan_limit: number;
 }
@@ -615,6 +621,15 @@ function decodeReadRequest(value: unknown): ReadRequest {
   return {
     runtime_root: requireNonEmptyString(request.runtime_root, "runtime_root"),
     goal_id: requireGoalId(request.goal_id),
+    store_kind: request.store_kind === undefined || request.store_kind === "runtime_shadow"
+      ? "runtime_shadow"
+      : request.store_kind === "legacy_observation"
+        ? "legacy_observation"
+        : (() => {
+            throw new EffectRuntimeRequestError(
+              "Local authority shadow read store_kind must be runtime_shadow or legacy_observation",
+            );
+          })(),
     scan_after_cursor: optionalString(request.scan_after_cursor, "scan_after_cursor"),
     scan_limit: limit,
   };
@@ -644,6 +659,15 @@ function partitionsOf(head: JsonObject | null): JsonObject {
   return partitions;
 }
 
+function todoReadModel(todos: readonly JsonObject[]): JsonObject {
+  return {
+    schema_version: "loopx_todo_canonical_read_record_v0",
+    todo_count: todos.length,
+    records_sha256: createHash("sha256").update(canonicalAuthorityBytes(todos)).digest("hex"),
+    contract_fields: [...TODO_CANONICAL_READ_RECORD_FIELDS],
+  };
+}
+
 /**
  * Fold one partition into the candidate head. A v0 head (whole-snapshot
  * observation) is accepted as the starting point with no partition markers.
@@ -669,14 +693,17 @@ export function composeLocalAuthorityShadowHead(
     }
     partitions[entry.partition] = { seq: entry.seq, partition_digest: digest };
   }
-  return {
+  const next = {
     schema_version: LOCAL_AUTHORITY_SHADOW_PROJECTION_SCHEMA_V1,
     goal_id: goalId,
+    source_authority: "legacy_markdown_and_task_lease",
     handoff_mode: handoffMode,
     todos,
     leases,
+    todo_read_model: todoReadModel(todos),
     partitions,
   };
+  return next;
 }
 
 function transactionReceipt(request: CommitEntryRequest, noOp: boolean): JsonObject {
@@ -806,9 +833,12 @@ async function reconcileTransactionReceipt(
 function openShadowStore(
   runtimeRoot: string,
   goalId: string,
+  storeKind: ReadRequest["store_kind"],
   dependencies: LocalAuthorityShadowDependencies,
 ): AuthorityStore {
-  const providerDirectory = join(runtimeRoot, "authority-shadow", "file", goalId);
+  const providerDirectory = storeKind === "legacy_observation"
+    ? join(runtimeRoot, "authority-shadow", "file", goalId)
+    : join(runtimeRoot, "authority-shadow", "file-v0");
   return (dependencies.openStore ?? ((directory, id) => new FileAuthorityStore(directory, id)))(
     providerDirectory,
     goalId,
@@ -925,7 +955,12 @@ export async function commitLocalAuthorityShadowEntry(
   const noOp = NO_OP_RESOLUTIONS.has(request.entry.resolution);
   let store: AuthorityStore;
   try {
-    store = openShadowStore(request.runtime_root, request.goal_id, dependencies);
+    store = openShadowStore(
+      request.runtime_root,
+      request.goal_id,
+      "runtime_shadow",
+      dependencies,
+    );
   } catch {
     return commitEntryResult(request, "unavailable", {
       reasonCode: "provider_construction_failed",
@@ -1024,7 +1059,12 @@ export async function readLocalAuthorityShadow(
   const base = readResultBase(request.goal_id);
   let store: AuthorityStore;
   try {
-    store = openShadowStore(request.runtime_root, request.goal_id, dependencies);
+    store = openShadowStore(
+      request.runtime_root,
+      request.goal_id,
+      request.store_kind,
+      dependencies,
+    );
   } catch {
     return { ...base, reason_code: "provider_construction_failed" };
   }

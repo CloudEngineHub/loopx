@@ -128,9 +128,10 @@ from .control_plane.todos.handoff_mode import (
     enter_todo_ownership_handoff_gate,
     resolve_todo_completion_handoff,
 )
-from .control_plane.coordination.local_authority_shadow_adapter import (
-    effective_runtime_root,
-    observe_todo_local_authority_commit as _shadow_todo,
+from .control_plane.coordination.local_authority_shadow_adapter import effective_runtime_root
+from .control_plane.coordination.runtime_shadow_writer_adapter import (
+    begin_todo_runtime_shadow_capture,
+    settle_todo_runtime_shadow_capture,
 )
 from .control_plane.work_items.task_lease import (
     enter_terminal_todo_lease_fence,
@@ -765,6 +766,11 @@ def add_goal_todo(
         runtime_root=shadow_runtime_root,
     ), ExitStack() as handoff_gate_stack:
         original = resolved_state_file.read_text(encoding="utf-8")
+        shadow_capture = begin_todo_runtime_shadow_capture(
+            registry_path=registry_path, runtime_root=shadow_runtime_root,
+            goal_id=goal_id, state_path=resolved_state_file,
+            write_class="todo_add", original_text=original,
+        )
         lines = original.splitlines()
         updated_at = now_local()
         effective_claimed_by = (
@@ -921,7 +927,9 @@ def add_goal_todo(
         if changed:
             new_text = replace_updated_at(new_text, updated_at)
         if changed and not dry_run:
+            shadow_capture.prepare(new_text)
             resolved_state_file.write_text(new_text, encoding="utf-8")
+            shadow_capture.committed()
 
     payload = {
         "ok": True,
@@ -974,7 +982,10 @@ def add_goal_todo(
         write_class="todo_add",
         state_text=original,
     )
-    return _shadow_todo(payload, registry_path, goal_id, "todo_add", runtime_root=shadow_runtime_root)
+    return settle_todo_runtime_shadow_capture(
+        payload, registry_path=registry_path, runtime_root=shadow_runtime_root,
+        goal_id=goal_id, write_class="todo_add", capture=shadow_capture,
+    )
 
 
 def resolve_todo_state(
@@ -1085,6 +1096,11 @@ def update_goal_todo(
         runtime_root=shadow_runtime_root,
     ), ExitStack() as handoff_gate_stack:
         original = resolved_state_file.read_text(encoding="utf-8")
+        shadow_capture = begin_todo_runtime_shadow_capture(
+            registry_path=registry_path, runtime_root=shadow_runtime_root,
+            goal_id=goal_id, state_path=resolved_state_file,
+            write_class="todo_update", original_text=original,
+        )
         lines = original.splitlines()
         updated_at = now_local()
         effective_claimed_by = (
@@ -1402,7 +1418,9 @@ def update_goal_todo(
         if changed:
             new_text = replace_updated_at(new_text, updated_at)
         if changed and not dry_run:
+            shadow_capture.prepare(new_text)
             resolved_state_file.write_text(new_text, encoding="utf-8")
+            shadow_capture.committed()
     write_class = "todo_claim" if claim_only else "todo_update"
     payload = {
         "ok": True,
@@ -1435,7 +1453,10 @@ def update_goal_todo(
         write_class=write_class,
         state_text=original,
     )
-    return _shadow_todo(payload, registry_path, goal_id, write_class, runtime_root=shadow_runtime_root)
+    return settle_todo_runtime_shadow_capture(
+        payload, registry_path=registry_path, runtime_root=shadow_runtime_root,
+        goal_id=goal_id, write_class=write_class, capture=shadow_capture,
+    )
 
 
 def complete_goal_todo(
@@ -1514,6 +1535,11 @@ def complete_goal_todo(
         runtime_root=shadow_runtime_root,
     ), ExitStack() as lease_fence_stack:
         original = resolved_state_file.read_text(encoding="utf-8")
+        shadow_capture = begin_todo_runtime_shadow_capture(
+            registry_path=registry_path, runtime_root=shadow_runtime_root,
+            goal_id=goal_id, state_path=resolved_state_file,
+            write_class="todo_complete", original_text=original,
+        )
         lines = original.splitlines()
         updated_at = now_local()
         completion_match, completion_todo, event_context = (
@@ -1668,9 +1694,15 @@ def complete_goal_todo(
                     task_lease_fence,
                     committed=bool(event_result.get("changed")) and not dry_run,
                 )
-                write_class = "todo_complete_event_projection"
-                return _shadow_todo(
-                    event_result, registry_path, goal_id, write_class, runtime_root=shadow_runtime_root
+                # This branch can append multiple state-log events inside the
+                # event writer. Capturing after that call would be observation,
+                # not a transaction-bound prepare/commit pair. Keep the gap
+                # explicit until the event writer owns the outbox boundary.
+                shadow_capture.skip("event_log_writer_not_bound")
+                return settle_todo_runtime_shadow_capture(
+                    event_result, registry_path=registry_path,
+                    runtime_root=shadow_runtime_root, goal_id=goal_id,
+                    write_class="todo_complete_event_projection", capture=shadow_capture,
                 )
         if not isinstance(completion_state, dict):
             raise RuntimeError(
@@ -1801,7 +1833,9 @@ def complete_goal_todo(
         if changed:
             new_text = replace_updated_at(new_text, updated_at)
         if changed and not dry_run:
+            shadow_capture.prepare(new_text)
             resolved_state_file.write_text(new_text, encoding="utf-8")
+            shadow_capture.committed()
         release_verified_task_lease_fence(
             task_lease_fence,
             committed=changed and not dry_run,
@@ -1829,7 +1863,10 @@ def complete_goal_todo(
     if effective_decision_outcome:
         result["decision_outcome"] = effective_decision_outcome
     result["self_merged"] = effective_self_merged
-    return _shadow_todo(result, registry_path, goal_id, "todo_complete", runtime_root=shadow_runtime_root)
+    return settle_todo_runtime_shadow_capture(
+        result, registry_path=registry_path, runtime_root=shadow_runtime_root,
+        goal_id=goal_id, write_class="todo_complete", capture=shadow_capture,
+    )
 
 def supersede_goal_todo(
     *,
@@ -1875,6 +1912,11 @@ def supersede_goal_todo(
         runtime_root=shadow_runtime_root,
     ), ExitStack() as lease_fence_stack:
         original = resolved_state_file.read_text(encoding="utf-8")
+        shadow_capture = begin_todo_runtime_shadow_capture(
+            registry_path=registry_path, runtime_root=shadow_runtime_root,
+            goal_id=goal_id, state_path=resolved_state_file,
+            write_class="todo_supersede", original_text=original,
+        )
         lines = original.splitlines()
         updated_at = now_local()
         current_match = find_todo_block(lines, todo_id=todo_id, role=role)
@@ -2026,7 +2068,9 @@ def supersede_goal_todo(
         if changed:
             new_text = replace_updated_at(new_text, updated_at)
         if changed and not dry_run:
+            shadow_capture.prepare(new_text)
             resolved_state_file.write_text(new_text, encoding="utf-8")
+            shadow_capture.committed()
         release_verified_task_lease_fence(task_lease_fence, committed=changed and not dry_run)
     result = {
         "ok": True,
@@ -2042,7 +2086,10 @@ def supersede_goal_todo(
         "project": str(resolved_project) if resolved_project else None,
         "updated_at": updated_at if changed else None,
     }
-    return _shadow_todo(result, registry_path, goal_id, "todo_supersede", runtime_root=shadow_runtime_root)
+    return settle_todo_runtime_shadow_capture(
+        result, registry_path=registry_path, runtime_root=shadow_runtime_root,
+        goal_id=goal_id, write_class="todo_supersede", capture=shadow_capture,
+    )
 
 
 def archive_completed_todos(
@@ -2073,6 +2120,11 @@ def archive_completed_todos(
         runtime_root=shadow_runtime_root,
     ):
         original = resolved_state_file.read_text(encoding="utf-8")
+        shadow_capture = begin_todo_runtime_shadow_capture(
+            registry_path=registry_path, runtime_root=shadow_runtime_root,
+            goal_id=goal_id, state_path=resolved_state_file,
+            write_class="todo_archive_completed", original_text=original,
+        )
         lines = original.splitlines()
         archive_result = archive_completed_todo_lines(
             lines,
@@ -2087,7 +2139,9 @@ def archive_completed_todos(
         if changed:
             new_text = replace_updated_at(new_text, updated_at)
         if changed and not dry_run:
+            shadow_capture.prepare(new_text)
             resolved_state_file.write_text(new_text, encoding="utf-8")
+            shadow_capture.committed()
 
     result = {
         "ok": True,
@@ -2098,6 +2152,7 @@ def archive_completed_todos(
         "project": str(resolved_project) if resolved_project else None,
         "updated_at": updated_at if changed else None,
     }
-    return _shadow_todo(
-        result, registry_path, goal_id, "todo_archive_completed", runtime_root=shadow_runtime_root
+    return settle_todo_runtime_shadow_capture(
+        result, registry_path=registry_path, runtime_root=shadow_runtime_root,
+        goal_id=goal_id, write_class="todo_archive_completed", capture=shadow_capture,
     )

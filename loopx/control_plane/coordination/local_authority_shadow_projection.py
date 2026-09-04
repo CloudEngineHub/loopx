@@ -1,7 +1,7 @@
 """Pure projection rules shared by the local authority shadow capture and parity.
 
 Everything here is a deterministic function of its inputs: no file, lock,
-registry, or effect-runtime access. The same compact field sets and canonical
+registry, or effect-runtime access. The same complete record contracts and canonical
 bytes define the source digest, the outbox partition digest, and the candidate
 readback comparison, so no two code paths can disagree about what "the same
 coordination state" means.
@@ -14,45 +14,15 @@ import json
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from ..todos.todo_summary import TODO_CANONICAL_READ_RECORD_FIELDS, canonical_todo_read_record
+
 
 LOCAL_AUTHORITY_SHADOW_PROJECTION_SCHEMA_V0 = "loopx_local_authority_shadow_projection_v0"
-LOCAL_AUTHORITY_SHADOW_PROJECTION_SCHEMA_V1 = "loopx_local_authority_shadow_projection_v1"
 TODO_PARTITION = "todos"
 LEASE_PARTITION = "leases"
 PARTITIONS: tuple[str, ...] = (TODO_PARTITION, LEASE_PARTITION)
 
-TODO_FIELDS: tuple[str, ...] = (
-    "todo_id",
-    "role",
-    "status",
-    "claimed_by",
-    "bound_agent",
-    "goal_bound",
-    "blocks_agent",
-    "excluded_agents",
-    "global_gate",
-    "task_class",
-    "action_kind",
-    "required_write_scopes",
-    "required_capabilities",
-    "continuation_policy",
-    "successor_todo_ids",
-    "no_followup",
-    "completion_continuation",
-)
-LEASE_FIELDS: tuple[str, ...] = (
-    "todo_id",
-    "owner",
-    "idempotency_key",
-    "write_scopes",
-    "version",
-    "lease_epoch",
-    "acquired_at",
-    "updated_at",
-    "expires_at",
-    "released_at",
-    "status",
-)
+TODO_FIELDS: tuple[str, ...] = TODO_CANONICAL_READ_RECORD_FIELDS
 
 
 class ProjectionValueError(ValueError):
@@ -110,28 +80,27 @@ def text_digest(text: str) -> str:
 
 
 def compact_todo(raw: object) -> dict[str, Any] | None:
-    """Keep only the coordination facts of one todo item; drop prose."""
+    """Retain the complete versioned Todo consumer record."""
 
     if not isinstance(raw, Mapping):
         return None
     todo_id = str(raw.get("todo_id") or "").strip()
     if not todo_id:
         return None
-    compact = {field: raw[field] for field in TODO_FIELDS if field in raw}
-    compact["todo_id"] = todo_id
-    if "status" not in compact and isinstance(raw.get("done"), bool):
-        compact["status"] = "done" if raw["done"] else "open"
-    return dict(canonical_value(compact))
+    try:
+        return dict(canonical_value(canonical_todo_read_record(dict(raw))))
+    except ValueError as error:
+        raise ProjectionValueError(str(error)) from error
 
 
 def compact_lease(raw: object, *, goal_id: str, file_stem: str) -> dict[str, Any]:
-    """Keep only the lease fence facts of one on-disk lease record."""
+    """Retain the complete versioned lease record after binding its identity."""
 
     if not isinstance(raw, Mapping):
         raise ProjectionValueError("task lease must contain an object")
     if raw.get("goal_id") != goal_id or raw.get("todo_id") != file_stem:
         raise ProjectionValueError("task lease identity does not match its shadow source")
-    return dict(canonical_value({field: raw[field] for field in LEASE_FIELDS if field in raw}))
+    return dict(canonical_value(dict(raw)))
 
 
 def todo_partition_projection(
@@ -182,10 +151,8 @@ def head_digest(head: Mapping[str, Any]) -> str:
 
 
 __all__ = [
-    "LEASE_FIELDS",
     "LEASE_PARTITION",
     "LOCAL_AUTHORITY_SHADOW_PROJECTION_SCHEMA_V0",
-    "LOCAL_AUTHORITY_SHADOW_PROJECTION_SCHEMA_V1",
     "PARTITIONS",
     "TODO_FIELDS",
     "TODO_PARTITION",

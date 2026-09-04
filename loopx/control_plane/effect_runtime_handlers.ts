@@ -403,8 +403,8 @@ export function createEffectRuntimeHandlers(
     ["task_lease.write_scopes.overlap", evaluateTaskLeaseWriteScopesOverlap],
     ["quota.monitor_poll.commit", evaluateQuotaMonitorPollCommit],
     ["coordination.local_authority_shadow.record", recordLocalAuthorityShadow],
-    ["coordination.local_authority_shadow.commit_entry", commitLocalAuthorityShadowEntry],
-    ["coordination.local_authority_shadow.read", readLocalAuthorityShadow],
+    ["coordination.runtime_shadow.commit_entry", commitLocalAuthorityShadowEntry],
+    ["coordination.runtime_shadow.outbox_read", readLocalAuthorityShadow],
     [
       "effect.program_from_ordered_steps",
       (params) => effectProgramFromOrderedSteps(

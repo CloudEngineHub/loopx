@@ -16,7 +16,8 @@ import { authorityUnicodeCompare, canonicalAuthorityBytes } from "./authority_st
  * returned on the capture object so the writer can attach typed evidence.
  */
 
-export const LOCAL_AUTHORITY_SHADOW_BINDING_SCHEMA = "loopx_local_authority_shadow_binding_v0";
+export const LOCAL_AUTHORITY_SHADOW_BINDING_SCHEMA =
+  "loopx_coordination_runtime_shadow_binding_v0";
 export const LOCAL_AUTHORITY_SHADOW_OUTBOX_ENTRY_SCHEMA =
   "loopx_local_authority_shadow_outbox_entry_v0";
 export const LOCAL_AUTHORITY_SHADOW_OUTBOX_COMMIT_SCHEMA =
@@ -30,7 +31,7 @@ const LEASE_SOURCE_FIELDS = ["todo_id", "version", "lease_epoch", "status", "upd
 
 export interface LocalAuthorityShadowBinding {
   schema_version: typeof LOCAL_AUTHORITY_SHADOW_BINDING_SCHEMA;
-  mode: "file_one_way";
+  provider: "file_v0";
 }
 
 /** Decode the optional per-request binding; anything but the exact contract is "absent". */
@@ -45,11 +46,11 @@ export function decodeLocalAuthorityShadowBinding(
   if (
     keys.length !== 2 ||
     record.schema_version !== LOCAL_AUTHORITY_SHADOW_BINDING_SCHEMA ||
-    record.mode !== "file_one_way"
+    record.provider !== "file_v0"
   ) {
     return null;
   }
-  return { schema_version: LOCAL_AUTHORITY_SHADOW_BINDING_SCHEMA, mode: "file_one_way" };
+  return { schema_version: LOCAL_AUTHORITY_SHADOW_BINDING_SCHEMA, provider: "file_v0" };
 }
 
 export function sha256Digest(input: Uint8Array | string): string {
