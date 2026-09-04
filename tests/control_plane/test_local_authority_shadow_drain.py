@@ -627,3 +627,72 @@ def test_drain_fails_closed_on_an_entry_recorded_for_another_runtime_root(tmp_pa
     assert result.delivered == 0
     assert result.pending_after == 1
     assert [entry.seq for entry in outbox.list_entries(_todo_dir(runtime_root))] == [1]
+
+
+def test_a_malformed_cursor_stops_drain_and_status_typed_and_touches_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry, state, runtime_root = _fixture(tmp_path)
+    _record_todo_write(registry, state, runtime_root, "Before the cursor broke")
+    directory = _todo_dir(runtime_root)
+    files_before = sorted(path.name for path in directory.iterdir())
+    broken_cursor = {"schema_version": "bad", "last_seq": 1}
+    outbox.cursor_path(directory).write_text(json.dumps(broken_cursor), encoding="utf-8")
+    calls = _commit_entry_calls(monkeypatch)
+
+    status = adapter.local_authority_shadow_status(
+        registry_path=registry, runtime_root=runtime_root, goal_id=GOAL_ID
+    )
+    # ``ok`` is "every partition readable": a typed invalid is reported, not
+    # hidden behind a green flag, so the CLI exits 1 with the reason in place.
+    assert status["ok"] is False
+    assert status["outbox"]["todos"]["invalid"] == "outbox_file_invalid"
+    assert status["outbox"]["todos"]["retired_residue"] == 0
+    assert status["outbox"]["todos"]["committed_pending"] == 0
+    assert status["outbox"]["leases"]["invalid"] is None
+
+    result = _drain(registry, runtime_root)
+    assert (result.outcome, result.reason_code) == ("stopped", "outbox_file_invalid")
+    assert (result.delivered, result.reclaimed_residue, result.reseeded) == (0, 0, 0)
+    assert calls == []
+    # Nothing is delivered, deleted, or healed: the entry and the broken
+    # cursor are exactly as the operator left them.
+    assert sorted(path.name for path in directory.iterdir()) == sorted([*files_before, "drain-cursor.json"])
+    assert json.loads(outbox.cursor_path(directory).read_text(encoding="utf-8")) == broken_cursor
+    assert not (runtime_root / "authority-shadow" / "file" / GOAL_ID).exists()
+
+
+def test_capture_against_a_malformed_cursor_records_a_typed_failure_instead_of_raising(
+    tmp_path: Path,
+) -> None:
+    registry, state, runtime_root = _fixture(tmp_path)
+    directory = _todo_dir(runtime_root)
+    directory.mkdir(parents=True)
+    outbox.cursor_path(directory).write_text("garbage", encoding="utf-8")
+    original = state.read_text(encoding="utf-8")
+    goal = find_registry_goal(load_registry(registry), GOAL_ID)
+    capture = outbox.TodoPartitionCapture.begin(
+        enabled=True,
+        runtime_root=runtime_root,
+        goal_id=GOAL_ID,
+        state_path=state,
+        write_class="todo_add",
+        original_text=original,
+        projector=adapter.todo_partition_projector(goal, state_path=state),
+    )
+    result = add_goal_todo(
+        registry_path=registry,
+        goal_id=GOAL_ID,
+        role="agent",
+        text="Written while the cursor is unreadable",
+        task_class="advancement_task",
+    )
+    assert result["ok"] is True
+
+    capture.prepare(state.read_text(encoding="utf-8"))
+    capture.committed()
+
+    assert capture.outcome.entry_id is None
+    assert capture.outcome.failure == {"reason_code": "outbox_prepare_failed", "error_class": "OutboxError"}
+    assert [path.name for path in directory.iterdir()] == ["drain-cursor.json"]
+    assert "Written while the cursor is unreadable" in state.read_text(encoding="utf-8")
