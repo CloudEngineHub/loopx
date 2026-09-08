@@ -15,6 +15,7 @@ from .rules import (
     HOST_LOOP_SAFETY_RULE,
     HOST_LOOP_TODO_CLOSEOUT_COMPACT_RULE,
     HOST_LOOP_TODO_CLOSEOUT_RULE,
+    OPERATOR_LANGUAGE_RULE,
     RUNTIME_CAPABILITY_PROJECTION_THIN_RULE,
     RUNTIME_EXECUTION_ROUTING_RULE,
     RUNTIME_REPAIR_ROUTING_RULE,
@@ -114,7 +115,7 @@ If the result says `should_run=false`:
 - Only if `user_channel.notify=NOTIFY`, interpret `state=operator_gate` or
   `notify_user_on_open_todo=true` as a user prompt. Read `gate_prompt`,
   `operator_question`, `user_todo_summary`, and `open_todo_notify_reason`;
-  ask one concise Chinese action/question with reply format. If
+  ask one concise action/question with reply format. If
   `user_todo_summary.open_count > 0`, include up to three `first_open_items`;
   never say "no new user action". Honor
   `open_todo_notification_policy=repeat_until_resolved`; when

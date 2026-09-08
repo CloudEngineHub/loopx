@@ -8,10 +8,11 @@ SCOPE_BOUNDED_WORK_RULE = (
     "操作/写回不自动结束；遵守停止/重规划。"
 )
 USER_TODO_FINAL_MESSAGE_RULE = (
-    "`interaction_contract.user_channel.notify` controls output: `NOTIFY` -> concrete "
-    "action; otherwise quiet. `should_run`/due monitor and other-agent scoped todos "
-    "are not user prompts. Only inside `NOTIFY`, `action_required` without an action -> "
-    '"具体 user todo 未投影，需修复 LoopX 状态投影"; with `DONT_NOTIFY`, repair '
+    f"{OPERATOR_LANGUAGE_RULE} "
+    "`interaction_contract.user_channel.notify` controls output: "
+    "NOTIFY=action; DONT_NOTIFY=quiet. "
+    "Due/peer work is not a prompt. Missing action: specific user Todo "
+    "is not projected; repair LoopX state projection. With `DONT_NOTIFY`, repair "
     "the projection internally and stay quiet."
 )
 HEARTBEAT_NOTIFICATION_RULE_SHORT = (

@@ -116,7 +116,9 @@ def assert_sole_notification_authority(task_body: str, *, mode: str) -> None:
         return
 
     assert mode == "thin", mode
-    assert "`user_channel.notify` controls OUTPUT only: NOTIFY=向用户输出动作; DONT_NOTIFY=安静输出。" in body
+    assert (
+        "`user_channel.notify` OUTPUT only: NOTIFY=show; DONT_NOTIFY=no output."
+    ) in body
 
 
 def assert_peer_scope_notification_authority(task_body: str) -> None:
@@ -737,6 +739,10 @@ def main() -> int:
         'loopx --format json --registry "$HOME/.codex/loopx/registry.global.json" quota should-run --goal-id <GOAL_ID>',
         "project non-basic capabilities that are actually present",
         "without guessing capabilities the host does not have",
+        "All generic heartbeat and native Goal bodies match the user's current language",
+        "fall back to English when no user language is available",
+        "do not mix languages unless the user asks or a scoped capability requires bilingual",
+        "Capability-specific bilingual contracts remain authoritative",
         "If that preflight still fails",
         "should_run=false",
         "state=operator_gate",
@@ -753,8 +759,8 @@ def main() -> int:
         "non-blocking means the agent may continue independent work",
         'Never say only "owner gate"',
         "Only when `notify=DONT_NOTIFY`",
-        '"无用户待办/无需通知"',
-        "具体 user todo 未投影，需修复 LoopX 状态投影",
+        '"no user action required" in the user\'s language',
+        "specific user Todo is not projected; repair LoopX state projection",
         "NOTIFY",
         "notify_user_on_open_todo=true",
         "blocker-push opportunity",
@@ -868,11 +874,12 @@ def main() -> int:
         "user_todo_summary",
         "user_todo_summary.open_count > 0",
         "never say \"no new user action\"",
+        "Language=user; fallback=English; mix only if asked/scoped-bilingual",
         "`interaction_contract.user_channel.notify` controls output",
-        "`should_run`/due monitor and other-agent scoped todos",
-        "are not user prompts",
-        "`action_required` without an action",
-        "具体 user todo 未投影，需修复 LoopX 状态投影",
+        "Due/peer work is not a prompt",
+        "Missing action: specific user Todo is not projected",
+        "repair LoopX state projection",
+        "repair the projection internally and stay quiet",
         "NOTIFY",
         "notify_user_on_open_todo=true",
         "blocker-push",
