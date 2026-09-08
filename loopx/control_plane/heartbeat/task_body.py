@@ -479,8 +479,8 @@ def render_visible_goal_task_body(
         goal_id=goal_id,
         active_state=active_state,
         host_preamble=(
-            "in this visible Codex `/goal`. It is interactive, not a heartbeat "
-            "automation: no automation/RRULE/`LOOPX_TURN`."
+            "in visible Codex `/goal`; interactive, no heartbeat/RRULE/"
+            "`LOOPX_TURN`."
         ),
         completion_subject="visible Goal",
         pr_review_pre_quota_command=pr_review_pre_quota_command,
