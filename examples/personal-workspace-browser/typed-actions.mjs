@@ -1127,8 +1127,8 @@ export const typedActionsScenario = {
       if (providerOverlap) throw new Error(`Model provider category ${providerOverlap}`);
       await page.screenshot({ path: resolve(outputDir, "model-provider-settings-zh-cn.png"), fullPage: false, animations: "disabled" });
 
-      await page.getByRole("button", { name: /全局能力配置/ }).click();
-      await page.getByRole("heading", { level: 1, name: "全局能力配置", exact: true }).waitFor({ state: "visible" });
+      await page.getByRole("button", { name: "其他能力", exact: true }).click();
+      await page.getByRole("heading", { level: 1, name: "其他能力", exact: true }).waitFor({ state: "visible" });
       // The catalog workbench mounts after its inspection resolves, so the
       // category's contents are asserted only once the workbench itself exists.
       await page.locator(".personal-capability-layout").waitFor({ state: "visible" });
@@ -1146,24 +1146,17 @@ export const typedActionsScenario = {
         throw new Error("Initial machine selection must follow the visible catalog order, not the API source order");
       }
       if (await page.locator(".personal-capability-editor-status").count()) throw new Error("Editable machine settings must not show internal editor-contract notices");
-      // Two capabilities are machine-only: the manager runtime profile and the
-      // steward channel's executor. Every other catalog entry is Goal-scoped.
-      if (await machineCatalog.getByRole("button").count() !== goalCapabilityCatalog().length + 2) {
-        throw new Error("Machine settings did not combine machine-only and Goal capabilities in the shared catalog");
+      // This catalog contains only machine-scoped capabilities outside the
+      // steward section. Goal-only entries belong in Goal settings.
+      if (await machineCatalog.getByRole("button").count() !== 3) {
+        throw new Error("Other machine settings must exclude steward and Goal-only capabilities");
       }
-      await machineCatalog.getByRole("button", { name: /^管家 Runtime/ }).click();
-      await page.getByLabel(/^运行模式/u).waitFor({ state: "visible" });
-      await page.locator(".personal-capability-help > summary").click();
-      await page.getByText(/受保护操作仍单独校验/u).waitFor({ state: "visible" });
-      await page.screenshot({ path: resolve(outputDir, "manager-runtime-machine-profile.png"), fullPage: false, animations: "disabled" });
       const requestsBeforeReadOnly = api.machineConfigurationRequests.length;
-      await machineCatalog.getByRole("button", { name: /^自适应子 Agent 容量/ }).click();
-      await page.getByText(/此能力目前仅支持 Goal 级配置/u).waitFor({ state: "visible" });
-      if (await page.getByRole("button", { name: "预览变更", exact: true }).count()
-          || await page.locator("#machine-configuration-json").count()
-          || await page.getByLabel(/^启用$/u).count()
+      if (await machineCatalog.getByRole("button", { name: /^自适应子 Agent 容量/ }).count()
+          || await machineCatalog.getByRole("button", { name: /^运行环境/ }).count()
+          || await machineCatalog.getByRole("button", { name: /^模型与执行器/ }).count()
           || api.machineConfigurationRequests.length !== requestsBeforeReadOnly) {
-        throw new Error("Goal-only capability exposed a machine mutation path");
+        throw new Error("Other machine settings mixed Goal-only or steward controls into the catalog");
       }
       await machineCatalog.getByRole("button", { name: /^Goal 复核周期/ }).click();
       await page.getByLabel(/^两次 Goal 复核间的已完成 Todo 数/u).waitFor({ state: "visible" });
@@ -1215,7 +1208,7 @@ export const typedActionsScenario = {
 
       await page.getByRole("button", { name: /语言/ }).click();
       await page.getByRole("radio", { name: /English/ }).click();
-      await page.getByRole("button", { name: /Global capabilities/ }).click();
+      await page.getByRole("button", { name: /Other capabilities/ }).click();
       await page.getByRole("heading", { level: 2, name: "Periodic reports", exact: true }).waitFor({ state: "visible" });
       const rawValues = page.locator(".personal-capability-raw-values");
       if (await rawValues.getAttribute("open") !== null) throw new Error("Raw JSON must be collapsed by default");
@@ -1241,14 +1234,13 @@ export const typedActionsScenario = {
       await page.screenshot({ path: resolve(outputDir, "goal-subagent-capability-en.png"), fullPage: false, animations: "disabled" });
       await page.getByRole("button", { name: /Language/ }).click();
       await page.getByRole("radio", { name: /Simplified Chinese/ }).click();
-      await page.getByRole("button", { name: /全局能力配置/ }).click();
+      await page.getByRole("button", { name: "其他能力", exact: true }).click();
       await page.locator(".personal-settings-body").evaluate((element) => element.scrollTo({ top: 0 }));
       await page.screenshot({ path: resolve(outputDir, "machine-capability-zh-cn.png"), fullPage: false, animations: "disabled" });
-      // The steward's own executor is a machine setting like any other: the
-      // operator picks it in the form, and the exact reviewed revision carries
-      // the choice into the same namespaced store.
-      await page.getByRole("button", { name: /管家执行器/ }).click();
-      await page.getByRole("heading", { level: 2, name: "管家执行器", exact: true }).waitFor({ state: "visible" });
+      // Steward owns a first-level destination with just model/executor and
+      // runtime. The exact reviewed revision still uses the machine store.
+      await page.locator(".personal-settings-tabs").getByRole("button", { name: "管家", exact: true }).click();
+      await page.getByRole("heading", { level: 2, name: "模型与执行器", exact: true }).waitFor({ state: "visible" });
       const stewardFields = page.locator(".personal-capability-fields");
       // The selects carry their option text inside the same label, so they are
       // matched by prefix rather than by an exact label string.
@@ -1256,7 +1248,9 @@ export const typedActionsScenario = {
       await stewardFields.getByLabel(/^模型/u).waitFor({ state: "visible" });
       await stewardFields.getByLabel(/^推理档位/u).waitFor({ state: "visible" });
       await stewardFields.getByLabel(/^首选管家执行器/u).selectOption("dsh");
-      await stewardFields.getByLabel(/^灵活池可用执行器/u).waitFor({ state: "visible" });
+      if (await stewardFields.getByLabel(/^灵活池可用执行器/u).count()) {
+        throw new Error("Preferred steward routing must not show the flexible fallback pool");
+      }
       await stewardFields.getByLabel(/^模型/u).fill("deepseek-v4-flash");
       await stewardFields.getByLabel(/^推理档位/u).selectOption("high");
       await page.screenshot({ path: resolve(outputDir, "machine-steward-executor-zh-cn.png"), fullPage: false, animations: "disabled" });
@@ -1279,6 +1273,11 @@ export const typedActionsScenario = {
       if (stewardApply?.expected_plan_revision !== "sha256:machine-plan") {
         throw new Error("The steward executor apply lost its reviewed plan revision");
       }
+      await page.locator(".personal-capability-list").getByRole("button", { name: "运行环境", exact: true }).click();
+      await page.getByLabel(/^运行模式/u).waitFor({ state: "visible" });
+      await page.locator(".personal-capability-help > summary").click();
+      await page.getByText(/受保护操作仍单独校验/u).waitFor({ state: "visible" });
+      await page.screenshot({ path: resolve(outputDir, "manager-runtime-machine-profile.png"), fullPage: false, animations: "disabled" });
       const settingsViewport = page.viewportSize();
       await page.setViewportSize({ width: 390, height: 844 });
       await page.waitForTimeout(200);
@@ -1291,10 +1290,10 @@ export const typedActionsScenario = {
 
       api.machineInspectionStatus = "invalid";
       api.invalidMachineNamespaces = ["manager_runtime"];
-      await page.getByRole("button", { name: /全局能力配置/ }).click();
+      await page.locator(".personal-settings-tabs").getByRole("button", { name: "管家", exact: true }).click();
       const invalidRepair = page.getByTestId("machine-invalid-repair");
       await invalidRepair.waitFor({ state: "visible" });
-      await page.getByRole("heading", { level: 2, name: "管家 Runtime", exact: true }).waitFor({ state: "visible" });
+      await page.getByRole("heading", { level: 2, name: "运行环境", exact: true }).waitFor({ state: "visible" });
       await page.getByRole("button", { name: "预览变更", exact: true }).click();
       const managerRepairPreview = api.machineConfigurationRequests.findLast(
         (item) => item.phase === "preview" && item.namespace === "manager_runtime",
@@ -1314,7 +1313,7 @@ export const typedActionsScenario = {
       await page.getByRole("button", { name: /Lark/ }).click();
       api.machineInspectionStatus = "invalid";
       api.invalidMachineNamespaces = ["periodic_report"];
-      await page.getByRole("button", { name: /全局能力配置/ }).click();
+      await page.getByRole("button", { name: "其他能力", exact: true }).click();
       await invalidRepair.waitFor({ state: "visible" });
       await page.getByRole("heading", { level: 2, name: "周期报告", exact: true }).waitFor({ state: "visible" });
       await page.getByRole("button", { name: "预览变更", exact: true }).click();

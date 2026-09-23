@@ -101,10 +101,10 @@ function shortRevision(value: string | undefined) {
   return value.replace(/^sha256:/, "").slice(0, 12);
 }
 
-export function MachineConfigurationSettings({ initialCapabilityId = "" }: { initialCapabilityId?: string }) {
+export function MachineConfigurationSettings({ section }: { section: "steward" | "other" }) {
   const { locale, t } = useWorkspaceI18n();
   const [inspection, setInspection] = useState<MachineConfigurationInspection | null>(null);
-  const [selectedCapabilityId, setSelectedCapabilityId] = useState(initialCapabilityId);
+  const [selectedCapabilityId, setSelectedCapabilityId] = useState("");
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [jsonDraft, setJsonDraft] = useState("{}");
   const [editorMode, setEditorMode] = useState<EditorMode>("guided");
@@ -117,14 +117,21 @@ export function MachineConfigurationSettings({ initialCapabilityId = "" }: { ini
   const [notice, setNotice] = useState<string | null>(null);
 
   const capabilities = useMemo(() => orderCapabilitiesForPresentation(
-    inspection?.capability_catalog.capabilities ?? [], locale,
-  ), [inspection, locale]);
+    (inspection?.capability_catalog.capabilities ?? []).filter((capability) =>
+      capability.available_scopes.includes("machine")
+      && (section === "steward"
+        ? capability.capability_id === "steward_executor" || capability.capability_id === "manager_runtime"
+        : capability.capability_id !== "steward_executor" && capability.capability_id !== "manager_runtime")),
+    locale,
+  ), [inspection, locale, section]);
   const invalidNamespace = inspection?.invalid_namespaces[0];
   const selectedRaw = capabilities.find(
     (capability) => capability.capability_id === selectedCapabilityId,
   ) ?? (invalidNamespace ? capabilities.find(
     (capability) => capability.machine_namespace === invalidNamespace,
-  ) : undefined) ?? capabilities.find((capability) => canEditCapability(capability, "machine")) ?? capabilities[0];
+  ) : undefined) ?? (section === "steward"
+    ? capabilities.find((capability) => capability.capability_id === "steward_executor")
+    : undefined) ?? capabilities.find((capability) => canEditCapability(capability, "machine")) ?? capabilities[0];
   const selected = selectedRaw ? localizeCapability(selectedRaw, locale) : undefined;
   const selectedCurrent = currentConfiguration(inspection, selected);
   const configured = Boolean(selected?.machine_namespace && selectedCurrent);
@@ -325,7 +332,7 @@ export function MachineConfigurationSettings({ initialCapabilityId = "" }: { ini
         ) : null}
 
         <div className="personal-capability-layout">
-        <CapabilityCatalogNavigation capabilities={capabilities} locale={locale} onSelect={setSelectedCapabilityId} scope="machine" selectedCapabilityId={selected.capability_id} t={t} />
+        <CapabilityCatalogNavigation capabilities={capabilities} locale={locale} onSelect={setSelectedCapabilityId} scope="machine" selectedCapabilityId={selected.capability_id} showScope={section !== "steward"} t={t} />
 
         <article aria-label={selected.display_name} className="personal-capability-detail" tabIndex={0}>
           <CapabilityDetailHeader capability={selectedRaw} locale={locale}
