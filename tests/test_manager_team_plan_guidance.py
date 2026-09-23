@@ -59,6 +59,11 @@ def test_the_owner_visible_failure_does_not_guess_why_the_host_failed() -> None:
 
     assert "服务在处理过程中重启" in manager_failure_reply(_Restarted())[1]
 
+    class _InvalidRequest(Exception):
+        error_code = "upstream_invalid_request"
+
+    assert "模型与 Codex CLI" in manager_failure_reply(_InvalidRequest())[1]
+
     # An unmapped code still falls back to the bounded generic label.
     class _Unknown(RuntimeError):
         error_code = "some_future_code"
