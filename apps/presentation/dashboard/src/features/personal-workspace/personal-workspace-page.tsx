@@ -16,6 +16,7 @@ import {
   fetchGoalContexts,
   fetchGoalChannelTargets,
   fetchLarkConnections,
+  fetchLoopXMode,
   listTypedActions,
   previewTypedAction,
   setupGoalChannel,
@@ -181,40 +182,71 @@ function ManagerHomeBoard({
 }
 
 function GoalOutputsView({
+  active,
   items,
   onSelect,
   reportState,
+  teamSessionId,
 }: {
+  active: boolean;
   items: Array<Extract<WorkspaceTimelineItem, { kind: "output" }>>;
   onSelect: (selection: WorkspaceDrawerSelection) => void;
   reportState?: WorkspaceModel["periodicReports"];
+  teamSessionId?: string;
 }) {
   const { locale, t } = useWorkspaceI18n();
+  const [teamSnapshot, setTeamSnapshot] = useState<LoopXModeSnapshot | null>(null);
+  const [teamError, setTeamError] = useState(false);
+  const [teamRefresh, setTeamRefresh] = useState(0);
+  useEffect(() => {
+    if (!active || !teamSessionId) {
+      setTeamSnapshot(null);
+      setTeamError(false);
+      return;
+    }
+    let current = true;
+    setTeamSnapshot(null);
+    setTeamError(false);
+    void fetchLoopXMode(teamSessionId).then((snapshot) => {
+      if (current) setTeamSnapshot(snapshot);
+    }).catch(() => {
+      if (current) setTeamError(true);
+    });
+    return () => { current = false; };
+  }, [active, teamSessionId, teamRefresh]);
+  const teamConfigured = Boolean(teamSnapshot?.session_id === teamSessionId
+    && teamSnapshot?.settings.agent_id && teamSnapshot?.settings.execution_config);
   return (
-    <section className="personal-object-list personal-files-list" data-testid="personal-goal-outputs">
-      <header><strong>{t("files.title")}</strong><span>{items.length}</span></header>
-      {reportState?.loading ? (
-        <p className="personal-object-list-state" role="status"><RefreshCw className="is-spinning" size={14} />{t("files.loadingReports")}</p>
-      ) : null}
-      {reportState?.error ? (
-        <p className="personal-object-list-state is-error" role="alert"><AlertCircle size={14} />{t("files.reportLoadFailed")}: {reportState.error}</p>
-      ) : null}
-      {!reportState?.loading && !reportState?.error && items.length === 0 ? (
-        <p className="personal-object-list-state"><FileText size={14} />{t("files.empty")}</p>
-      ) : null}
-      {items.map((item) => (
-        <button data-output-kind={item.output.kind} key={item.id} onClick={() => onSelect({ item: item.output, kind: "output" })} type="button">
-          <span className="personal-file-icon"><FileText size={16} /></span>
-          <strong>{item.output.title}</strong>
-          {item.output.report ? <em>{t("files.reportDelta", { added: item.output.report.addedCount, changed: item.output.report.changedCount })}</em> : null}
-          <p>{item.output.summary ?? item.output.safePreview ?? item.output.kind ?? t("files.emptySummary")}</p>
-          <small title={item.output.createdAt}>{[
-            item.output.kind === "report" ? t("files.verifiedReport") : null,
-            activityTimeLabel(item.output.createdAt, locale, t),
-          ].filter(Boolean).join(" · ")}</small>
-        </button>
-      ))}
-    </section>
+    <>
+      <section className="personal-object-list personal-files-list" data-testid="personal-goal-outputs">
+        <header><strong>{t("files.title")}</strong>{!teamConfigured ? <span>{items.length}</span> : null}</header>
+        {reportState?.loading ? (
+          <p className="personal-object-list-state" role="status"><RefreshCw className="is-spinning" size={14} />{t("files.loadingReports")}</p>
+        ) : null}
+        {reportState?.error ? (
+          <p className="personal-object-list-state is-error" role="alert"><AlertCircle size={14} />{t("files.reportLoadFailed")}: {reportState.error}</p>
+        ) : null}
+        {!reportState?.loading && !reportState?.error && items.length === 0 && !teamConfigured
+          && (!teamSessionId || Boolean(teamSnapshot)) ? (
+          <p className="personal-object-list-state"><FileText size={14} />{t("files.empty")}</p>
+        ) : null}
+        {items.map((item) => (
+          <button data-output-kind={item.output.kind} key={item.id} onClick={() => onSelect({ item: item.output, kind: "output" })} type="button">
+            <span className="personal-file-icon"><FileText size={16} /></span>
+            <strong>{item.output.title}</strong>
+            {item.output.report ? <em>{t("files.reportDelta", { added: item.output.report.addedCount, changed: item.output.report.changedCount })}</em> : null}
+            <p>{item.output.summary ?? item.output.safePreview ?? item.output.kind ?? t("files.emptySummary")}</p>
+            <small title={item.output.createdAt}>{[
+              item.output.kind === "report" ? t("files.verifiedReport") : null,
+              activityTimeLabel(item.output.createdAt, locale, t),
+            ].filter(Boolean).join(" · ")}</small>
+          </button>
+        ))}
+      </section>
+      {active && teamSessionId && !teamSnapshot && !teamError ? <p className="personal-object-list-state" role="status">{t("files.checkingTeam")}</p> : null}
+      {active && teamSessionId && teamError ? <p className="personal-object-list-state is-error" role="alert">{t("files.teamLoadFailed")} <button type="button" onClick={() => setTeamRefresh(value => value + 1)}>{t("startup.retry")}</button></p> : null}
+      {active && teamConfigured && teamSessionId ? <GoalTeamResults sessionId={teamSessionId} zh={locale === "zh-CN"} refreshKey={JSON.stringify(teamSnapshot?.deliveries ?? [])} /> : null}
+    </>
   );
 }
 
@@ -1991,9 +2023,11 @@ export function PersonalWorkspacePage({
                     userTodos={model.userTodos}
                   />),
                   files: (<GoalOutputsView
+                    active={selectedGoalTab === "files"}
                     items={items.filter((item): item is Extract<WorkspaceTimelineItem, { kind: "output" }> => item.kind === "output")}
                     onSelect={setSelection}
                     reportState={model.periodicReports}
+                    teamSessionId={!readOnly && selectedAgentId === "codex" ? conversationSessionId : undefined}
                   />),
                   chat: (<>
                     {selectedGoal && activeSessionRun?.goalId === selectedGoal.goalId ? (
