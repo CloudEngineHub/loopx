@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react";
-import {fetchChatSessions, fetchLoopXTeamWork, readLoopXTeamWork} from "../../data/chat";
+import {fetchChatSessions, fetchLoopXMode, fetchLoopXTeamWork, readLoopXTeamWork} from "../../data/chat";
 import {TeamArtifactReport, isMarkdownArtifact, type TeamArtifact} from "./team-artifact-content";
 
 type Readback = {kind: "waiting" | "unavailable" | "multiple"} | {
@@ -9,17 +9,31 @@ type Readback = {kind: "waiting" | "unavailable" | "multiple"} | {
 /** A plan links to work through the Todo identities written by its apply receipt. */
 async function readAdoptedResult(goalId: string, todoIds: Set<string>): Promise<Readback> {
   const listed = await fetchChatSessions({goalId, channelId: `goal.${goalId}`});
-  let incomplete = listed.sessions.length > 8;
+  // A Goal channel also contains ordinary conversations. Only a session with
+  // a pinned coordinator identity can own delegation operations. Inspect every
+  // session before applying the bounded work-read budget; an unreadable mode
+  // still makes discovery incomplete rather than silently hiding work.
+  const teamSessions: typeof listed.sessions = [];
+  let incomplete = false;
+  for (let offset = 0; offset < listed.sessions.length; offset += 8) {
+    const batch = listed.sessions.slice(offset, offset + 8);
+    const modes = await Promise.allSettled(batch.map(session => fetchLoopXMode(session.session_id)));
+    modes.forEach((mode, index) => {
+      if (mode.status === "rejected") incomplete = true;
+      else if (mode.value.settings.agent_id) teamSessions.push(batch[index]);
+    });
+  }
+  incomplete ||= teamSessions.length > 8;
   let unavailableAdoption = false;
   let remainingPages = 8;
   const adopted = new Map<string, Extract<Readback, {kind: "adopted"}>>();
-  for (const session of listed.sessions.slice(0, 8)) {
+  for (const session of teamSessions.slice(0, 8)) {
     let cursor: string | undefined;
     do {
       if (!remainingPages--) return {kind: "unavailable"};
       try {
         const page = await fetchLoopXTeamWork(session.session_id, cursor);
-        incomplete ||= !page.has_more && !page.page_readback_complete;
+        incomplete ||= !page.page_readback_complete;
         for (const row of page.items) {
           if (!row.operation_id || !row.todo_id || !todoIds.has(row.todo_id) || row.status !== "accepted") continue;
           const source = await readLoopXTeamWork(session.session_id, row.operation_id);

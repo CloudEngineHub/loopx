@@ -288,17 +288,34 @@ export const teamPlanScenario = {
       if (goalSession) {
         const mode = page.__loopxRuntime.loopxModes.get(goalSession.session_id);
         check(Boolean(mode), "the Goal session exposes a complete LoopX mode readback");
+        mode.settings.agent_id = "lead";
         mode.fixturePlanTodoId = "todo_a1a1a1a1a1a1";
         mode.fixtureAdoptionState = "current";
+        // Unrelated ordinary sessions are common in a long-lived Goal. Their
+        // team API rejects operations, and even nine such sessions must not
+        // hide this coordinator's accepted, currently adopted result.
+        for (let index = 0; index < 9; index += 1) {
+          const sessionId = `session-ordinary-${index}`;
+          page.__loopxRuntime.sessions.set(sessionId, {
+            ...goalSession, session_id: sessionId, agent_id: `ordinary-${index}`,
+          });
+        }
         await managerResult.getByRole("button", {name: "刷新结果"}).click();
         await managerResult.getByRole("table").waitFor();
         check((await managerResult.innerText()).includes("Reviewed cash allocation"), "the accepted adopted report returns inside the original manager conversation");
+        check(!api.loopxModeRequests.some(request => request.operation === "operations"
+          && request.sessionId.startsWith("session-ordinary-")), "ordinary Goal sessions are not queried for delegation operations");
         check(await managerResult.getByLabel("证据内容: report.md").count() === 1, "the adopted Markdown report is preferred over machine JSON");
         await page.screenshot({path: resolve(outputDir, "team-plan-manager-adopted-result.png"), fullPage: false, animations: "disabled"});
         await page.setViewportSize({width: 390, height: 844});
         check(await managerResult.evaluate(element => element.scrollWidth <= element.clientWidth), "the returned report remains readable on mobile");
         await page.screenshot({path: resolve(outputDir, "team-plan-manager-adopted-result-mobile.png"), fullPage: false, animations: "disabled"});
         await page.setViewportSize({width: 1512, height: 982});
+        mode.fixtureInventoryGap = true;
+        await managerResult.getByRole("button", {name: "刷新结果"}).click();
+        await managerResult.getByText("团队结果或采用证据无法核验，请到 Goal 查看版本关系。").waitFor();
+        check(await managerResult.getByRole("table").count() === 0, "an unreadable earlier inventory page withholds the adopted report");
+        mode.fixtureInventoryGap = false;
         mode.fixtureAdoptionState = "unavailable";
         mode.fixtureTeamReadDelayMs = 1000;
         await managerResult.getByRole("button", {name: "刷新结果"}).click();

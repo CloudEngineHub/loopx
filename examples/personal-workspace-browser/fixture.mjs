@@ -1523,13 +1523,20 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
         return;
       }
       if (body.operation === "operations") {
+        if (!current.settings.agent_id) {
+          await route.fulfill({status: 400, json: {ok: false, error: "configure a coordinator identity first"}});
+          return;
+        }
         const items = body.cursor ? [{record_id: "c".repeat(64), operation_id: "needs-recovery",
           agent_id: "cloud-reviewer", todo_id: "todo_review", status: "running", worker_active: false, recovery_required: true}]
           : [{record_id: "a".repeat(64), operation_id: "accepted-analysis", agent_id: "local-analyst",
             todo_id: current.fixturePlanTodoId ?? "todo_analysis", status: "accepted", worker_active: false, recovery_required: false,
             artifacts: [{ref: "report.json", sha256: "d".repeat(64)}, {ref: "report.md", sha256: "9".repeat(64)}]},
-          {record_id: "b".repeat(64), operation_id: "stale-output", status: "unavailable", recovery_required: null}];
-        await route.fulfill({json: {items, has_more: !body.cursor, next_cursor: body.cursor ? null : "b".repeat(64), page_readback_complete: Boolean(body.cursor)}});
+          ...(!current.fixturePlanTodoId || current.fixtureInventoryGap
+            ? [{record_id: "b".repeat(64), operation_id: "stale-output", status: "unavailable", recovery_required: null}]
+            : [])];
+        await route.fulfill({json: {items, has_more: !body.cursor, next_cursor: body.cursor ? null : "b".repeat(64),
+          page_readback_complete: Boolean(body.cursor || (current.fixturePlanTodoId && !current.fixtureInventoryGap))}});
         return;
       }
       if (body.operation === "inspect") {
