@@ -7,11 +7,13 @@ import {EffectRuntimeRequestError} from "../effect_runtime_errors.ts";
 import {requireJsonObject, requireNonEmptyString, requireInteger, requireStringLiteral} from "../runtime_decode.ts";
 import {schedulerStatePath} from "../scheduler/state_store.ts";
 
-const SCHEMA = "automation_cadence_store_v1";
+const LEGACY_SCHEMA = "automation_cadence_store_v1";
+const SCHEMA = "automation_cadence_store_v2";
 const RESULT = "automation_cadence_result_v1";
 type Scope = {agent_id: string | null; automation_id: string | null};
 type Rule = Scope & {min_interval_minutes: number; revision: number; owner_reference: string};
-type Store = {schema_version: typeof SCHEMA; goal_id: string; revision: number; rules: Rule[]};
+type Start = Scope & {started_at_ms: number; trigger_at_ms: number; request_id: string; manual_reason: string | null};
+type Store = {schema_version: typeof SCHEMA; goal_id: string; revision: number; rules: Rule[]; starts: Start[]};
 const fail = (message: string): never => {throw new EffectRuntimeRequestError(message, "automation_cadence_invalid");};
 function text(value: unknown, name: string): string {
   const s = requireNonEmptyString(value, name).trim();
@@ -37,7 +39,8 @@ function scope(p: JsonObject): Scope {
 const key = (s: Scope): string => createHash("sha256").update(JSON.stringify([s.agent_id, s.automation_id])).digest("hex");
 function decode(value: unknown, goal: string): Store {
   const p = requireJsonObject(value, "cadence store");
-  if (p.schema_version !== SCHEMA || p.goal_id !== goal) fail("cadence store identity/schema mismatch");
+  if ((p.schema_version !== SCHEMA && p.schema_version !== LEGACY_SCHEMA) || p.goal_id !== goal)
+    fail("cadence store identity/schema mismatch");
   const revision = integer(p.revision, "revision");
   if (!Array.isArray(p.rules)) fail("cadence rules must be an array");
   const seen = new Set<string>();
@@ -49,7 +52,19 @@ function decode(value: unknown, goal: string): Store {
     if (v > revision) fail("rule revision exceeds configuration revision");
     return {...s, min_interval_minutes: minutes(r.min_interval_minutes), revision: v, owner_reference: text(r.owner_reference, "owner_reference")};
   });
-  return {schema_version: SCHEMA, goal_id: goal, revision, rules};
+  if (p.starts !== undefined && !Array.isArray(p.starts)) fail("cadence starts must be an array");
+  const startKeys = new Set<string>();
+  const starts = ((p.starts ?? []) as unknown[]).map(raw => {
+    const r = requireJsonObject(raw, "start"), s = scope(r), k = key(s);
+    if (!s.agent_id || startKeys.has(k)) fail("cadence start identity is invalid or duplicated");
+    startKeys.add(k);
+    const started_at_ms = integer(r.started_at_ms, "started_at_ms");
+    const trigger_at_ms = integer(r.trigger_at_ms, "trigger_at_ms");
+    if (trigger_at_ms > started_at_ms) fail("cadence start trigger follows its start");
+    return {...s, started_at_ms, trigger_at_ms, request_id: text(r.request_id, "request_id"),
+      manual_reason: r.manual_reason == null ? null : text(r.manual_reason, "manual_reason")};
+  });
+  return {schema_version: SCHEMA, goal_id: goal, revision, rules, starts};
 }
 export function cadenceStorePath(runtimeRoot: string, goalId: string): string {
   return schedulerStatePath(runtimeRoot, {goalId, agentId: "owner-policy", surface: "quota", stateKey: "automation-cadence-v1"});
@@ -58,22 +73,69 @@ async function load(path: string, goal: string): Promise<Store> {
   try {return decode(JSON.parse(await readFile(path, "utf8")), goal);}
   catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-    return {schema_version: SCHEMA, goal_id: goal, revision: 0, rules: []};
+    return {schema_version: SCHEMA, goal_id: goal, revision: 0, rules: [], starts: []};
   }
 }
 function applicable(r: Rule, s: Scope): boolean {
   return r.agent_id === null || (r.agent_id === s.agent_id && (r.automation_id === null || r.automation_id === s.automation_id));
 }
-function projection(store: Store, s: Scope): JsonObject {
+function projection(store: Store, s: Scope, nowMs = Date.now()): JsonObject {
   const rules = store.rules.filter(r => applicable(r, s));
   const floor = Math.max(0, ...rules.map(r => r.min_interval_minutes));
+  const due = s.agent_id ? rules.filter(rule => rule.min_interval_minutes > 0).flatMap(rule => {
+    const start = store.starts.find(item => item.agent_id === s.agent_id &&
+      item.automation_id === rule.automation_id);
+    return start ? [start.started_at_ms + rule.min_interval_minutes * 60_000] : [];
+  }) : [];
+  const next = due.length ? Math.max(...due) : null;
   return {
     schema_version: RESULT, ok: true, enabled: floor > 0, goal_id: store.goal_id, ...s,
     configuration_revision: store.revision, min_interval_minutes: floor,
     sources: rules,
     reason: floor === 0 ? "unconfigured" : "owner_minimum_interval",
-    enforcement: "scheduler_recommendation", pre_model_admission: "not_qualified",
+    next_eligible_at_ms: next, eligible_now: next === null || nowMs >= next,
+    enforcement: floor === 0 ? "scheduler_recommendation" : "managed_turn_atomic_admission_and_schedule_recommendation",
+    pre_model_admission: floor === 0 ? "not_qualified" : "managed_turn_only",
   };
+}
+
+/** Reserve a new managed-host start under the same lock as policy changes. */
+export async function admitAutomationStart(p: JsonObject): Promise<JsonObject> {
+  const goal = text(p.goal_id, "goal_id"), s = scope(p);
+  if (!s.agent_id) fail("admission requires agent_id");
+  const path = cadenceStorePath(requireNonEmptyString(p.runtime_root, "runtime_root"), goal);
+  const now = integer(p.now_ms, "now_ms"), trigger = integer(p.trigger_at_ms, "trigger_at_ms");
+  if (trigger > now) fail("trigger_at_ms cannot be in the future");
+  const request = text(p.request_id, "request_id");
+  const manual = p.manual_reason == null ? null : text(p.manual_reason, "manual_reason");
+  // An absent policy does not create a store or lock file on the default-off path.
+  const snapshot = await load(path, goal);
+  const initial = projection(snapshot, s, now);
+  if (initial.enabled !== true) return {...initial, admitted: true, reserved: false};
+  return withFileMutationLock(path, async () => {
+    const store = await load(path, goal), current = projection(store, s, now);
+    if (current.enabled !== true) return {...current, admitted: true, reserved: false};
+    const activeScopes = new Set(store.rules.filter(rule => rule.min_interval_minutes > 0 && applicable(rule, s))
+      .map(rule => rule.automation_id));
+    const prior = store.starts.filter(start => start.agent_id === s.agent_id &&
+      activeScopes.has(start.automation_id));
+    if (prior.some(start => start.request_id === request || trigger < start.trigger_at_ms)) {
+      return {...current, admitted: false, reserved: false, reason: "duplicate_or_stale_trigger"};
+    }
+    if (manual === null && current.eligible_now !== true) {
+      return {...current, admitted: false, reserved: false, reason: "minimum_interval_wait"};
+    }
+    const scopes: Scope[] = [{agent_id: s.agent_id, automation_id: null}];
+    if (s.automation_id && activeScopes.has(s.automation_id)) scopes.push(s);
+    for (const item of scopes) {
+      store.starts = store.starts.filter(start => key(start) !== key(item));
+      store.starts.push({...item, started_at_ms: now, trigger_at_ms: trigger, request_id: request,
+        manual_reason: manual});
+    }
+    await atomicWriteJson(path, store);
+    return {...projection(store, s, now), admitted: true, reserved: true,
+      reason: manual === null ? "admitted" : "explicit_manual_interval_bypass"};
+  });
 }
 /** Pure typed calculation shared by scheduler adapters; no policy mutation. */
 export function projectCadenceProgression(p: JsonObject): JsonObject {

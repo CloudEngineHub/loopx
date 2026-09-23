@@ -1223,6 +1223,7 @@ def run_loopx_turn_once(
     terminal_closeout_resolver: TurnEffectResolver | None = None,
     scheduler: Scheduler | None = None,
     post_settlement: PostSettlement | None = None,
+    admit_start: Callable[[Mapping[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if host_runner is not None and host_argv is not None:
         raise ValueError("run-once accepts either host_argv or host_runner, not both")
@@ -1315,11 +1316,42 @@ def run_loopx_turn_once(
                 )
                 return payload
             request = require_turn_recovery_continuation(assessment)
+
+        # Settlement recovery uses its cached host result and must not reserve
+        # another interval. A new host attempt, including failed-result retry,
+        # goes through admission before any host or journal attempt mutation.
+        receipt = journal.get("receipt") if isinstance(journal, Mapping) else None
+        validation_reinvokes_host = (
+            isinstance(journal, Mapping)
+            and journal.get("status") == "failed"
+            and isinstance(receipt, Mapping)
+            and receipt.get("failed_phase") == "validation"
+            and journal.get("validation_stage") != "task_postcondition"
+        )
+        needs_host = validation_reinvokes_host or journal is None or "typed_result" not in list(
+            journal.get("completed_phases") or []
+        )
+        admission = None
+        if needs_host and admit_start is not None:
+            admission = admit_start({
+                "turn_key": turn_key,
+                "attempt": int(journal.get("host_attempt_count") or 0) + 1
+                if journal is not None else 1,
+            })
+            if admission.get("admitted") is not True:
+                waiting = {
+                    "status": "interval_wait",
+                    "host": host_projection,
+                    "completed_phases": [],
+                    "reason": str(admission.get("reason") or "automatic start not admitted"),
+                    "admission": admission,
+                }
+                return execution_payload(
+                    plan, waiting, execute=True, replayed=False, effects=empty_effects
+                )
+        if journal is not None and recovery_decision is not None:
             journal["recovery_audit"] = build_turn_recovery_audit(
-                recovery_decision,
-                journal,
-                status="started",
-                host_invoked=None,
+                recovery_decision, journal, status="started", host_invoked=None,
             )
             _write_journal(journal_path, journal)
 
@@ -1330,7 +1362,7 @@ def run_loopx_turn_once(
                 else {}
             )
             if receipt.get("failed_phase") == "validation":
-                if journal.get("validation_stage") != "task_postcondition":
+                if validation_reinvokes_host:
                     journal.pop("host_result", None)
                 journal.pop("result_kind", None)
                 journal["completed_phases"] = (
@@ -1356,6 +1388,9 @@ def run_loopx_turn_once(
                 "completed_phases": [],
                 "plan": dict(plan),
             }
+            _write_journal(journal_path, journal)
+        if admission is not None and admission.get("reserved") is True:
+            journal["admission"] = admission
             _write_journal(journal_path, journal)
 
         effects = dict(empty_effects)

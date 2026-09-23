@@ -1,4 +1,4 @@
-import {manageAutomationCadence, projectCadenceSchedule} from "./quota/automation_cadence.ts";
+import {admitAutomationStart, manageAutomationCadence, projectCadenceSchedule} from "./quota/automation_cadence.ts";
 import {manageLocalAuthorityArchive} from "./coordination/local_authority_archive.ts";
 import {selectPeriodicReportProgress, selectPeriodicReportApprovalRetry} from "./capabilities/periodic_report_progress.ts";
 import {planIssueFixMonitorReconciliation} from "./capabilities/issue_fix_monitor_reconciliation.ts";
@@ -479,6 +479,7 @@ export function createEffectRuntimeHandlers(
     ["todo.external_wait.plan", planTodoExternalWaitTransition],
     ["scheduler.state_transition.evaluate", evaluateSchedulerStateTransition],
     ["quota.automation_cadence.manage", manageAutomationCadence],
+    ["quota.automation_cadence.admit", admitAutomationStart],
     ["quota.automation_cadence.schedule", projectCadenceSchedule],
     ["scheduler.state.evaluate", evaluateSchedulerStateOperation],
     ["scheduler.state.load", loadSchedulerState],
