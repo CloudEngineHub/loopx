@@ -34,7 +34,11 @@ OLD_ADDRESS_RE = re.compile(
 # A surface is live by where it is, never by what else its text happens to
 # contain: it hands an address to a user, a host or another tool at run time,
 # or it is the command someone copies.
-LIVE_SURFACE_PREFIXES = ("loopx/", "scripts/", ".github/workflows/", "packages/")
+# `.github/` is whole, not just its workflows: GitHub renders
+# `ISSUE_TEMPLATE/config.yml` as the contact links on the new-issue page, and
+# `SECURITY.md`, `SUPPORT.md`, `GOVERNANCE.md` and `PULL_REQUEST_TEMPLATE.md`
+# each hand an address to the person reading them.
+LIVE_SURFACE_PREFIXES = ("loopx/", "scripts/", ".github/", "packages/")
 # A built bundle is regenerated, not edited, so its baked-in address is fixed by
 # the release that rebuilds it. This is the tracked-build-output cost #4677 names.
 GENERATED_ASSET_PREFIXES = ("loopx/web/chat/assets/",)
@@ -49,6 +53,10 @@ REVIEWED_ADDRESS_EXCEPTIONS: dict[str, frozenset[str]] = {
     "loopx/capabilities/issue_fix/README.md": frozenset({"pull"}),
     "loopx/capabilities/issue_fix/README.zh-CN.md": frozenset({"pull"}),
     "packages/loopx-codex-provider-routing/RUNBOOK.md": frozenset({"pull"}),
+    # Governance records where the project started and which issue settled a
+    # roster change: both name the address the event happened under, while the
+    # ruleset link in the same file is called live and stays under review.
+    ".github/GOVERNANCE.md": frozenset({"commit", "issue"}),
 }
 DISAMBIGUATION_TERMS_SOURCE = (
     "packages/loopx-community-discussion/src/loopx_community_discussion/normalize.py"
@@ -87,14 +95,13 @@ def _address_use(raw_path: str) -> str:
     )
 
 
-# A use is either a live pointer this project must own or a dated citation that
-# may keep the address the event happened under.
-LIVE_ADDRESS_USES = frozenset(
-    {"repository", "issue_form", "discussion", "release_asset", "main_pointer", "branch"})
-
-
 def stale_address_uses(name: str, text: str) -> list[str]:
-    """Return the old-address uses in a live surface that were never reviewed."""
+    """Return the old-address uses in ``name`` that were never reviewed per use.
+
+    Every classified use is an offender until a path-and-use exception reviews it,
+    so widening which files are live cannot quietly reclassify a dated citation as
+    safe: it has to be judged and named here.
+    """
 
     tolerated = REVIEWED_ADDRESS_EXCEPTIONS.get(name, frozenset())
     return [
@@ -248,6 +255,25 @@ def _validate_stale_address_classifier() -> None:
         "main_pointer"
     ]:
         raise AssertionError("a documentation pointer must be named as a live address")
+    advisory = "https://github.com/huangruiteng/loopx/security/advisories/new\n"
+    if stale_address_uses(".github/SECURITY.md", advisory) != ["security"]:
+        raise AssertionError(
+            "the private-vulnerability-reporting entry is how a reporter reaches this "
+            "project, so it must be named as a live address rather than a citation"
+        )
+    if not _is_live_surface(".github/ISSUE_TEMPLATE/config.yml"):
+        raise AssertionError(
+            "GitHub renders ISSUE_TEMPLATE/config.yml as the contact links on its own "
+            "new-issue page, so it is a live surface"
+        )
+    if stale_address_uses(
+        ".github/GOVERNANCE.md",
+        "https://github.com/huangruiteng/loopx/commit/7dcdc9dc79226d157ba57d3e8ff4bae664f020c1\n",
+    ):
+        raise AssertionError(
+            "widening .github/ must not turn a dated history citation into an "
+            "offender: the commit a project started under keeps that address"
+        )
     if _is_live_surface("loopx/web/chat/assets/index-abc123.js"):
         raise AssertionError(
             "a generated bundle is outside the guard: its address is fixed by the "
