@@ -20,7 +20,7 @@ export const stewardModelSettingsScenario = {
       if (await capabilityList.getByRole("button").count() !== 2) {
         throw new Error("Steward settings should only contain model/executor and runtime");
       }
-      await settingsTabs.getByRole("button", { name: "其他能力", exact: true }).click();
+      await settingsTabs.getByRole("button", { name: "能力中心", exact: true }).click();
       await page.locator(".personal-capability-detail").waitFor();
       if (await capabilityList.getByRole("button", { name: "模型与执行器" }).count()
           || await capabilityList.getByRole("button", { name: "运行环境" }).count()

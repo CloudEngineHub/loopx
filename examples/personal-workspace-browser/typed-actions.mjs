@@ -1127,8 +1127,8 @@ export const typedActionsScenario = {
       if (providerOverlap) throw new Error(`Model provider category ${providerOverlap}`);
       await page.screenshot({ path: resolve(outputDir, "model-provider-settings-zh-cn.png"), fullPage: false, animations: "disabled" });
 
-      await page.getByRole("button", { name: "其他能力", exact: true }).click();
-      await page.getByRole("heading", { level: 1, name: "其他能力", exact: true }).waitFor({ state: "visible" });
+      await page.getByRole("button", { name: "能力中心", exact: true }).click();
+      await page.getByRole("heading", { level: 1, name: "能力中心", exact: true }).waitFor({ state: "visible" });
       // The catalog workbench mounts after its inspection resolves, so the
       // category's contents are asserted only once the workbench itself exists.
       await page.locator(".personal-capability-layout").waitFor({ state: "visible" });
@@ -1208,7 +1208,7 @@ export const typedActionsScenario = {
 
       await page.getByRole("button", { name: /语言/ }).click();
       await page.getByRole("radio", { name: /English/ }).click();
-      await page.getByRole("button", { name: /Other capabilities/ }).click();
+      await page.getByRole("button", { name: /Capability Center/ }).click();
       await page.getByRole("heading", { level: 2, name: "Periodic reports", exact: true }).waitFor({ state: "visible" });
       const rawValues = page.locator(".personal-capability-raw-values");
       if (await rawValues.getAttribute("open") !== null) throw new Error("Raw JSON must be collapsed by default");
@@ -1234,7 +1234,7 @@ export const typedActionsScenario = {
       await page.screenshot({ path: resolve(outputDir, "goal-subagent-capability-en.png"), fullPage: false, animations: "disabled" });
       await page.getByRole("button", { name: /Language/ }).click();
       await page.getByRole("radio", { name: /Simplified Chinese/ }).click();
-      await page.getByRole("button", { name: "其他能力", exact: true }).click();
+      await page.getByRole("button", { name: "能力中心", exact: true }).click();
       await page.locator(".personal-settings-body").evaluate((element) => element.scrollTo({ top: 0 }));
       await page.screenshot({ path: resolve(outputDir, "machine-capability-zh-cn.png"), fullPage: false, animations: "disabled" });
       // Steward owns a first-level destination with just model/executor and
@@ -1313,7 +1313,7 @@ export const typedActionsScenario = {
       await page.getByRole("button", { name: /Lark/ }).click();
       api.machineInspectionStatus = "invalid";
       api.invalidMachineNamespaces = ["periodic_report"];
-      await page.getByRole("button", { name: "其他能力", exact: true }).click();
+      await page.getByRole("button", { name: "能力中心", exact: true }).click();
       await invalidRepair.waitFor({ state: "visible" });
       await page.getByRole("heading", { level: 2, name: "周期报告", exact: true }).waitFor({ state: "visible" });
       await page.getByRole("button", { name: "预览变更", exact: true }).click();
