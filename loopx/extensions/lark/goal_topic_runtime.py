@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ...chat_manager import MANAGER_AGENT_OBJECTIVE
+from ...file_lock import exclusive_file_lock
 from .manager_routing import (
     has_manager_binding,
     invalid_manager_authority_result,
@@ -829,7 +830,13 @@ def process_lark_goal_topic_event(
     provider_runner: Any | None = None,
     proposal_deliverer: ProposalDeliverer | None = None,
 ) -> dict[str, Any]:
-    """Route, persist, answer, reply, and ACK one bound Topic event."""
+    """Single-flight an addressed manager message through answer, reply and ACK.
+
+    The inbox and delivery receipt make sequential retries safe, but two
+    listeners can otherwise both observe an absent receipt and generate two
+    different answers before either writes it. The lock is per source message
+    and spans the entire effect, including provider readback and inbox ACK.
+    """
 
     decision = decide_lark_topic_event(
         target_payload=target_payload,
@@ -837,6 +844,61 @@ def process_lark_goal_topic_event(
         event=event,
         runtime_root=runtime_root,
     )
+    route = decision.get("route")
+    if (
+        isinstance(route, Mapping)
+        and route.get("conversation_kind") == "manager"
+        and route.get("authority_mode") == ManagerAuthorityMode.TURN_AUTHORIZED.value
+    ):
+        message_id = str(route.get("message_id") or "")
+        if not MESSAGE_ID_PATTERN.fullmatch(message_id):
+            raise ValueError("manager route has an invalid message id")
+        lock_dir = Path(runtime_root).expanduser().resolve() / ".loopx/locks/lark-manager"
+        lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(lock_dir, 0o700)
+        with exclusive_file_lock(
+            lock_dir / message_id,
+            timeout_seconds=960,
+            operation="lark_manager_message",
+        ):
+            return _process_lark_goal_topic_event(
+                target_payload=target_payload,
+                event=event,
+                runtime_root=runtime_root,
+                goal_contexts=goal_contexts,
+                answer=answer,
+                reply_runner=reply_runner,
+                provider_runner=provider_runner,
+                proposal_deliverer=proposal_deliverer,
+                decision=decision,
+            )
+    return _process_lark_goal_topic_event(
+        target_payload=target_payload,
+        event=event,
+        runtime_root=runtime_root,
+        goal_contexts=goal_contexts,
+        answer=answer,
+        reply_runner=reply_runner,
+        provider_runner=provider_runner,
+        proposal_deliverer=proposal_deliverer,
+        decision=decision,
+    )
+
+
+def _process_lark_goal_topic_event(
+    *,
+    target_payload: Mapping[str, Any],
+    event: Mapping[str, Any],
+    runtime_root: str | Path,
+    goal_contexts: Mapping[str, Mapping[str, Any]] | None,
+    answer: Answer,
+    reply_runner: CommandRunner,
+    provider_runner: object | None,
+    proposal_deliverer: ProposalDeliverer | None,
+    decision: Mapping[str, Any],
+) -> dict[str, object]:
+    """Persist, answer, reply, and ACK the already-routed Topic event."""
+
     route = decision.get("route")
     if route is None:
         return {
