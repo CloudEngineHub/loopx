@@ -56,7 +56,10 @@ The existing TS domain read-model and acceptance owners continue to validate
 semantics; Python does not acquire a second Todo rule engine.
 
 A missing local File provider is opened with `existingOnly`; attempting a read
-cannot initialize a replacement identity or directory. Selected SQLite and
+cannot initialize a replacement identity or directory. It still returns the
+existing `missing` result, so callers retain the canonical-authority recovery
+path instead of treating absence as a new identity error. An existing head with
+an unreadable identity remains an identity failure. Selected SQLite and
 PostgreSQL profiles retain their existing identity checks and provider failures.
 No failure path falls back to a display file.
 
