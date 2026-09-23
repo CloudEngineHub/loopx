@@ -17,12 +17,42 @@ export const teamEvidenceScenario = {
       await page.getByRole("button", {name: "保存设置", exact: true}).click();
       const configured = api.loopxModeRequests.findLast(row => row.operation === "configure");
       const mode = page.__loopxRuntime.loopxModes.get(configured.sessionId);
+      let inspectedRequests = 0;
+      const laterAcceptedPage = async route => {
+        const body = route.request().method() === "POST" ? route.request().postDataJSON() : {};
+        if (body.operation !== "operations") return route.fallback();
+        inspectedRequests++;
+        return route.fulfill({json: body.cursor
+          ? {items: [{record_id: "a".repeat(64), operation_id: "accepted-analysis", agent_id: "local-analyst",
+            status: "accepted", recovery_required: false, artifacts: [{ref: "report.md", sha256: "9".repeat(64)}]}],
+            has_more: false, next_cursor: null, page_readback_complete: true}
+          : {items: [{record_id: "0".repeat(64), operation_id: null, status: "unavailable", recovery_required: null}],
+            has_more: true, next_cursor: "0".repeat(64), page_readback_complete: false}});
+      };
+      await page.route("**/api/chat/sessions/*/loopx", laterAcceptedPage);
       Object.assign(mode, {enabled: true, paused: false, active_turn_id: "fixture-loopx-turn", native: {status: "active", tokenBudget: 100000}});
       await page.getByText("LoopX · 正在推进", {exact: true}).waitFor();
       const results = page.getByRole("region", {name: "团队成果", exact: true});
-      // Accepted report opens in the original conversation without an extra click.
+      // Accepted report on the second page opens without another click.
       await results.getByRole("table").waitFor();
       assert.equal(await results.getByLabel("当前报告").evaluate(el => el === document.activeElement), false, "Automatic readback must not steal focus");
+      assert.equal(inspectedRequests, 2,
+        "Accepted work after an unreadable first page should still be discovered without another click");
+      await results.getByText(/已检查的工作中有无法核验的记录/).waitFor();
+      assert.match(await results.getByLabel("证据内容: report.md").textContent(), /Free cash/);
+      await page.unroute("**/api/chat/sessions/*/loopx", laterAcceptedPage);
+      const repeatedCursor = async route => {
+        const body = route.request().method() === "POST" ? route.request().postDataJSON() : {};
+        if (body.operation !== "operations") return route.fallback();
+        return route.fulfill({json: {items: [], has_more: true, next_cursor: "0".repeat(64), page_readback_complete: true}});
+      };
+      await page.route("**/api/chat/sessions/*/loopx", repeatedCursor);
+      await results.getByRole("button", {name: "刷新成果", exact: true}).click();
+      await results.getByRole("alert").filter({hasText: "执行分页无法继续核验"}).waitFor();
+      assert.equal(await results.getByRole("table").count(), 0, "A broken live cursor must clear the previous report");
+      await page.unroute("**/api/chat/sessions/*/loopx", repeatedCursor);
+      await results.getByRole("button", {name: "刷新成果", exact: true}).click();
+      await results.getByRole("table").waitFor();
       const reads = api.loopxModeRequests.filter(row => row.operation === "read").length;
       await results.getByRole("button", {name: "刷新成果", exact: true}).click();
       await results.getByRole("table").waitFor();

@@ -326,6 +326,10 @@ Markdown. Desktop uses a compact member rail beside the report; narrow screens
 stack the reader below it. Explicit artifact choices survive delivery refresh and
 are revalidated by operation, reference and hash; automatic reads do not take
 keyboard focus. Acceptance and requester adoption remain separate in details.
+When the first inventory page has no accepted artifact, the reader inspects up to
+three live pages before asking the user to continue; manual inspection stops at
+ten pages. Unreadable records and unseen pages remain visible limitations, and
+repeated cursors clear the prior report rather than implying a complete scan.
 This qualifies report readback, not mixed-team launch or stop/recovery.
 Merged [#4814](https://github.com/loopx-project/loopx/pull/4814) adds confirmation
 of one canonical team plan from manager and Goal Lark cards. Authenticated card
