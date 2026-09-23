@@ -12,6 +12,18 @@ import {LOCAL_COORDINATION_TODO_LIST_REQUEST_SCHEMA, LOCAL_COORDINATION_TODO_LIS
   LOCAL_COORDINATION_TODO_READ_REQUEST_SCHEMA, LOCAL_COORDINATION_TODO_READ_RESULT_SCHEMA} from "./coordination_state_contract.generated.ts";
 import {decodeProjectionReadback, confirmProjectionReadback} from "../todos/projection_delivery.ts";
 
+/** Shared admission for full and paged collection reads. Pagination changes
+ * transport only; retained records, read-model validation and acceptance keep
+ * this same owner. */
+export function canonicalTodoCollection(head: JsonObject, goalId: string, includeLeases: boolean) {
+  return {
+    projection: indexCoordinationProjectionTodos(head, goalId),
+    todoReadModel: validateCoordinationTodoReadModel(head, goalId),
+    leaseIndex: includeLeases ? indexCoordinationProjection(head, goalId) : null,
+    acceptance: projectGoalAcceptance(head, goalId),
+  };
+}
+
 /** Provider-first exact Todo read. Missing/unavailable state never falls back. */
 export async function readLocalCoordinationTodo(
   value: unknown,
@@ -98,11 +110,9 @@ export async function listLocalCoordinationTodos(
         legacy_fallback_used: false,
       };
     }
-    const projection = indexCoordinationProjectionTodos(head.head, goalId);
-    const todoReadModel = validateCoordinationTodoReadModel(head.head, goalId);
-    const leaseIndex = input.include_leases === true
-      ? indexCoordinationProjection(head.head, goalId) : null;
-    const acceptance = projectGoalAcceptance(head.head, goalId);
+    const {projection, todoReadModel, leaseIndex, acceptance} = canonicalTodoCollection(
+      head.head, goalId, input.include_leases === true,
+    );
     return {
       schema_version: LOCAL_COORDINATION_TODO_LIST_RESULT_SCHEMA,
       status: "loaded",

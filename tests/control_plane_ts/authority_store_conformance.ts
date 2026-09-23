@@ -1,3 +1,4 @@
+import {registerCanonicalSnapshotConformance} from "./canonical_snapshot_conformance.ts";
 import {registerClaimAcquisitionProofConformance} from "./claim_acquisition_proof_conformance.ts";
 import {registerCommandObservationConformance} from "./command_observation_conformance.ts";
 import {registerPeriodicReportConformance} from "./periodic_report_conformance.ts";
@@ -272,6 +273,7 @@ export function registerAuthorityStoreConformance(
   registerAuthoritySourceConformance(providerName, factory);
   registerHandoffModeConformance(providerName, factory);
   registerPromotionRecoveryConformance(providerName, factory);
+  registerCanonicalSnapshotConformance(providerName, factory);
   for (const native of [false, true]) test(`${providerName} conformance: standing revocation survives canonical ordering and archive (${native ? "native" : "legacy"})`, async (t) => {
     const {store} = await factory(t);
     const goal = "goal-standing";
