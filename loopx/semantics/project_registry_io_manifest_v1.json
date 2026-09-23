@@ -1119,7 +1119,7 @@
     },
     {
       "site": "loopx/control_plane/goals/source_session_registration.py::<module>.register_fresh_source_session_project::codec_transaction:source_session_registry_transaction#1",
-      "line": 289,
+      "line": 322,
       "column": 14,
       "kind": "codec_transaction",
       "api": "source_session_registry_transaction",

@@ -137,6 +137,7 @@ def test_registration_publishes_fresh_v2_without_global_sync(
     goal = registry["goals"][0]
 
     assert payload["changed"] is True
+    assert payload["replayed"] is False
     assert payload["execution_authority"] is False
     assert payload["goal_ref"] == {
         "goal_id": "atlas-import",
@@ -158,6 +159,7 @@ def test_registration_publishes_fresh_v2_without_global_sync(
             "created_at": registry["updated_at"],
         }
     ]
+    assert payload["receipt"] == registry["lifetime_receipts"][0]
     assert global_registry.read_bytes() == global_before
 
 
@@ -255,6 +257,105 @@ def test_registration_reuses_reserved_instance_after_interruption(
     conflict = json.loads(capsys.readouterr().out)
     assert "requires an absent registry" in conflict["error"]
     assert registry_path.read_bytes() == before_replay
+
+
+def test_registration_replays_original_receipt_after_goal_recreation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, registry_path, registration = _register(tmp_path, capsys)
+    instance_a = str(registration["goal_ref"]["goal_instance_id"])
+    assert main(
+        _recreation_arguments(
+            registry_path,
+            goal_instance_id=instance_a,
+        )
+    ) == 0
+    recreated = json.loads(capsys.readouterr().out)
+    assert recreated["goal_ref"]["goal_instance_id"] != instance_a
+    registry_before_replay = registry_path.read_bytes()
+    state_file = Path(str(registration["state_file"]))
+    state_before_replay = state_file.read_bytes()
+    journal = next(
+        (
+            registry_path.parent / ".loopx" / "lifecycle" / "goal-instance" / "journals"
+        ).glob("*/*.json")
+    )
+    journal_before_replay = journal.read_bytes()
+
+    def reject_write(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("completed registration replay must not write")
+
+    monkeypatch.setattr(
+        registry_codec.ProjectRegistryTransaction,
+        "commit",
+        reject_write,
+    )
+    monkeypatch.setattr(source_session_registration, "write_journal", reject_write)
+    monkeypatch.setattr(
+        source_session_registration,
+        "atomic_write_state_text",
+        reject_write,
+    )
+    assert main(_registration_arguments(registry_path, tmp_path / "atlas")) == 0
+    replay = json.loads(capsys.readouterr().out)
+
+    assert replay["changed"] is False
+    assert replay["replayed"] is True
+    assert replay["goal_ref"] == registration["goal_ref"]
+    assert replay["goal"] == registration["goal"]
+    assert replay["receipt"] == registration["receipt"]
+    assert registry_path.read_bytes() == registry_before_replay
+    assert state_file.read_bytes() == state_before_replay
+    assert journal.read_bytes() == journal_before_replay
+
+
+def test_registration_replay_preserves_later_goal_state_progress(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    knowledge_root, registry_path, registration = _register(tmp_path, capsys)
+    state_file = Path(str(registration["state_file"]))
+    state_file.write_text(
+        f"{state_file.read_text(encoding='utf-8')}\nProgress: imported 10 records.\n",
+        encoding="utf-8",
+    )
+    registry_before_replay = registry_path.read_bytes()
+    state_before_replay = state_file.read_bytes()
+    journal = next(
+        (
+            registry_path.parent / ".loopx" / "lifecycle" / "goal-instance" / "journals"
+        ).glob("*/*.json")
+    )
+    journal_before_replay = journal.read_bytes()
+
+    def reject_write(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("completed registration replay must not write")
+
+    monkeypatch.setattr(
+        registry_codec.ProjectRegistryTransaction,
+        "commit",
+        reject_write,
+    )
+    monkeypatch.setattr(source_session_registration, "write_journal", reject_write)
+    monkeypatch.setattr(
+        source_session_registration,
+        "atomic_write_state_text",
+        reject_write,
+    )
+    assert main(_registration_arguments(registry_path, knowledge_root)) == 0
+    replay = json.loads(capsys.readouterr().out)
+
+    assert replay["changed"] is False
+    assert replay["replayed"] is True
+    assert replay["goal_ref"] == registration["goal_ref"]
+    assert replay["goal"] == registration["goal"]
+    assert replay["receipt"] == registration["receipt"]
+    assert registry_path.read_bytes() == registry_before_replay
+    assert state_file.read_bytes() == state_before_replay
+    assert journal.read_bytes() == journal_before_replay
 
 
 def test_registration_recovers_same_instance_after_process_kill(

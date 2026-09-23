@@ -217,6 +217,35 @@ def _creation_receipt(
     }
 
 
+def _registration_result(
+    request: FreshSourceSessionRegistration,
+    *,
+    receipt: dict[str, Any],
+    changed: bool,
+    replayed: bool,
+) -> dict[str, Any]:
+    goal_ref = copy.deepcopy(receipt["goal_ref"])
+    goal = {
+        **copy.deepcopy(request.goal_record),
+        "goal_instance_id": goal_ref["goal_instance_id"],
+        "execution_authority": False,
+    }
+    return {
+        "ok": True,
+        "schema_version": "loopx_project_registration_v1",
+        "changed": changed,
+        "replayed": replayed,
+        "registry": str(request.registry_path),
+        "project": copy.deepcopy(request.project_record),
+        "goal": goal,
+        "goal_ref": goal_ref,
+        "request_digest": receipt["request_digest"],
+        "receipt": copy.deepcopy(receipt),
+        "state_file": str(request.state_file),
+        "execution_authority": False,
+    }
+
+
 def _matching_creation_receipt(
     registry: dict[str, Any],
     request: FreshSourceSessionRegistration,
@@ -237,11 +266,15 @@ def _matching_creation_receipt(
     if not matches:
         return None
     receipt = matches[0]
+    goal_ref = receipt.get("goal_ref")
     if (
         receipt.get("schema_version") != _CREATION_RECEIPT_SCHEMA
         or receipt.get("request_digest") != request_digest
         or not isinstance(receipt.get("created_at"), str)
-        or not isinstance(receipt.get("goal_ref"), dict)
+        or not isinstance(goal_ref, dict)
+        or goal_ref.get("goal_id") != request.goal_id
+        or not isinstance(goal_ref.get("goal_instance_id"), str)
+        or not GOAL_INSTANCE_ID.fullmatch(goal_ref["goal_instance_id"])
     ):
         raise ValueError("source-session operation_id conflicts with its receipt")
     return receipt
@@ -310,22 +343,6 @@ def register_fresh_source_session_project(
             )
             if existing_receipt is not None:
                 goal_ref = existing_receipt["goal_ref"]
-                goals = registry.get("goals")
-                if (
-                    not isinstance(goals, list)
-                    or len(goals) != 1
-                    or not isinstance(goals[0], dict)
-                    or goals[0].get("id") != goal_ref.get("goal_id")
-                    or goals[0].get("goal_instance_id")
-                    != goal_ref.get("goal_instance_id")
-                ):
-                    raise ValueError(
-                        "source-session creation receipt does not match current Goal"
-                    )
-                state_changed = _ensure_registration_state(
-                    request,
-                    updated_at=existing_receipt["created_at"],
-                )
                 if journal is None:
                     journal = {
                         "schema_version": _JOURNAL_SCHEMA,
@@ -339,18 +356,12 @@ def register_fresh_source_session_project(
                 elif journal["phase"] != "published":
                     journal = {**journal, "phase": "published"}
                     write_journal(journal_path, journal)
-                return {
-                    "ok": True,
-                    "schema_version": "loopx_project_registration_v1",
-                    "changed": state_changed,
-                    "registry": str(request.registry_path),
-                    "project": registry["projects"][0],
-                    "goal": goals[0],
-                    "goal_ref": copy.deepcopy(goal_ref),
-                    "request_digest": request_digest,
-                    "state_file": str(request.state_file),
-                    "execution_authority": False,
-                }
+                return _registration_result(
+                    request,
+                    receipt=existing_receipt,
+                    changed=False,
+                    replayed=True,
+                )
 
             if request.registry_path.exists():
                 raise ValueError(
@@ -381,15 +392,9 @@ def register_fresh_source_session_project(
             journal = {**journal, "phase": "published"}
             write_journal(journal_path, journal)
 
-    return {
-        "ok": True,
-        "schema_version": "loopx_project_registration_v1",
-        "changed": True,
-        "registry": str(request.registry_path),
-        "project": copy.deepcopy(request.project_record),
-        "goal": goal_record,
-        "goal_ref": copy.deepcopy(journal["goal_ref"]),
-        "request_digest": request_digest,
-        "state_file": str(request.state_file),
-        "execution_authority": False,
-    }
+    return _registration_result(
+        request,
+        receipt=receipt,
+        changed=True,
+        replayed=False,
+    )
