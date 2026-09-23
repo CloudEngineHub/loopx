@@ -1530,8 +1530,13 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
         return;
       }
       if (body.operation === "inspect") {
-        await route.fulfill({json: {state: "runtime_unverified", turn_eligible: true, acceptance_ready: true,
-          turn_route: "ready_for_host", executor: {host: "generic-cli", available: null, reason: null, profile: null}}});
+        if (body.binding_id === "review") {
+          await route.fulfill({status: 503, json: {error: "Review runtime unavailable"}});
+          return;
+        }
+        await route.fulfill({json: {state: body.binding_id === "synthesis" ? "launchable" : "runtime_unverified",
+          turn_eligible: true, acceptance_ready: true, turn_route: "ready_for_host",
+          executor: {host: "generic-cli", available: body.binding_id === "synthesis" ? true : null, reason: null, profile: null}}});
         return;
       }
       if (body.operation !== "configure") {
@@ -1544,7 +1549,9 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
           ...body.settings,
           execution_config: current.settings.execution_config,
         },
-        members: [{id: "analysis", agent_id: "local-analyst", todo_id: "todo_analysis"}],
+        members: [{id: "analysis", agent_id: "local-analyst", todo_id: "todo_analysis"},
+          {id: "synthesis", agent_id: "synthesizer", todo_id: "todo_synthesis"},
+          {id: "review", agent_id: "cloud-reviewer", todo_id: "todo_review"}],
       };
       loopxModes.set(sessionId, configured);
       await route.fulfill({ contentType: "application/json", json: configured, status: 200 });
