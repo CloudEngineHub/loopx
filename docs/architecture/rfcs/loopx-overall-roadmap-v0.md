@@ -487,6 +487,17 @@ under a pending tool, cancellation and a late result; transport success alone
 does not close the request. Keep existing R2/R3 successors rather than opening
 a parallel team-orchestration program.
 
+The next steward product slice exercises one cross-Goal question from the
+original frontend and Lark conversations. It admits only authorized,
+non-stopped, registered recipients with a qualified delivery/return route,
+selects one by responsibility and current evidence before model fit, and
+distinguishes live, queued and unavailable execution. The selected worker
+assesses the source-linked request and returns its conclusion or PR outcome to
+that same conversation. Include a registered-only decoy and a duplicate
+callback; neither may appear as work completed or a second user-visible reply.
+This uses the R3 collaboration owner and current managed Turn wake instead of
+a separate steward scheduler.
+
 ### R4: Shared Goal Alignment and Evolution
 
 - **Owner:** alignment RFC Stage 3–5 and TS Goal/work-graph owners.
