@@ -22,6 +22,31 @@ export const teamEvidenceScenario = {
       const results = page.getByRole("region", {name: "团队成果", exact: true});
       // Accepted report opens in the original conversation without an extra click.
       await results.getByRole("table").waitFor();
+      const goalNav = page.getByRole("navigation", {name: "Goal 视图"});
+      await goalNav.getByRole("button", {name: "成果", exact: true}).click();
+      const fileResults = page.getByRole("region", {name: "团队成果", exact: true});
+      await fileResults.getByRole("table").waitFor();
+      assert.match(await fileResults.getByRole("table").textContent(), /Free cash75/, "Files reads the accepted artifact from the original Goal session");
+      assert(!(await page.locator(".personal-files-list > button").allTextContents()).some(text => /最近运行|Latest run/.test(text)),
+        "Run observations remain absent from delivered Files");
+      await page.screenshot({path: resolve(outputDir, "team-files-desktop.png"), animations: "disabled"});
+      await page.setViewportSize({width: 390, height: 844});
+      assert(await fileResults.evaluate(el => el.scrollWidth <= el.clientWidth), "Files report remains readable on mobile");
+      await page.screenshot({path: resolve(outputDir, "team-files-mobile.png"), animations: "disabled"});
+      await page.setViewportSize({width: 1512, height: 982});
+      await goalNav.getByRole("button", {name: "对话", exact: true}).click();
+      const failedTeamMode = async route => route.request().method() === "GET"
+        ? route.fulfill({status: 503, json: {error: "team readback unavailable"}}) : route.fallback();
+      await page.route("**/api/chat/sessions/*/loopx", failedTeamMode);
+      await goalNav.getByRole("button", {name: "成果", exact: true}).click();
+      await page.getByRole("alert").filter({hasText: "无法核验当前 Goal 会话的团队成果"}).waitFor();
+      assert.equal(await page.getByRole("region", {name: "团队成果", exact: true}).count(), 0,
+        "A failed team read must not retain the previously accepted report");
+      await page.unroute("**/api/chat/sessions/*/loopx", failedTeamMode);
+      await page.getByRole("button", {name: "重试", exact: true}).click();
+      await page.getByRole("region", {name: "团队成果", exact: true}).getByRole("table").waitFor();
+      await goalNav.getByRole("button", {name: "对话", exact: true}).click();
+      await results.getByRole("table").waitFor();
       assert.equal(await results.getByLabel("当前报告").evaluate(el => el === document.activeElement), false, "Automatic readback must not steal focus");
       const reads = api.loopxModeRequests.filter(row => row.operation === "read").length;
       await results.getByRole("button", {name: "刷新成果", exact: true}).click();

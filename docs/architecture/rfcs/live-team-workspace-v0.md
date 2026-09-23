@@ -332,6 +332,10 @@ as a published report. Latest-run metadata, validation summaries and event
 counts remain execution observations; they cannot become a file or inherit an
 unrelated open Todo ID. A readable managed result still needs a versioned,
 public-safe artifact projection with its own source and acceptance readback.
+For Goal Chat, Files now opens the same session-scoped accepted team report
+reader as the original conversation; source hash and current acceptance are
+rechecked, and failed mode/readback clears the prior report. This does not
+turn managed non-Chat run observations into deliverables.
 Merged [#4814](https://github.com/loopx-project/loopx/pull/4814) adds confirmation
 of one canonical team plan from manager and Goal Lark cards. Authenticated card
 bindings and the shared decision owner prevent a second click from creating a
