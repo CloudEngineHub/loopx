@@ -54,6 +54,7 @@ from .control_plane.projects.registry_codec import (
     ProjectRegistryTransaction,
     load_project_registry,
     project_registry_transaction,
+    require_runtime_compatible_project_registry,
 )
 from .control_plane.todos.contract import normalize_todo_claimed_by
 from .control_plane.todos.mutation_authority import (
@@ -708,6 +709,10 @@ def configure_goal(
         _registry_transaction.payload_copy()
         if _registry_transaction is not None
         else load_project_registry(registry_path)
+    )
+    require_runtime_compatible_project_registry(
+        payload,
+        operation="Goal configuration",
     )
     goals = registry_goals(payload)
     goal = next((item for item in goals if str(item.get("id")) == goal_id), None)

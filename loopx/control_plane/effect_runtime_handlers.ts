@@ -116,6 +116,11 @@ import { admitGoalAmendmentProposal } from "./goals/goal_amendment_proposal.ts";
 import { projectSharedGoalAlignment } from "./goals/shared_goal_alignment.ts";
 import { projectGoalOperatorActions } from "./goals/operator_actions.ts";
 import {
+  decideGoalRecreation,
+  decideProjectSessionBind,
+  decideProjectSessionUnbind,
+} from "./goals/source_session_lifetime.ts";
+import {
   evaluateDeliveryRoute,
 } from "./turn_driver/delivery_continuity.ts";
 import { reduceTurnSettlementTransaction } from "./turn_driver/settlement.ts";
@@ -503,6 +508,9 @@ export function createEffectRuntimeHandlers(
     ["goal.shared_goal_alignment.project", projectSharedGoalAlignment],
     ["goal.operator_actions.project", projectGoalOperatorActions],
     ["goal.amendment_proposal.admit", admitGoalAmendmentProposal],
+    ["goal.source_session.bind.decide", decideProjectSessionBind],
+    ["goal.source_session.unbind.decide", decideProjectSessionUnbind],
+    ["goal.source_session.recreate.decide", decideGoalRecreation],
     ["goal.acceptance.inspect", inspectLocalGoalAcceptance],
     ["goal.acceptance.configure", commitLocalGoalAcceptance],
     ["goal.acceptance.verify.commit", commitLocalGoalAcceptanceVerification],
