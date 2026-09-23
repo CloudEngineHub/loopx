@@ -418,6 +418,10 @@
 .personal-settings-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
 .personal-settings-header small { color: var(--pw-blue); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .personal-settings-header h1 { margin: 4px 0 2px; font-size: 28px; letter-spacing: -.035em; }
+.personal-settings-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; min-width: 0; }
+.personal-settings-goal-target { display: inline-flex; align-items: center; gap: 7px; max-width: min(100%, 360px); min-width: 0; padding: 6px 10px; border: 1px solid var(--pw-line-strong); border-radius: 7px; background: var(--pw-card); font-size: 12px; line-height: 1.35; }
+.personal-settings-goal-target > span { flex: none; color: var(--pw-muted); }
+.personal-settings-goal-target > strong { overflow: hidden; min-width: 0; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .personal-settings-tabs { display: grid; gap: 3px; }
 .personal-settings-tabs button { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 9px; width: 100%; min-height: 54px; padding: 8px 10px; border: 0; border-radius: 11px; background: transparent; color: var(--pw-muted); cursor: pointer; text-align: left; }
 .personal-settings-tabs button:hover { background: rgb(255 255 255 / 65%); color: var(--pw-text); }

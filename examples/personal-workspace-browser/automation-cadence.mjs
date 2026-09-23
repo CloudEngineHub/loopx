@@ -65,7 +65,12 @@ export const automationCadenceScenario = {
     try {
       await page.locator(".personal-goal-link", { hasText: "Product Release" }).click();
       await page.getByRole("button", { name: "Goal 设置", exact: true }).click();
+      const target = page.locator(".personal-settings-goal-target");
+      await target.getByText("Product Release", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "全局能力配置" }).click();
+      if (await target.count()) throw new Error("Machine settings retained a Goal-specific target");
       await page.getByRole("button", { name: "自动执行间隔" }).click();
+      await target.getByText("Product Release", { exact: true }).waitFor();
       const panel = page.getByRole("region", { name: "自动执行间隔" });
       await panel.getByText("0 分钟", { exact: true }).first().waitFor();
       if (!await panel.getByText("App 定时触发到启动前钩子的拦截尚未验证。", { exact: false }).count()) {

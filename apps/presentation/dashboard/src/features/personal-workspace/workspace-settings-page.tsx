@@ -115,6 +115,9 @@ export function WorkspaceSettingsPage({
   };
   const heading = headings[tab];
   const selectedGoal = goals.find((item) => item.goalId === initialGoalId);
+  const goalSettingsTarget = (tab === "capabilities" || tab === "cadence") && initialGoalId
+    ? selectedGoal?.title || initialGoalId
+    : null;
 
   return (
     <section aria-label={t("settings.title")} className="personal-settings-page" data-pw-theme={theme}>
@@ -143,8 +146,14 @@ export function WorkspaceSettingsPage({
 
       <main className="personal-settings-body">
         <header className="personal-settings-header">
-          <div>
+          <div className="personal-settings-heading">
             <h1>{heading.title}</h1>
+            {goalSettingsTarget ? (
+              <span className="personal-settings-goal-target" title={`${goalSettingsTarget} · ${initialGoalId}`}>
+                <span>Goal</span>
+                <strong>{goalSettingsTarget}</strong>
+              </span>
+            ) : null}
           </div>
         </header>
         {tab === "lark" ? (
