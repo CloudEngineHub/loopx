@@ -185,9 +185,12 @@ def _target_for_profile_chat(
     chat_id: str,
     bot_app_id: str = "",
     active_target_refs: set[str] | None = None,
+    root_id: str = "",
+    binding_payloads: Mapping[str, Any] | None = None,
 ) -> tuple[str, Mapping[str, Any]] | None:
     targets = target_payload.get("targets")
     targets = targets if isinstance(targets, Mapping) else {}
+    candidates: list[tuple[str, Mapping[str, Any]]] = []
     for target_ref, target in targets.items():
         if active_target_refs is not None and str(target_ref) not in active_target_refs:
             continue
@@ -203,8 +206,26 @@ def _target_for_profile_chat(
         if str(channel.get("chat_id") or "") == chat_id and (
             same_app or str(identity.get("sender_profile") or "") == profile
         ):
-            return str(target_ref), target
-    return None
+            candidates.append((str(target_ref), target))
+    if len(candidates) == 1:
+        return candidates[0]
+    bindings = binding_payloads if isinstance(binding_payloads, Mapping) else {}
+    if root_id:
+        rooted = [
+            candidate
+            for candidate in candidates
+            if root_id in _topic_roots_for_target(bindings, target_ref=candidate[0])
+        ]
+        if len(rooted) == 1:
+            return rooted[0]
+        if rooted:
+            return None
+    managers = [
+        candidate
+        for candidate in candidates
+        if has_manager_binding(bindings, candidate[0])
+    ]
+    return managers[0] if len(managers) == 1 else None
 
 
 def _topic_roots_for_target(
@@ -338,6 +359,8 @@ def poll_lark_goal_topic_profile_once(
             chat_id=chat_id,
             bot_app_id=str(profile_config.get("bot_app_id") or ""),
             active_target_refs=active_target_refs,
+            root_id=str(event.get("root_id") or ""),
+            binding_payloads=binding_payloads,
         )
         if target_match is None:
             event_statuses.append("target_unmatched")

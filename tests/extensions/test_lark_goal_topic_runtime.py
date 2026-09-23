@@ -1266,6 +1266,35 @@ def test_alias_consumer_routes_all_chats_of_its_bot_app() -> None:
         "oc_second",
     ]
     snapshot["target_payload"]["targets"]["canonical"]["channel"]["chat_id"] = "oc_second"
+    for profile in ("canonical", "alias"):
+        snapshot["binding_payloads"][profile]["bindings"][profile]["topic"] = {
+            "root_message_id": f"om_{profile}"
+        }
+    assert (
+        _target_for_profile_chat(
+            snapshot["target_payload"],
+            profile="canonical",
+            bot_app_id="cli_public_fixture",
+            chat_id="oc_second",
+            root_id="om_alias",
+            binding_payloads=snapshot["binding_payloads"],
+        )[0]
+        == "alias"
+    )
+    for profile in ("canonical", "alias"):
+        snapshot["binding_payloads"][profile]["bindings"][profile]["routing"] = {
+            "conversation_kind": "manager"
+        }
+    assert (
+        _target_for_profile_chat(
+            snapshot["target_payload"],
+            profile="canonical",
+            bot_app_id="cli_public_fixture",
+            chat_id="oc_second",
+            binding_payloads=snapshot["binding_payloads"],
+        )
+        is None
+    )
     assert (
         _target_for_profile_chat(
             snapshot["target_payload"],
