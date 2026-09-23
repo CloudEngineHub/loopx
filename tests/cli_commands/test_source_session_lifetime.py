@@ -257,6 +257,191 @@ def test_registration_reuses_reserved_instance_after_interruption(
     assert registry_path.read_bytes() == before_replay
 
 
+def test_registration_recovers_same_instance_after_process_kill(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    knowledge_root = tmp_path / "atlas"
+    registry_path = knowledge_root / ".loopx" / "registry.json"
+    state_file = (
+        knowledge_root / ".codex" / "goals" / "atlas-import" / "ACTIVE_GOAL_STATE.md"
+    )
+    ready = tmp_path / "registration-ready"
+    resume = tmp_path / "registration-resume"
+    arguments = _registration_arguments(registry_path, knowledge_root)
+    script = """
+import json
+import os
+import time
+from pathlib import Path
+
+from loopx.cli import main
+from loopx.control_plane.projects import registry_codec
+
+ready = Path(os.environ["LOOPX_TEST_READY"])
+resume = Path(os.environ["LOOPX_TEST_RESUME"])
+real_commit = registry_codec.ProjectRegistryTransaction.commit
+
+def paused_commit(transaction, payload):
+    ready.write_text("ready", encoding="utf-8")
+    deadline = time.monotonic() + 10
+    while not resume.exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError("test registration pause timed out")
+        time.sleep(0.01)
+    return real_commit(transaction, payload)
+
+registry_codec.ProjectRegistryTransaction.commit = paused_commit
+raise SystemExit(main(json.loads(os.environ["LOOPX_TEST_ARGS"])))
+"""
+    process = subprocess.Popen(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[2],
+        env={
+            **os.environ,
+            "LOOPX_TEST_READY": str(ready),
+            "LOOPX_TEST_RESUME": str(resume),
+            "LOOPX_TEST_ARGS": json.dumps(arguments),
+        },
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    deadline = time.monotonic() + 10
+    while not ready.exists() and process.poll() is None:
+        if time.monotonic() >= deadline:
+            process.kill()
+            raise TimeoutError("registration process did not reach the barrier")
+        time.sleep(0.01)
+    assert ready.exists()
+    journals = list(
+        (registry_path.parent / ".loopx" / "lifecycle" / "goal-instance").glob(
+            "journals/*/*.json"
+        )
+    )
+    assert len(journals) == 1
+    reserved = json.loads(journals[0].read_text(encoding="utf-8"))["goal_ref"]
+    assert state_file.exists()
+    assert not registry_path.exists()
+
+    process.kill()
+    process.communicate(timeout=10)
+    assert process.returncode != 0
+
+    assert main(arguments) == 0
+    recovered = json.loads(capsys.readouterr().out)
+    assert recovered["goal_ref"] == reserved
+    assert _registry_payload(registry_path)["goals"][0]["goal_instance_id"] == (
+        reserved["goal_instance_id"]
+    )
+
+
+def test_registration_rejects_state_without_its_reservation_journal(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    knowledge_root = tmp_path / "atlas"
+    registry_path = knowledge_root / ".loopx" / "registry.json"
+    state_file = (
+        knowledge_root / ".codex" / "goals" / "atlas-import" / "ACTIVE_GOAL_STATE.md"
+    )
+    arguments = _registration_arguments(registry_path, knowledge_root)
+    monkeypatch.setattr(
+        source_session_registration,
+        "now_local_iso",
+        lambda: "2026-09-23T12:00:00+00:00",
+    )
+    original_commit = registry_codec.ProjectRegistryTransaction.commit
+
+    def interrupt_before_publication(
+        _transaction: registry_codec.ProjectRegistryTransaction,
+        _payload: dict[str, object],
+    ) -> bool:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        registry_codec.ProjectRegistryTransaction,
+        "commit",
+        interrupt_before_publication,
+    )
+    with pytest.raises(KeyboardInterrupt):
+        main(arguments)
+
+    journals = list(
+        (registry_path.parent / ".loopx" / "lifecycle" / "goal-instance").glob(
+            "journals/*/*.json"
+        )
+    )
+    assert len(journals) == 1
+    assert state_file.exists()
+    journals[0].unlink()
+    monkeypatch.setattr(
+        registry_codec.ProjectRegistryTransaction,
+        "commit",
+        original_commit,
+    )
+
+    assert main(arguments) == 1
+    rejection = json.loads(capsys.readouterr().out)
+    assert "reservation journal" in rejection["error"]
+    assert not registry_path.exists()
+    assert not list(
+        (registry_path.parent / ".loopx" / "lifecycle" / "goal-instance").glob(
+            "journals/*/*.json"
+        )
+    )
+
+
+def test_registration_rejects_a_competing_reserved_operation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    knowledge_root = tmp_path / "atlas"
+    registry_path = knowledge_root / ".loopx" / "registry.json"
+    state_file = (
+        knowledge_root / ".codex" / "goals" / "atlas-import" / "ACTIVE_GOAL_STATE.md"
+    )
+    arguments = _registration_arguments(registry_path, knowledge_root)
+    original_commit = registry_codec.ProjectRegistryTransaction.commit
+
+    def interrupt_before_publication(
+        _transaction: registry_codec.ProjectRegistryTransaction,
+        _payload: dict[str, object],
+    ) -> bool:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        registry_codec.ProjectRegistryTransaction,
+        "commit",
+        interrupt_before_publication,
+    )
+    with pytest.raises(KeyboardInterrupt):
+        main(arguments)
+
+    state_file.unlink()
+    monkeypatch.setattr(
+        registry_codec.ProjectRegistryTransaction,
+        "commit",
+        original_commit,
+    )
+    competing = list(arguments)
+    competing[competing.index("--operation-id") + 1] = "competing-create"
+
+    assert main(competing) == 1
+    rejection = json.loads(capsys.readouterr().out)
+    assert "reservation journal" in rejection["error"]
+    assert not registry_path.exists()
+    assert len(
+        list(
+            (registry_path.parent / ".loopx" / "lifecycle" / "goal-instance").glob(
+                "journals/*/*.json"
+            )
+        )
+    ) == 1
+
+
 def test_bind_and_unbind_commit_exact_receipts(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -476,6 +661,108 @@ raise SystemExit(main(json.loads(os.environ["LOOPX_TEST_ARGS"])))
     assert not any(
         receipt.get("operation_id") == "paused-bind-a"
         for receipt in registry["session_receipts"]
+    )
+
+
+def test_recreation_waits_for_an_admitted_bind_commit(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, registry_path, registration = _register(tmp_path, capsys)
+    instance_a = str(registration["goal_ref"]["goal_instance_id"])
+    ready = tmp_path / "guard-held"
+    resume = tmp_path / "release-guard"
+    bind_arguments = _binding_arguments(
+        registry_path,
+        operation="bind",
+        goal_instance_id=instance_a,
+        operation_id="bind-before-recreate",
+        session_id="serialized-session",
+    )
+    script = """
+import json
+import os
+import time
+from contextlib import contextmanager
+from pathlib import Path
+
+from loopx.cli import main
+from loopx.control_plane.goals import source_session_binding
+
+ready = Path(os.environ["LOOPX_TEST_READY"])
+resume = Path(os.environ["LOOPX_TEST_RESUME"])
+real_lock = source_session_binding.exclusive_cross_runtime_file_lock
+
+@contextmanager
+def paused_lock(path, **kwargs):
+    with real_lock(path, **kwargs):
+        if kwargs.get("operation") == "source_session_goal_lifetime":
+            ready.write_text("ready", encoding="utf-8")
+            deadline = time.monotonic() + 10
+            while not resume.exists():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("test lifetime guard pause timed out")
+                time.sleep(0.01)
+        yield
+
+source_session_binding.exclusive_cross_runtime_file_lock = paused_lock
+raise SystemExit(main(json.loads(os.environ["LOOPX_TEST_ARGS"])))
+"""
+    bind_process = subprocess.Popen(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[2],
+        env={
+            **os.environ,
+            "LOOPX_TEST_READY": str(ready),
+            "LOOPX_TEST_RESUME": str(resume),
+            "LOOPX_TEST_ARGS": json.dumps(bind_arguments),
+        },
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    deadline = time.monotonic() + 10
+    while not ready.exists() and bind_process.poll() is None:
+        if time.monotonic() >= deadline:
+            bind_process.kill()
+            raise TimeoutError("bind process did not acquire the lifetime guard")
+        time.sleep(0.01)
+    assert ready.exists()
+
+    recreate_process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "loopx.cli",
+            *_recreation_arguments(
+                registry_path,
+                goal_instance_id=instance_a,
+                operation_id="recreate-after-bind",
+            ),
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    time.sleep(0.2)
+    assert recreate_process.poll() is None
+    assert _registry_payload(registry_path)["goals"][0]["goal_instance_id"] == instance_a
+
+    resume.write_text("resume", encoding="utf-8")
+    bind_stdout, bind_stderr = bind_process.communicate(timeout=15)
+    recreate_stdout, recreate_stderr = recreate_process.communicate(timeout=15)
+    assert bind_process.returncode == 0, bind_stderr
+    assert recreate_process.returncode == 0, recreate_stderr
+    bound = json.loads(bind_stdout)
+    recreated = json.loads(recreate_stdout)
+    registry = _registry_payload(registry_path)
+
+    assert bound["changed"] is True
+    assert recreated["retired_session_ids"] == ["serialized-session"]
+    assert registry["session_bindings"] == []
+    assert registry["goals"][0]["goal_instance_id"] == (
+        recreated["goal_ref"]["goal_instance_id"]
     )
 
 

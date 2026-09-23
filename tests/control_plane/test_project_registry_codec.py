@@ -9,6 +9,7 @@ import pytest
 
 from loopx.control_plane.projects import registry_codec
 from loopx.control_plane.projects.registry_codec import (
+    ProjectRegistryError,
     ProjectRegistryMutationError,
     ProjectRegistryProtocolError,
     load_project_registry,
@@ -206,6 +207,29 @@ def test_source_session_profile_is_not_a_generic_runtime_registry(
         match="lifecycle-only",
     ):
         load_registry(path)
+
+
+def test_v2_envelope_rejects_an_unknown_profile(tmp_path: Path) -> None:
+    path = tmp_path / "registry.json"
+    payload: dict[str, object] = {
+        "schema_version": "0.2",
+        "profile_id": "unqualified_profile_v1",
+        "goals": [],
+    }
+    _write(
+        path,
+        [
+            {
+                "schema_version": "loopx_project_registry_envelope_v2",
+                "minimum_writer_protocol": "goal_instance_v2",
+                "payload_sha256": _digest(payload),
+            },
+            payload,
+        ],
+    )
+
+    with pytest.raises(ProjectRegistryError, match="profile_id"):
+        load_project_registry(path)
 
 
 def test_global_registry_mutation_remains_object_only(tmp_path: Path) -> None:

@@ -88,6 +88,15 @@ def _journal_path(
     )
 
 
+def _registration_journals(
+    registry_path: Path,
+    *,
+    goal_id: str,
+) -> list[Path]:
+    directory = lifetime_root(registry_path) / "journals" / alias_digest(goal_id)
+    return sorted(directory.glob("*.json"))
+
+
 def _read_journal(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
@@ -263,6 +272,14 @@ def register_fresh_source_session_project(
                 request_digest=request_digest,
             )
         elif not request.registry_path.exists():
+            if _registration_journals(request.registry_path, goal_id=request.goal_id):
+                raise ValueError(
+                    "source-session registration has another reservation journal"
+                )
+            if request.state_file.exists():
+                raise ValueError(
+                    "source-session Goal state has no matching reservation journal"
+                )
             journal = _new_registration_journal(
                 request,
                 request_digest=request_digest,

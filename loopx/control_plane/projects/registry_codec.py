@@ -164,9 +164,17 @@ def _decode_document(raw_bytes: bytes) -> _ProjectRegistryDocument:
         raise ProjectRegistryError(
             "strict project registry payload digest does not match"
         )
+    document_format = strict_formats[schema_version]
+    if (
+        document_format is _ProjectRegistryFormat.STRICT_ENVELOPE_V2
+        and payload.get("profile_id") != SOURCE_SESSION_PROFILE_ID
+    ):
+        raise ProjectRegistryError(
+            "strict v2 project registry profile_id is unsupported"
+        )
     return _ProjectRegistryDocument(
         payload=payload,
-        format=strict_formats[schema_version],
+        format=document_format,
         minimum_writer_protocol=protocol,
         raw_bytes=raw_bytes,
     )
