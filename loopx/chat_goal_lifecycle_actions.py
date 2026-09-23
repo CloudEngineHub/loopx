@@ -12,6 +12,35 @@ from .control_plane.goals.deletion_service import delete_stopped_goal
 class ChatGoalLifecycleActionMixin:
     """Keep Goal activation policy separate from general action orchestration."""
 
+    def _goal_lifecycle_preview_fingerprint(
+        self,
+        parameters: dict[str, Any],
+    ) -> str:
+        operation = str(parameters["operation"])
+        if operation == "delete":
+            return self._registry_fingerprint()
+        target_state = (
+            GoalActivationState.STOPPED
+            if operation == "stop"
+            else GoalActivationState.ACTIVE
+        )
+        preview = set_goal_activation_state(
+            registry_path=self.registry_path,
+            goal_id=str(parameters["goal_id"]),
+            state=target_state,
+            reason=parameters.get("reason"),
+            execute=False,
+        )
+        fingerprint = str(preview.get("observed_state_fingerprint") or "")
+        if not preview.get("ok") or not fingerprint:
+            raise ValueError(
+                str(
+                    preview.get("error")
+                    or "Goal lifecycle source fingerprint is unavailable"
+                )
+            )
+        return fingerprint
+
     def _normalize_goal_lifecycle(
         self, parameters: dict[str, Any]
     ) -> dict[str, Any]:
@@ -94,10 +123,10 @@ class ChatGoalLifecycleActionMixin:
     ) -> dict[str, Any]:
         from .chat_actions import _digest
 
-        current_fingerprint = self._registry_fingerprint()
         goal_id = str(parameters["goal_id"])
         operation = str(parameters["operation"])
         if operation == "delete":
+            current_fingerprint = self._registry_fingerprint()
             return self._apply_goal_delete(
                 proposal_id, proposal, goal_id, current_fingerprint
             )
@@ -107,8 +136,16 @@ class ChatGoalLifecycleActionMixin:
             if operation == "stop"
             else GoalActivationState.ACTIVE
         )
-        current_state = goal_activation_state(self._goal(goal_id))
         expected_fingerprint = str(proposal.get("expected_state_fingerprint") or "")
+        current = set_goal_activation_state(
+            registry_path=self.registry_path,
+            goal_id=goal_id,
+            state=target_state,
+            reason=parameters.get("reason"),
+            execute=False,
+        )
+        current_fingerprint = str(current.get("observed_state_fingerprint") or "")
+        current_state = GoalActivationState(str(current.get("before_state") or ""))
         idempotent_reapply = (
             current_state is target_state
             and current_fingerprint != expected_fingerprint
@@ -126,8 +163,23 @@ class ChatGoalLifecycleActionMixin:
             state=target_state,
             reason=parameters.get("reason"),
             actor_kind="owner",
+            expected_state_fingerprint=(
+                current_fingerprint
+                if idempotent_reapply
+                else expected_fingerprint
+            ),
             execute=True,
         )
+        if result.get("error_kind") == "goal_action_stale":
+            stale = self.store.apply(
+                proposal_id,
+                current_state_fingerprint=str(
+                    result.get("observed_state_fingerprint")
+                    or current_fingerprint
+                ),
+                receipt={},
+            )
+            return {"proposal": stale, "turn": None}
         if not result.get("ok") or not (result.get("readback") or {}).get(
             "verified"
         ):

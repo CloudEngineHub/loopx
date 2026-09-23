@@ -1172,6 +1172,12 @@ class ChatActionService(
             )
             evidence = ["The recoverable Goal and Agent Chat Session is available."]
             permission = "scoped_correction"
+        elif action_kind == "goal.lifecycle":
+            fingerprint = self._goal_lifecycle_preview_fingerprint(normalized)
+            evidence = [
+                "The lifecycle transition is bound to the current authoritative Goal source."
+            ]
+            permission = "durable_write"
         elif action_kind == "team.plan":
             # A plan is reviewed against this Goal's registration facts *and*
             # the intent its lanes would advance, so both are bound here and
