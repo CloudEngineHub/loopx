@@ -123,6 +123,8 @@ jobs:
           node-version: "22.22.3"
 
       - name: Qualify the TypeScript Effect core
+        env:
+          LOOPX_TEST_REQUIRE_SQLITE_QUALIFIED: "1"
         run: |
           npm ci --ignore-scripts
           npm run typecheck:control-plane
