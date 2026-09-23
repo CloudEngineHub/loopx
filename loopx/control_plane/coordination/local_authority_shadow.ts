@@ -1,3 +1,4 @@
+import {currentGraphTodoIds} from "./source_projection.ts";
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -742,24 +743,6 @@ function partitionsOf(head: JsonObject | null): JsonObject {
     }
   }
   return partitions;
-}
-
-/**
- * Todo ids still present in the current Todo graph.
- *
- * A published Todo partition also retains archived rows for audit, so the raw
- * record list is not the graph. The source projection
- * (`build_todo_runtime_shadow_projection`) and the TypeScript source
- * verification both define the graph as `archive_state === "active"`; capture
- * and fold must apply that same typed membership rule or the candidate head
- * keeps a lease edge the source never emits.
- */
-export function currentGraphTodoIds(todos: readonly JsonObject[]): Set<string> {
-  return new Set(
-    todos
-      .filter((item) => item.archive_state === "active")
-      .map((item) => String(item.todo_id)),
-  );
 }
 
 /**
