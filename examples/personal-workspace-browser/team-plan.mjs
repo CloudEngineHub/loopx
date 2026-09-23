@@ -102,7 +102,7 @@ function managerTeamPlanProposal() {
         lanes: [
           ...parameters.plan.lanes,
           {
-            lane_id: "lane_manager",
+            lane_id: "a1a1a1a1a1a1",
             agent_id: "agent-manager",
             acceptance: "the manager lane reports its receipt",
             staffing: "ready",
@@ -263,6 +263,7 @@ export const teamPlanScenario = {
       await drawer.locator(".personal-drawer-close").click();
       await resultCard.waitFor({ state: "visible" });
       check((await resultCard.innerText()).includes("已恢复原分配结果"), "closing details keeps the assignment result in the original conversation");
+      check(!(await resultCard.innerText()).includes("team.plan"), "the applied card uses a user-facing label instead of a protocol kind");
       await context.checkpointCoverage();
       await page.reload({ waitUntil: "networkidle" });
       await page.getByTestId("personal-goal-home").waitFor({ state: "visible" });
@@ -278,6 +279,36 @@ export const teamPlanScenario = {
       await drawer.getByRole("heading", { name: "已恢复原分配结果", exact: true }).waitFor();
       check(api.actionApplies.filter((id) => id === MANAGER_PROPOSAL_ID).length === 2, "reload reads back the result without reapplying the team plan");
       check(api.durableWriteCount === 2, "reopening the assignment result writes no work");
+      await drawer.locator(".personal-drawer-close").click();
+      const managerResult = page.getByRole("region", {name: "团队结果回到管家"});
+      await managerResult.getByText("团队任务已分配，尚无可核验的已采用结果。").waitFor();
+      check(await managerResult.getByRole("table").count() === 0, "an accepted result from another Todo is never returned to the manager");
+      const goalSession = [...page.__loopxRuntime.sessions.values()].find(session => session.channel_id === `goal.${GOAL_ID}`);
+      check(Boolean(goalSession), "the original Goal conversation has a session for result readback");
+      if (goalSession) {
+        const mode = page.__loopxRuntime.loopxModes.get(goalSession.session_id);
+        check(Boolean(mode), "the Goal session exposes a complete LoopX mode readback");
+        mode.fixturePlanTodoId = "todo_a1a1a1a1a1a1";
+        mode.fixtureAdoptionState = "current";
+        await managerResult.getByRole("button", {name: "刷新结果"}).click();
+        await managerResult.getByRole("table").waitFor();
+        check((await managerResult.innerText()).includes("Reviewed cash allocation"), "the accepted adopted report returns inside the original manager conversation");
+        check(await managerResult.getByLabel("证据内容: report.md").count() === 1, "the adopted Markdown report is preferred over machine JSON");
+        await page.screenshot({path: resolve(outputDir, "team-plan-manager-adopted-result.png"), fullPage: false, animations: "disabled"});
+        await page.setViewportSize({width: 390, height: 844});
+        check(await managerResult.evaluate(element => element.scrollWidth <= element.clientWidth), "the returned report remains readable on mobile");
+        await page.screenshot({path: resolve(outputDir, "team-plan-manager-adopted-result-mobile.png"), fullPage: false, animations: "disabled"});
+        await page.setViewportSize({width: 1512, height: 982});
+        mode.fixtureAdoptionState = "unavailable";
+        await managerResult.getByRole("button", {name: "刷新结果"}).click();
+        await managerResult.getByText("团队结果或采用证据无法核验，请到 Goal 查看版本关系。").waitFor();
+        check(await managerResult.getByRole("table").count() === 0, "unavailable adoption immediately withdraws the formerly visible report");
+        check(api.durableWriteCount === 2, "result readback does not create another assignment or turn");
+        await managerResult.getByRole("button", {name: "查看证据与任务"}).click();
+        const goalChatTab = page.getByRole("navigation", {name: "Goal 视图"}).getByRole("button", {name: "对话", exact: true});
+        await goalChatTab.waitFor({state: "visible"});
+        check(await goalChatTab.getAttribute("aria-current") === "page", "the result offers a direct path to Goal conversation evidence and intervention");
+      }
       // The harness collects both uncaught page errors and console errors; a
       // dev-server resource status is not a client-side exception, so only the
       // former is a failure here.

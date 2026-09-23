@@ -4,7 +4,7 @@ import {
   isStaleActionFailure,
 } from "../../../../../../loopx/control_plane/presentation/action_review_plan.js";
 import { refreshAttention } from "./attention-details";
-import { teamPlanAssignments, teamPlanAppliedLine, teamPlanAppliedOutcome, teamPlanFields, teamPlanGoalId, teamPlanLaneCount, teamPlanReceiptGapLanes } from "./team-plan-preview";
+import { teamPlanAssignments, teamPlanAppliedLine, teamPlanAppliedOutcome, teamPlanFields, teamPlanGoalId, teamPlanLaneCount, teamPlanReceiptGapLanes, teamPlanTodoIds } from "./team-plan-preview";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent } from "react";
 import { AlertCircle, Bot, CalendarClock, FileText, ListPlus, MessageCircleQuestion, Paperclip, Plus, RefreshCw, Send, X } from "lucide-react";
 
@@ -635,6 +635,7 @@ function workspaceProposal(proposal: TypedActionProposal, t: WorkspaceTranslate)
       : proposalStatus(proposal.status),
     teamPlanOutcome: proposal.action_kind === "team.plan" ? teamPlanAppliedOutcome(proposal.receipt) ?? undefined : undefined,
     teamPlanAssignments: proposal.action_kind === "team.plan" ? teamPlanAssignments(proposal.receipt, proposal.normalized_parameters) : undefined,
+    teamPlanTodoIds: proposal.action_kind === "team.plan" ? teamPlanTodoIds(proposal.receipt) : undefined,
     teamPlanGapLanes: proposal.action_kind === "team.plan"
       ? teamPlanReceiptGapLanes(proposal.receipt, proposal.normalized_parameters)
       : undefined,
@@ -2010,7 +2011,8 @@ export function PersonalWorkspacePage({
             ) : !managerChatOpen ? (
               <ManagerHomeBoard goals={workspaceGoals} onRetry={() => void callbacks.onRefresh?.()} onSelectGoal={selectGoal} systemHealth={model.systemHealth} />
             ) : (
-              <ChannelTimeline items={managerChatItems} onSelect={setSelection} selectedGoal={null} />
+              <ChannelTimeline items={managerChatItems} onSelect={setSelection} selectedGoal={null} showManagerTeamResults
+                onOpenGoalEvidence={(goalId) => { selectGoal(goalId); openGoalConversation(); }} />
             )}
           </div>
           <div className="personal-composer-wrap">

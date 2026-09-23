@@ -1477,6 +1477,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
         deliveries: [],
         ingress: [],
       };
+      loopxModes.set(sessionId, current);
       if (request.method() === "GET") {
         await route.fulfill({ contentType: "application/json", json: current, status: 200 });
         return;
@@ -1502,12 +1503,13 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
           await route.fulfill({status: 409, json: {ok: false, error: "delegation artifact unavailable"}});
         } else {
           await route.fulfill({json: {ok: true, operation_id: body.operation_id, request_id: "request-analysis",
-            agent_id: "local-analyst", todo_id: "todo_analysis", status: "accepted", worker_active: false,
+            agent_id: "local-analyst", todo_id: current.fixturePlanTodoId ?? "todo_analysis", status: "accepted", worker_active: false,
             recovery_required: false,
             ...(current.fixtureAdoptionState ? {adoptions: [{requester_agent_id: "lead", consumer_operation_id: "accepted-synthesis",
               consumer_request_id: "request-synthesis", consumer_agent_id: "synthesizer", consumer_todo_id: "todo_synthesis",
               source_artifacts: [{ref: "report.json", sha256: "d".repeat(64)}],
-              consumer_artifacts: [{ref: "synthesis.json", sha256: "e".repeat(64)}], state: current.fixtureAdoptionState}]} : {}),
+              consumer_artifacts: [{ref: "synthesis.json", sha256: "e".repeat(64)},
+                ...(current.fixturePlanTodoId ? [{ref: "report.md", sha256: "8".repeat(64)}] : [])], state: current.fixtureAdoptionState}]} : {}),
             artifacts: [{ref: "report.json", sha256: "d".repeat(64),
               text: '{"cash_flow":75,"note":"<script>window.artifactExecuted=true</script>"}'},
               {ref: "report.md", sha256: "9".repeat(64), text: "# Cash allocation\n\n| Measure | Value |\n|---|---:|\n| Free cash | 75 |\n\n[Source](https://example.org/report)\n<script>window.artifactExecuted=true</script>"}]}});
@@ -1523,7 +1525,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
         const items = body.cursor ? [{record_id: "c".repeat(64), operation_id: "needs-recovery",
           agent_id: "cloud-reviewer", todo_id: "todo_review", status: "running", worker_active: false, recovery_required: true}]
           : [{record_id: "a".repeat(64), operation_id: "accepted-analysis", agent_id: "local-analyst",
-            todo_id: "todo_analysis", status: "accepted", worker_active: false, recovery_required: false,
+            todo_id: current.fixturePlanTodoId ?? "todo_analysis", status: "accepted", worker_active: false, recovery_required: false,
             artifacts: [{ref: "report.json", sha256: "d".repeat(64)}, {ref: "report.md", sha256: "9".repeat(64)}]},
           {record_id: "b".repeat(64), operation_id: "stale-output", status: "unavailable", recovery_required: null}];
         await route.fulfill({json: {items, has_more: !body.cursor, next_cursor: body.cursor ? null : "b".repeat(64), page_readback_complete: Boolean(body.cursor)}});
