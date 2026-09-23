@@ -467,6 +467,34 @@
 .personal-language-options > button > span { display: grid; gap: 4px; }
 .personal-language-options strong { font-size: 13px; }
 .personal-settings-card > footer { padding: 13px 20px; border-top: 1px solid var(--pw-line); background: #faf9f6; color: var(--pw-faint); font-size: 11px; }
+.personal-cadence-settings { display: grid; gap: 22px; width: min(100%, 760px); padding: 28px; border: 1px solid var(--pw-line); border-radius: 12px; background: var(--pw-card); }
+.personal-cadence-intro p { margin: 0; color: var(--pw-muted); font-size: 13px; line-height: 1.55; }
+.personal-cadence-scopes { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; border: 0; }
+.personal-cadence-scopes legend { width: 100%; margin-bottom: 10px; font-size: 12px; font-weight: 700; }
+.personal-cadence-scopes label { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 14px; border: 1px solid var(--pw-line-strong); border-radius: 6px; cursor: pointer; font-size: 13px; }
+.personal-cadence-scopes label:has(input:checked) { border-color: var(--pw-blue); color: var(--pw-blue-ink); background: var(--pw-blue-soft); }
+.personal-cadence-scopes input { accent-color: var(--pw-blue); }
+.personal-cadence-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.personal-cadence-fields label { display: grid; align-content: start; gap: 7px; min-width: 0; font-size: 12px; font-weight: 700; }
+.personal-cadence-fields input { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--pw-line-strong); border-radius: 6px; background: #fff; color: var(--pw-text); font: inherit; font-size: 13px; }
+.personal-cadence-fields small { color: var(--pw-muted); font-size: 11px; font-weight: 400; line-height: 1.5; }
+.personal-cadence-readback { display: grid; gap: 5px; padding: 18px; border: 1px solid var(--pw-line); border-radius: 8px; }
+.personal-cadence-readback small { color: var(--pw-muted); font-size: 11px; }
+.personal-cadence-readback strong { font-size: 26px; font-variant-numeric: tabular-nums; }
+.personal-cadence-readback strong span { font-size: 12px; font-weight: 500; }
+.personal-cadence-readback p { margin: 0; color: var(--pw-muted); font-size: 11px; line-height: 1.5; }
+.personal-cadence-boundary { display: flex; align-items: flex-start; gap: 9px; margin: 0; color: var(--pw-muted); font-size: 12px; line-height: 1.55; }
+.personal-cadence-boundary svg { flex: 0 0 auto; margin-top: 1px; }
+.personal-cadence-reduction { display: flex; align-items: center; gap: 10px; font-size: 12px; line-height: 1.5; }
+.personal-cadence-reduction input { accent-color: var(--pw-blue); }
+.personal-cadence-preview { display: grid; gap: 5px; padding: 14px; border: 1px solid var(--pw-blue); border-radius: 8px; background: var(--pw-blue-soft); font-size: 13px; }
+.personal-cadence-preview small { color: var(--pw-muted); line-height: 1.5; }
+.personal-cadence-actions { display: flex; justify-content: flex-end; gap: 9px; padding-top: 16px; border-top: 1px solid var(--pw-line); }
+.personal-cadence-actions button, .personal-cadence-settings button { min-height: 44px; padding: 0 14px; border: 1px solid var(--pw-line-strong); border-radius: 6px; background: #fff; color: var(--pw-text); cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; }
+.personal-cadence-actions button.is-primary { border-color: var(--pw-text); background: var(--pw-text); color: #fff; }
+.personal-cadence-settings button:disabled { cursor: not-allowed; opacity: .5; }
+.personal-cadence-notice { margin: 0; color: var(--pw-green); font-size: 12px; }
+@media (max-width: 640px) { .personal-cadence-settings { padding: 20px; } .personal-cadence-fields { grid-template-columns: 1fr; } .personal-cadence-actions { flex-wrap: wrap; } }
 .personal-machine-loading { display: grid; min-height: 220px; place-items: center; color: var(--pw-muted); font-size: 13px; }
 .personal-machine-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 22px; max-width: 1080px; }
 .personal-machine-namespaces { min-width: 0; }
