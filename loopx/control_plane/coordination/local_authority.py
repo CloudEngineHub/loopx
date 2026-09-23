@@ -258,7 +258,9 @@ def read_canonical_todos_if_promoted(
         if (not isinstance(confirmation, Mapping)
             or confirmation.get("provider_revision") != projection_readback["provider_revision"]
             or confirmation.get("observed_provider_revision") != payload.get("provider_revision")
-            or confirmation.get("status") not in {"pending", "delivered", "current"}):
+            or confirmation.get("status") not in {"pending", "delivered", "current"}
+            or confirmation.get("next_action") not in {"retry", "finish"}
+            or (confirmation.get("next_action") == "retry" and confirmation.get("status") != "pending")):
             raise LocalCoordinationAuthorityUnavailable(
                 "canonical projection confirmation is missing or invalid",
                 code="local_authority_projection_confirmation_invalid", payload=payload,
