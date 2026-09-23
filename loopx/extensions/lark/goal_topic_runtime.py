@@ -179,20 +179,29 @@ def _default_process_factory(args: list[str]) -> subprocess.Popen[str]:
 
 
 def _target_for_profile_chat(
-    target_payload: Mapping[str, Any], *, profile: str, chat_id: str
+    target_payload: Mapping[str, Any],
+    *,
+    profile: str,
+    chat_id: str,
+    bot_app_id: str = "",
+    active_target_refs: set[str] | None = None,
 ) -> tuple[str, Mapping[str, Any]] | None:
     targets = target_payload.get("targets")
     targets = targets if isinstance(targets, Mapping) else {}
     for target_ref, target in targets.items():
+        if active_target_refs is not None and str(target_ref) not in active_target_refs:
+            continue
         if not isinstance(target, Mapping) or target.get("enabled") is not True:
             continue
         channel = target.get("channel")
         channel = channel if isinstance(channel, Mapping) else {}
         identity = target.get("identity")
         identity = identity if isinstance(identity, Mapping) else {}
-        if (
-            str(channel.get("chat_id") or "") == chat_id
-            and str(identity.get("sender_profile") or "") == profile
+        same_app = (
+            bool(bot_app_id) and str(identity.get("bot_app_id") or "") == bot_app_id
+        )
+        if str(channel.get("chat_id") or "") == chat_id and (
+            same_app or str(identity.get("sender_profile") or "") == profile
         ):
             return str(target_ref), target
     return None
@@ -310,6 +319,13 @@ def poll_lark_goal_topic_profile_once(
     target_payload = target_payload if isinstance(target_payload, Mapping) else {}
     binding_payloads = snapshot.get("binding_payloads")
     binding_payloads = binding_payloads if isinstance(binding_payloads, Mapping) else {}
+    active_target_refs = {
+        str(binding.get("target_ref") or "")
+        for goal_id, payload in binding_payloads.items()
+        if isinstance(payload, Mapping)
+        for binding in bindings_for_goal(payload, str(goal_id))
+        if binding.get("enabled") is True
+    }
     events = _event_payloads(result.get("stdout"))
     replied_count = 0
     event_statuses: list[str] = []
@@ -320,6 +336,8 @@ def poll_lark_goal_topic_profile_once(
             target_payload,
             profile=profile,
             chat_id=chat_id,
+            bot_app_id=str(profile_config.get("bot_app_id") or ""),
+            active_target_refs=active_target_refs,
         )
         if target_match is None:
             event_statuses.append("target_unmatched")

@@ -102,15 +102,11 @@ class TeamPlanReviewCallbackStream:
         self.thread.join(timeout=1)
 
 
-def active_profile_chat_ids(
-    snapshot: Mapping[str, Any], profile: str
-) -> list[str]:
+def active_profile_chat_ids(snapshot: Mapping[str, Any], profile: str) -> list[str]:
     """Return active Goal-channel chats owned by one sender profile."""
 
     binding_payloads = snapshot.get("binding_payloads")
-    binding_payloads = (
-        binding_payloads if isinstance(binding_payloads, Mapping) else {}
-    )
+    binding_payloads = binding_payloads if isinstance(binding_payloads, Mapping) else {}
     active_target_refs = {
         str(binding.get("target_ref") or "")
         for goal_id, payload in binding_payloads.items()
@@ -122,6 +118,15 @@ def active_profile_chat_ids(
     targets = targets.get("targets") if isinstance(targets, Mapping) else None
     if not isinstance(targets, Mapping):
         return []
+    app_ids = {
+        str(identity.get("bot_app_id") or "")
+        for target in targets.values()
+        if isinstance(target, Mapping)
+        for identity in [target.get("identity")]
+        if isinstance(identity, Mapping)
+        and str(identity.get("sender_profile") or "") == profile
+        and identity.get("bot_app_id")
+    }
     chats: set[str] = set()
     for target_ref, target in targets.items():
         if not isinstance(target, Mapping) or target.get("enabled") is not True:
@@ -133,10 +138,10 @@ def active_profile_chat_ids(
         if not isinstance(identity, Mapping) or not isinstance(channel, Mapping):
             continue
         chat_id = str(channel.get("chat_id") or "")
+        same_app = bool(app_ids) and str(identity.get("bot_app_id") or "") in app_ids
         if (
-            str(identity.get("sender_profile") or "") == profile
-            and _CHAT_ID.fullmatch(chat_id)
-        ):
+            same_app or str(identity.get("sender_profile") or "") == profile
+        ) and _CHAT_ID.fullmatch(chat_id):
             chats.add(chat_id)
     return sorted(chats)
 
