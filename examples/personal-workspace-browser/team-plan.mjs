@@ -259,6 +259,25 @@ export const teamPlanScenario = {
       check(api.actionApplies.filter((id) => id === MANAGER_PROPOSAL_ID).length === 2, "retry uses the same proposal identity");
       check(api.durableWriteCount === 2, "recovery does not create another assignment");
       check((await drawer.innerText()).includes("待安排 · 尚未加入此目标"), "recovery preserves the original unassigned work");
+      const resultCard = page.locator(".personal-proposal-row", { hasText: "已恢复原分配结果" });
+      await drawer.locator(".personal-drawer-close").click();
+      await resultCard.waitFor({ state: "visible" });
+      check((await resultCard.innerText()).includes("已恢复原分配结果"), "closing details keeps the assignment result in the original conversation");
+      await context.checkpointCoverage();
+      await page.reload({ waitUntil: "networkidle" });
+      await page.getByTestId("personal-goal-home").waitFor({ state: "visible" });
+      await page.locator(".personal-manager-link").first().click();
+      await page.getByRole("navigation", { name: "管家视图" }).getByRole("button", { name: /^(Chat|对话)$/ }).click();
+      await resultCard.waitFor({ state: "visible" });
+      await page.screenshot({
+        path: resolve(outputDir, "team-plan-result-returned.png"),
+        fullPage: false,
+        animations: "disabled",
+      });
+      await resultCard.click();
+      await drawer.getByRole("heading", { name: "已恢复原分配结果", exact: true }).waitFor();
+      check(api.actionApplies.filter((id) => id === MANAGER_PROPOSAL_ID).length === 2, "reload reads back the result without reapplying the team plan");
+      check(api.durableWriteCount === 2, "reopening the assignment result writes no work");
       // The harness collects both uncaught page errors and console errors; a
       // dev-server resource status is not a client-side exception, so only the
       // former is a failure here.

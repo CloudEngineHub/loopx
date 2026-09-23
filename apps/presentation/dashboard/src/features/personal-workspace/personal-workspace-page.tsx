@@ -1102,6 +1102,7 @@ export function PersonalWorkspacePage({
         const restoreable = stored
           .filter((proposal) => ["preview_ready", "gated", "deferred", "applying"].includes(proposal.status)
             || compileActionReviewPlan(proposal).retryOriginal === true
+            || (proposal.action_kind === "team.plan" && proposal.status === "applied")
             || (proposal.action_kind === "operation.execute" && proposal.status === "applied"))
           .map((proposal) => workspaceProposal(proposal, t));
         const restored = Object.fromEntries(restoreable.map((proposal) => [proposal.previewId, proposal]));
@@ -1890,7 +1891,7 @@ export function PersonalWorkspacePage({
       drawer={drawerSelection ? <ContextDrawer agents={agents} attentionHistory={model.attentionHistory ?? model.userTodos} onSelectAttention={(item) => setSelection({ kind: "attention", item })} callbacks={effectiveDrawerCallbacks} goalNotifications={model.goalNotifications ?? []} goals={workspaceGoals} inspectorExpanded={taskInspectorExpanded} larkConnections={readOnly ? [] : larkConnections} onClose={() => {
         if (drawerSelection.kind === "proposal"
           && ["applied", "rejected"].includes(drawerSelection.item.status)
-          && !(drawerSelection.item.actionKind === "heartbeat.bind" && drawerSelection.item.status === "applied")) {
+          && !(drawerSelection.item.status === "applied" && ["heartbeat.bind", "team.plan"].includes(drawerSelection.item.actionKind))) {
           setProposals((current) => {
             const next = { ...current };
             delete next[drawerSelection.item.previewId];
