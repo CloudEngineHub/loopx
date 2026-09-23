@@ -82,7 +82,9 @@ export function ManagerTeamResult({goalId, todoIds, zh, onOpenGoalEvidence}: {
   const [result, setResult] = useState<{key: string; readback: Readback} | null>(null);
   const [revision, setRevision] = useState(0);
   const todoKey = [...todoIds].sort().join(",");
-  const key = `${goalId}:${todoKey}`;
+  // A new read must withdraw the previous accepted report immediately. The
+  // request can be slow or fail after its source acceptance has changed.
+  const key = `${goalId}:${todoKey}:${revision}`;
   useEffect(() => {
     if (!goalId || !todoKey) return;
     let cancelled = false;
@@ -98,9 +100,9 @@ export function ManagerTeamResult({goalId, todoIds, zh, onOpenGoalEvidence}: {
     return () => window.clearInterval(timer);
   }, []);
   const readback = result?.key === key ? result.readback : null;
-  if (!goalId || !todoKey || !readback) return null;
-  return <section className={`personal-manager-team-result is-${readback.kind}`} aria-label={zh ? "团队结果回到管家" : "Team result returned to manager"}>
-    {readback.kind === "adopted" ? <>
+  if (!goalId || !todoKey) return null;
+  return <section className={`personal-manager-team-result is-${readback?.kind ?? "loading"}`} aria-label={zh ? "团队结果回到管家" : "Team result returned to manager"} aria-busy={!readback}>
+    {!readback ? <p role="status">{zh ? "正在核验团队结果…" : "Verifying team result…"}</p> : readback.kind === "adopted" ? <>
       <header><strong>{zh ? "团队验收结果" : "Team result"}</strong><small>{goalId} · {readback.agentId}</small></header>
       <TeamArtifactReport artifact={readback.artifact} zh={zh} heading={zh ? "依据已采用 · 结果已验收" : "Source adopted · Result accepted"}/>
     </> : <p role="status">{readback.kind === "unavailable"
@@ -110,7 +112,7 @@ export function ManagerTeamResult({goalId, todoIds, zh, onOpenGoalEvidence}: {
       : (zh ? "团队任务已分配，尚无可核验的已采用结果。" : "Team work is assigned; no verifiable adopted result yet.")}</p>}
     <div className="personal-manager-team-result-actions">
       <button type="button" onClick={() => onOpenGoalEvidence(goalId)}>{zh ? "查看证据与任务" : "Inspect evidence and tasks"}</button>
-      <button type="button" onClick={() => setRevision(value => value + 1)}>{zh ? "刷新结果" : "Refresh result"}</button>
+      <button type="button" disabled={!readback} onClick={() => setRevision(value => value + 1)}>{zh ? "刷新结果" : "Refresh result"}</button>
     </div>
   </section>;
 }

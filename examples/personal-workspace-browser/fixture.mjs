@@ -1491,6 +1491,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
         return;
       }
       if (body.operation === "read") {
+        if (current.fixtureTeamReadDelayMs) await new Promise(resolveWait => setTimeout(resolveWait, current.fixtureTeamReadDelayMs));
         if (body.operation_id === "accepted-synthesis") {
           await route.fulfill({json: {ok: true, operation_id: body.operation_id, request_id: "request-synthesis",
             agent_id: "synthesizer", todo_id: "todo_synthesis", status: "accepted", worker_active: false,

@@ -300,8 +300,12 @@ export const teamPlanScenario = {
         await page.screenshot({path: resolve(outputDir, "team-plan-manager-adopted-result-mobile.png"), fullPage: false, animations: "disabled"});
         await page.setViewportSize({width: 1512, height: 982});
         mode.fixtureAdoptionState = "unavailable";
+        mode.fixtureTeamReadDelayMs = 1000;
         await managerResult.getByRole("button", {name: "刷新结果"}).click();
+        await managerResult.getByText("正在核验团队结果…").waitFor({state: "visible", timeout: 500});
+        check(await managerResult.getByRole("table").count() === 0, "refresh immediately withdraws the old accepted report while the new read is pending");
         await managerResult.getByText("团队结果或采用证据无法核验，请到 Goal 查看版本关系。").waitFor();
+        mode.fixtureTeamReadDelayMs = 0;
         check(await managerResult.getByRole("table").count() === 0, "unavailable adoption immediately withdraws the formerly visible report");
         check(api.durableWriteCount === 2, "result readback does not create another assignment or turn");
         await managerResult.getByRole("button", {name: "查看证据与任务"}).click();
