@@ -6,6 +6,7 @@ import {join} from "node:path";
 import type {JsonObject} from "../../loopx/control_plane/effect_program.ts";
 import {FileAuthorityStore} from "../../loopx/control_plane/coordination/file_authority_store.ts";
 import {SqliteAuthorityStore} from "../../loopx/control_plane/coordination/sqlite_authority_store.ts";
+import {sqliteRuntimeIdentity} from "../../loopx/control_plane/coordination/sqlite_runtime.ts";
 import {coordinationTodoReadModel} from "../../loopx/control_plane/coordination/coordination_projection.ts";
 import {readCanonicalSnapshotFromStore, readCanonicalSnapshotPage, CANONICAL_SNAPSHOT_PAGE_BYTES} from "../../loopx/control_plane/coordination/canonical_snapshot_page.ts";
 import {productionScaleCoordinationFixture} from "./production_scale_coordination_fixture.ts";
@@ -17,7 +18,9 @@ async function fixture(t: test.TestContext, kind: "file" | "sqlite" = "file") {
   const Store = kind === "file" ? FileAuthorityStore : SqliteAuthorityStore;
   return {store: new Store(root, "goal-a"), contender: new Store(root, "goal-a")};
 }
-for (const kind of ["file", "sqlite"] as const) {
+const qualifiedSqlite = sqliteRuntimeIdentity().sqlite_authority_qualified;
+if (!qualifiedSqlite) test.skip("SQLite snapshot conformance requires a qualified SQLite runtime", () => {});
+for (const kind of (qualifiedSqlite ? ["file", "sqlite"] : ["file"]) as ("file" | "sqlite")[]) {
   registerCanonicalSnapshotConformance(kind, t => fixture(t, kind));
   test(`${kind}: a normal complete collection keeps a single RPC response`, async t => {
     const {store} = await fixture(t, kind);
@@ -69,8 +72,8 @@ test("a missing runtime provider read does not initialize a replacement authorit
   t.after(() => rm(root, {recursive: true, force: true}));
   const before = await readdir(root);
   const result = await readCanonicalSnapshotPage(snapshotRequest({runtime_root: root}));
-  assert.equal(result.status, "unavailable");
-  assert.equal(result.reason_code, "store_identity_unavailable");
+  assert.equal(result.status, "missing");
+  assert.equal(result.reason_code, undefined);
   assert.deepEqual(await readdir(root), before);
   assert.equal("todos" in result, false);
 });

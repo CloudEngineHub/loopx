@@ -64,16 +64,19 @@ def read_canonical_snapshot(
                     "snapshot RPC returned an unpaged result",
                 )
                 return {
-                    key: page[key]
-                    for key in (
-                        "status",
-                        "reason_code",
-                        "reason",
-                        "source_authority",
-                        "decision_read_from_provider",
-                        "legacy_fallback_used",
-                    )
-                    if key in page
+                    "schema_version": LOCAL_COORDINATION_TODO_LIST_RESULT_SCHEMA,
+                    **{
+                        key: page[key]
+                        for key in (
+                            "status",
+                            "reason_code",
+                            "reason",
+                            "source_authority",
+                            "decision_read_from_provider",
+                            "legacy_fallback_used",
+                        )
+                        if key in page
+                    },
                 }
             require(
                 page.get("schema_version") == RESULT_SCHEMA
@@ -232,6 +235,7 @@ def read_canonical_snapshot(
         }
     except ValueError as error:
         return {
+            "schema_version": LOCAL_COORDINATION_TODO_LIST_RESULT_SCHEMA,
             "status": "failed",
             "reason_code": "canonical_snapshot_result_invalid",
             "reason": str(error),

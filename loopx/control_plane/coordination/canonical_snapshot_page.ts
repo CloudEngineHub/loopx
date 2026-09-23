@@ -70,7 +70,17 @@ export async function readCanonicalSnapshotFromStore(value: unknown, store: Auth
   const base = {schema_version: CANONICAL_SNAPSHOT_PAGE_RESULT, source_authority: source,
     decision_read_from_provider: true, legacy_fallback_used: false};
   const identity = await store.storeIdentity();
-  if (identity.status !== "available") return {...base, ...identity};
+  if (identity.status !== "available") {
+    // A promoted but absent store has the same caller contract as the old
+    // single-read path: recovery must see "missing". Identity is unavailable
+    // before a store exists, so distinguish absence from an identity failure
+    // without opening a replacement authority.
+    if (identity.status === "unavailable") {
+      const absent = await store.loadAuthority();
+      if (absent.status === "missing") return {...base, ...absent};
+    }
+    return {...base, ...identity};
+  }
   const head = await store.loadAuthority();
   if (head.status !== "loaded") return {...base, ...head};
   const query = canonicalAuthoritySha256({goal_id: goal, include_leases: input.include_leases, projection_readback: readback});

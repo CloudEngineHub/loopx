@@ -108,6 +108,7 @@ def test_later_page_failure_discards_all_earlier_records(status):
     result, calls = read(source)
     assert len(calls) == 2
     assert result == {
+        "schema_version": "loopx_local_coordination_todo_list_result_v0",
         "status": status,
         "reason_code": "canonical_snapshot_changed",
         "reason": "restart",
