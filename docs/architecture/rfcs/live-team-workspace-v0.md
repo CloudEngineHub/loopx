@@ -327,6 +327,11 @@ stack the reader below it. Explicit artifact choices survive delivery refresh an
 are revalidated by operation, reference and hash; automatic reads do not take
 keyboard focus. Acceptance and requester adoption remain separate in details.
 This qualifies report readback, not mixed-team launch or stop/recovery.
+The ordinary managed Goal Files view admits only a projected deliverable, such
+as a published report. Latest-run metadata, validation summaries and event
+counts remain execution observations; they cannot become a file or inherit an
+unrelated open Todo ID. A readable managed result still needs a versioned,
+public-safe artifact projection with its own source and acceptance readback.
 Merged [#4814](https://github.com/loopx-project/loopx/pull/4814) adds confirmation
 of one canonical team plan from manager and Goal Lark cards. Authenticated card
 bindings and the shared decision owner prevent a second click from creating a
