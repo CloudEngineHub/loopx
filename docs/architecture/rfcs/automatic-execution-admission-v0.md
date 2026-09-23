@@ -209,10 +209,15 @@ product journey. The broader product goal remains open until M2/M3 acceptance.
 
 ## Appendix: implementation ledger
 
-Baseline audit at `23edcb19c`: no durable owner minimum interval. M1 is an
-unmerged candidate; M2/M3/M4 and live App qualification remain unverified.
-Tests and PR validation must distinguish deterministic evidence from host
-promotion. No existing automation is activated or rebound by this proposal.
+Baseline audit at `23edcb19c`: no durable owner minimum interval. M1 shipped in
+[#4921](https://github.com/loopx-project/loopx/pull/4921). Managed Turn
+admission is proposed in [#4929](https://github.com/loopx-project/loopx/pull/4929),
+while live App timer-to-hook coverage remains unqualified. The M3 settings
+companion presents the quota-owned Goal/agent/automation policy through a
+revision-locked local preview, apply and readback. It does not edit existing
+Codex App timers, and next-eligible time plus Lark/CLI wait parity remain open.
+M4 remains a design option. Tests and PR validation must distinguish
+deterministic evidence from host promotion.
 
 ### Hook research — 2026-09-23
 

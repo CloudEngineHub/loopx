@@ -155,7 +155,13 @@ M1 对 App 调度管理有独立价值，但不代表多宿主产品旅程完成
 
 ## 附录：实现记录
 
-`23edcb19c` 基线没有持久用户最短间隔。M1 是未合并候选；M2/M3/M4 与真实 App 验收尚未完成。
+`23edcb19c` 基线没有持久用户最短间隔。M1 已由
+[#4921](https://github.com/loopx-project/loopx/pull/4921) 合入；受管 Turn 准入在
+[#4929](https://github.com/loopx-project/loopx/pull/4929) 待评审，真实 App
+定时器至 hook 的覆盖仍未验收。M3 设置页阶段成果复用 quota 权威，提供
+Goal／Agent／Automation 作用域的修订号锁定预览、应用和读回；它不修改已有
+Codex App 定时器。下次可运行时间及 Lark／CLI 等待反馈一致性仍未完成，M4
+仍是设计选项。
 测试和 PR 必须区分确定性验证与宿主推广。本提案不激活、不改绑任何已有自动化。
 
 ### Hook 调研 — 2026-09-23
