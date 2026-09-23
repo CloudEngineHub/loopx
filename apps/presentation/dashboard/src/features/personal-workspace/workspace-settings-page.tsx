@@ -26,6 +26,7 @@ export function WorkspaceSettingsPage({
   focusGoalConnection = false,
   goals,
   initialGoalId,
+  initialMachineCapabilityId,
   initialTab = "lark",
   goalNotifications,
   onChanged,
@@ -37,6 +38,7 @@ export function WorkspaceSettingsPage({
   focusGoalConnection?: boolean;
   goals: WorkspaceGoal[];
   initialGoalId?: string | null;
+  initialMachineCapabilityId?: string;
   initialTab?: WorkspaceSettingsTab;
   goalNotifications: WorkspaceGoalNotification[];
   onChanged: () => void;
@@ -157,7 +159,7 @@ export function WorkspaceSettingsPage({
           </div>
         ) : null}
 
-        {tab === "machine" ? <MachineConfigurationSettings /> : null}
+        {tab === "machine" ? <MachineConfigurationSettings initialCapabilityId={initialMachineCapabilityId} /> : null}
         {tab === "capabilities" ? (
           <GoalCapabilitySettings
             callbacks={callbacks}

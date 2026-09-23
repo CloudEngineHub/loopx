@@ -101,10 +101,10 @@ function shortRevision(value: string | undefined) {
   return value.replace(/^sha256:/, "").slice(0, 12);
 }
 
-export function MachineConfigurationSettings() {
+export function MachineConfigurationSettings({ initialCapabilityId = "" }: { initialCapabilityId?: string }) {
   const { locale, t } = useWorkspaceI18n();
   const [inspection, setInspection] = useState<MachineConfigurationInspection | null>(null);
-  const [selectedCapabilityId, setSelectedCapabilityId] = useState("");
+  const [selectedCapabilityId, setSelectedCapabilityId] = useState(initialCapabilityId);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [jsonDraft, setJsonDraft] = useState("{}");
   const [editorMode, setEditorMode] = useState<EditorMode>("guided");
@@ -360,6 +360,15 @@ export function MachineConfigurationSettings() {
             </section>
           ) : null}
 
+          {selected.capability_id === "steward_executor" ? (
+            <section className="personal-capability-behavior-note">
+              <ShieldCheck aria-hidden size={18} />
+              <div><strong>{locale === "zh-CN" ? "管家模型与思考深度" : "Steward model and reasoning"}</strong><p>{locale === "zh-CN"
+                ? "这里设置本机管家新会话的默认模型和思考深度。已有会话可能继续使用原来的分配；配置成功不代表正在运行的会话已切换。"
+                : "Choose the model and reasoning effort for new steward sessions on this machine. Existing sessions may retain their earlier allocation; saving a default does not switch a running session."}</p></div>
+            </section>
+          ) : null}
+
           {selected.capability_id === "pull_request_review" ? (
             <section className="personal-capability-behavior-note">
               <ShieldCheck aria-hidden size={18} />
@@ -377,7 +386,9 @@ export function MachineConfigurationSettings() {
 
           {editorMode === "guided" ? (
             <section className="personal-capability-field-summary">
-              <CapabilityConfigurationFields copy={localizedCapabilityFieldCopy(locale)} disabled={Boolean(busy)} editor={selected.configuration_editor} onChange={changeDraft} value={draft}
+              <CapabilityConfigurationFields copy={localizedCapabilityFieldCopy(locale)} disabled={Boolean(busy)} editor={selected.configuration_editor}
+                omitKeys={selected.capability_id === "steward_executor" && draft.selection_policy !== "flexible" ? ["eligible_endpoints"] : []}
+                onChange={changeDraft} value={draft}
                 enabledAction={<button className="personal-capability-edit-json" onClick={() => changeMode("json")} type="button"><Code2 aria-hidden size={14} />{t("machine.editJson")}</button>} />
               {!editorValid ? <p className="personal-machine-validation" role="alert">{t("machine.requiredFields")}</p> : null}
             </section>

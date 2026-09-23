@@ -1131,6 +1131,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
     if (url.pathname === "/api/chat/machine-configuration/apply" && request.method() === "POST") {
       const body = request.postDataJSON();
       state.machineConfigurationRequests.push({ phase: "apply", ...body });
+      machineNamespaces[body.namespace] = body.namespace_configuration;
       state.machineInspectionStatus = "configured";
       state.invalidMachineNamespaces = [];
       await route.fulfill({ contentType: "application/json", json: {

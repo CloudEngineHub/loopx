@@ -1875,7 +1875,8 @@ export function PersonalWorkspacePage({
         goalNotifications={model.goalNotifications ?? []}
         goals={workspaceGoals}
         initialGoalId={selection?.kind === "settings" ? selection.goalId ?? selectedGoalId : selectedGoalId}
-        initialTab={selection?.kind === "settings" ? selection.tab ?? "lark" : "lark"}
+        initialMachineCapabilityId={!selectedGoalId ? "steward_executor" : undefined}
+        initialTab={selection?.kind === "settings" ? selection.tab ?? (selectedGoalId ? "lark" : "machine") : "lark"}
         onChanged={() => void refreshSettingsState()}
         onClose={closeSettings}
         onThemeChange={updateTheme}
