@@ -29,7 +29,7 @@ accepted, and when to ask you.
 | --- | --- |
 | Keep a coding or research agent working across sessions | [Install and connect](#try-loopx) |
 | Manage personal projects, schedules and decisions in one place | [Personal Agent Workspace](#meet-the-personal-agent-workspace) |
-| Let agents implement, review and improve work together | [Cross-runtime collaboration](docs/product/use-cases/cross-runtime/cross-runtime-impl-review-demo.md) |
+| Let agents collaborate and deliver verifiable results | [Agent collaboration guide](docs/product/use-cases/cross-runtime/README.md) |
 
 ## Meet the Personal Agent Workspace
 
@@ -297,7 +297,7 @@ More inspectable surfaces:
   narrative, quick start, and long-running evidence;
 - the [complete Showcase catalog](docs/showcases/README.md) and its
   [bilingual hosted index](docs/showcases/index.html);
-- the [cross-runtime implementation review demo](docs/product/use-cases/cross-runtime/cross-runtime-impl-review-demo.md);
+- the [Agent collaboration guide](docs/product/use-cases/cross-runtime/README.md) for dependent artifacts, independent review and returned results;
 - the public [user manual](https://my.feishu.cn/wiki/CaL5wMk9ui17ngkWzeUcMlAYnZg).
 
 <a id="quick-start"></a>
@@ -574,10 +574,11 @@ describes the operator model; the
 describes conservative value signals across output quantity, quality, token
 cost, and user attention cost.
 
-For one concrete peer workflow, see the
-[cross-runtime implementation review demo](docs/product/use-cases/cross-runtime/cross-runtime-impl-review-demo.md):
-Claude implements and Codex reviews while LoopX keeps ownership, evidence,
-quota, and handoff explicit.
+For a concrete peer workflow, start with the
+[Agent collaboration guide](docs/product/use-cases/cross-runtime/README.md):
+a builder consumes an analyst's artifact, obtains independent review, handles
+an owner correction and returns the checked result. The guide distinguishes
+the runnable same-host example from the earlier cross-runtime design sketch.
 
 ### App and Projection Paths
 

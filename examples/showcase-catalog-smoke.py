@@ -278,6 +278,7 @@ def main() -> int:
         "https://loopx-project.github.io/loopx/",
         "docs/assets/long-running-loop-openviking-trajectory.png",
         "docs/assets/long-running-loop-ml-experiment-trajectory.png",
+        "### Review Agent Work",
         "## Evidence",
         "### Used In Real Projects",
         "docs/showcases/cases/independent-cpp-accuracy-long-run.md",

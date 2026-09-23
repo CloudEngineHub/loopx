@@ -169,6 +169,19 @@ for (const provider of ["file", ...(process.env.LOOPX_TEST_POSTGRES_URL ? ["post
       assert.equal((await executeCoordinationTodoTerminalLifecycle(store, {...attempt,
         goal_acceptance_validation_receipts: receipts})).reason_code, "goal_acceptance_validation_rejected");
     }
+    const dirty = await executeCoordinationTodoTerminalLifecycle(store, {...attempt,
+      goal_acceptance_validation_receipts: [{criterion_id: "criterion-a", receipt: {
+        ...runnerReceipt("criterion-a", false), exit_code: null, status: "workspace_dirty",
+        summary: "private path /private/sensitive/worktree must never be projected",
+      }}]});
+    assert.equal(dirty.reason_code, "goal_acceptance_validation_rejected");
+    assert.deepEqual(dirty.goal_acceptance_validation_failure, {
+      schema_version: "goal_acceptance_validation_failure_v0", criterion_id: "criterion-a",
+      validation_status: "workspace_dirty", exit_code: null,
+      next_action: "Preserve unrelated Git-visible files in ignored private storage or outside the worktree, then retry completion from that clean worktree with the same Turn identity.",
+    });
+    assert.match(String(dirty.reason), /workspace_dirty.*clean worktree/);
+    assert.doesNotMatch(JSON.stringify(dirty), /private\/sensitive|validation_argv/);
     const good = {...attempt, goal_acceptance_validation_receipts: [{criterion_id: "criterion-a", receipt: runnerReceipt()}]};
     for (const field of ["provider_revision", "contract_digest", "todo_semantic_digest", "operation_id"]) {
       assert.equal((await executeCoordinationTodoTerminalLifecycle(store, {...good,
