@@ -44,7 +44,7 @@ const acquire = {goal_id: "goal-a", todo_id: "todo_work", owner: "agent-a", idem
   expected_version: null, ttl_seconds: 60, write_scopes: [], registered_agents: ["agent-a"], now};
 const terminal: CoordinationTodoTerminalLifecycleInput = {goal_id: "goal-a", todo_id: "todo_work", expected_role: "agent",
   command: "complete", actor_agent_id: "agent-a", registered_agents: ["agent-a"], lifecycle_grants: [],
-  authority_reason: null, decision_outcome: null, operation_id: "complete", lease_idempotency_key: null,
+  authority_reason: null, decision_outcome: null, operation_identity: {kind: "explicit" as const, operation_id: "complete"}, lease_idempotency_key: null,
   lease_expected_version: null, allow_user_gate_auto_acquire: false, requested_no_followup: true,
   requested_completion_turn_key: null, requested_completion_identity_source: null, linked_successor_todo_ids: [],
   successor_intents: [], note: null, evidence: null, reason: null, clear_claim: false,

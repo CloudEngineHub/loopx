@@ -292,6 +292,16 @@ not necessarily active in an installed release. Archive maintainers may use
 the tagged package channel and wait for the corresponding release instead of
 trying to switch an installed distribution to `main`.
 
+For an archive snapshot, `update check` and `update plan` resolve a selected
+moving GitHub ref to its current commit before saying that no update is needed.
+Matching package versions and a recent install timestamp do not establish
+source equality. If the ref lookup is unavailable, the plan reports activation
+as unqualified; retry online or select a trusted full commit SHA. A custom
+archive URL is likewise not proven by the GitHub repo/ref alone.
+An injected `--installed-doctor-json` snapshot is diagnostic input, not a live
+remote-ref check: it can qualify an immutable SHA but cannot claim a moving ref
+is currently installed.
+
 An install taken from a pinned full commit SHA needs no separate lineage
 lookup: `loopx update check --ref <40-hex-commit>` compares that commit with the
 installed manifest source commit and reports `runtime_active` when they match,

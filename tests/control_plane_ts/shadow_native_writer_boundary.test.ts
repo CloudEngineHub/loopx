@@ -27,6 +27,8 @@ for (const [name, invoke, schema, requestFields] of [
     LOCAL_COORDINATION_TODO_TERMINAL_LIFECYCLE_REQUEST_SCHEMA, {
       registered_agents: [], lifecycle_grants: [], successor_intents: [],
       linked_successor_todo_ids: [], lease_expected_version: null,
+      registry_source: {path: join(tmpdir(), "unused-registry.json"), sha256: "0".repeat(64)},
+      command: "complete", operation_identity: {kind: "explicit", operation_id: "maintenance"},
     }],
   ["archive", archiveLocalCoordinationTodos,
     LOCAL_COORDINATION_TODO_ARCHIVE_REQUEST_SCHEMA, {
@@ -57,6 +59,8 @@ for (const [name, invoke, schema, requestFields] of [
     LOCAL_COORDINATION_TODO_TERMINAL_LIFECYCLE_REQUEST_SCHEMA, {
       registered_agents: [], lifecycle_grants: [], successor_intents: [],
       linked_successor_todo_ids: [], lease_expected_version: null,
+      registry_source: {path: join(tmpdir(), "unused-registry.json"), sha256: "0".repeat(64)},
+      command: "complete", operation_identity: {kind: "explicit", operation_id: "maintenance"},
     }],
   ["archive", archiveLocalCoordinationTodos,
     LOCAL_COORDINATION_TODO_ARCHIVE_REQUEST_SCHEMA, {

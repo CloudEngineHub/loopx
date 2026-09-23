@@ -1463,6 +1463,10 @@ Continue provider-first delivery.
         runtime_calls.append(method)
         if method == "coordination.local_authority.todo_archive":
             archive_operation_ids.append(str(params["operation_id"]))
+        if method == "coordination.local_authority.todo_terminal":
+            assert params["schema_version"] == "loopx_local_coordination_todo_terminal_lifecycle_request_v3"
+            assert "operation_id" not in params
+            assert params["operation_identity"]["kind"] == "explicit"
         result = original_effect_runtime_result(method, params)
         if method == "coordination.local_authority.todo_terminal":
             terminal_phases.append(str(result["status"]))

@@ -434,6 +434,7 @@ Capability 把上述通用原语组成 outcome-owned 工作泳道。先按结果
 | --- | --- | --- |
 | 把公开 issue 推进为可审查、有证据的变更 | [Issue Fix](loopx/capabilities/issue_fix/README.zh-CN.md) | `loopx capability show issue-fix --format json` |
 | 在交付前对精确 final diff 做质量验收 | [Change Quality](loopx/capabilities/change_quality/README.md) | `loopx capability show change-quality-qualification --format json` |
+| 在周期复审之前发现“忙碌但偏离目标”的工作轮次 | [进展评估哨兵](loopx/capabilities/progress_review/README.zh-CN.md) | `loopx capability show progress-review-sentinel --format json` |
 | 维护由多个已审查分支组成、持续变化的集成栈 | [Integration Branch](loopx/capabilities/integration_branch/README.md) | `loopx capability show integration-branch-reconcile --format json` |
 | 在不丢失假设和发现的前提下探索不确定研究问题 | [Explore](loopx/capabilities/explore/README.zh-CN.md) | `loopx capability show explore --format json` |
 | 基于当前证据和已验证结果重新建立决策上下文 | [Decision Context](loopx/capabilities/decision_context/README.zh-CN.md) | `loopx capability show decision-context --format json` |

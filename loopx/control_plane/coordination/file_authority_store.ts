@@ -11,6 +11,7 @@ import type {
   AuthorityStoreCommitResult,
   AuthorityStoreIdentityResult,
   AuthorityStoreLoadResult,
+  AuthorityStoreHead,
   AuthorityStoreReadFailure,
   AuthorityStoreReceiptResult,
   AuthorityStoreScanResult,
@@ -247,6 +248,20 @@ export class FileAuthorityStore implements AuthorityStore {
     } catch (error) {
       return readFailure(error);
     }
+  }
+
+  /** Checkpoint-only external append: retain the real writer lock through the
+   * synchronous callback. This neither commits nor advances authority revision. */
+  async withCheckpointHead(save: (head: AuthorityStoreHead, identity: string) => JsonObject): Promise<JsonObject> {
+    return await withFileMutationLock(this.path, async () => {
+      const identity = await this.readStoreIdentity(false);
+      const current = await this.readDocument();
+      if (!current) throw new FileStoreUnavailableError("checkpoint authority is missing");
+      const result = save({head: structuredClone(current.head),
+        provider_revision: current.provider_revision, cursor: current.cursor}, identity);
+      if (result instanceof Promise) throw new Error("checkpoint save must be synchronous");
+      return result;
+    });
   }
 
   async commitAuthority(commit: AuthorityStoreCommit): Promise<AuthorityStoreCommitResult> {

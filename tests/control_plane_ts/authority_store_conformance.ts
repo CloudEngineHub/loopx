@@ -562,7 +562,7 @@ export function registerAuthorityStoreConformance(
       lifecycle_grants: [],
       authority_reason: null,
       decision_outcome: null,
-      operation_id: "complete-terminal",
+      operation_identity: {kind: "explicit" as const, operation_id: "complete-terminal"},
       lease_idempotency_key: "terminal-lease",
       lease_expected_version: 1,
       allow_user_gate_auto_acquire: false,
@@ -621,7 +621,7 @@ export function registerAuthorityStoreConformance(
     };
     const dangling = await executeCoordinationTodoTerminalLifecycle(store, {
       ...commitRequest,
-      operation_id: "complete-dangling-successor",
+      operation_identity: {kind: "explicit" as const, operation_id: "complete-dangling-successor"},
       linked_successor_todo_ids: ["todo-missing"],
       successor_intents: [],
     });
@@ -656,7 +656,7 @@ export function registerAuthorityStoreConformance(
     assert.equal(crossed.status, "replayed", JSON.stringify(crossed));
     assert.equal(crossed.changed, false);
     const noReceipt = await executeCoordinationTodoTerminalLifecycle(contender,
-      {...commitRequest, operation_id: "unknown-terminal-operation"});
+      {...commitRequest, operation_identity: {kind: "explicit" as const, operation_id: "unknown-terminal-operation"}});
     assert.equal(noReceipt.status, "failed");
     assert.equal(noReceipt.reason_code, "invalid_todo_completion_transaction");
     assert.deepEqual(await store.loadAuthority(), committedHead);
@@ -835,7 +835,7 @@ export function registerAuthorityStoreConformance(
       decision_outcome: null,
       lease_idempotency_key: null,
       lease_expected_version: null,
-      operation_id: "supersede-terminal",
+      operation_identity: {kind: "explicit" as const, operation_id: "supersede-terminal"},
       allow_user_gate_auto_acquire: false,
       requested_no_followup: false,
       requested_completion_turn_key: null,
@@ -962,7 +962,7 @@ export function registerAuthorityStoreConformance(
       actor_agent_id: "agent-a",
       lease_idempotency_key: fixture.completion_lease_idempotency_key,
       lease_expected_version: fixture.completion_lease_expected_version,
-      operation_id: "complete-production-scale",
+      operation_identity: {kind: "explicit" as const, operation_id: "complete-production-scale"},
       requested_no_followup: true,
       validation_declaration: PRODUCTION_SCALE_VALIDATION_DECLARATION,
       validation_receipt: {
@@ -992,7 +992,7 @@ export function registerAuthorityStoreConformance(
       actor_agent_id: "agent-b",
       lease_idempotency_key: fixture.supersede_lease_idempotency_key,
       lease_expected_version: fixture.supersede_lease_expected_version,
-      operation_id: "supersede-production-scale",
+      operation_identity: {kind: "explicit" as const, operation_id: "supersede-production-scale"},
       requested_no_followup: false,
       validation_declaration: null,
       validation_receipt: null,

@@ -40,7 +40,7 @@ from .path_resolution import resolve_todo_state_path
 from .provider_projection import projection_delivery_requires_ack, settle_canonical_todo_projection
 from .successor_derivation import build_successor_intents
 
-_TERMINAL_REQUEST_SCHEMA = "loopx_local_coordination_todo_terminal_lifecycle_request_v2"
+_TERMINAL_REQUEST_SCHEMA = "loopx_local_coordination_todo_terminal_lifecycle_request_v3"
 _ARCHIVE_REQUEST_SCHEMA = "loopx_local_coordination_todo_archive_request_v0"
 _ARCHIVE_ACK_REQUEST_SCHEMA = "loopx_local_coordination_todo_archive_ack_request_v0"
 _ACCEPTED = {"applied", "recovered", "replayed", "no_change", "planned"}
@@ -339,6 +339,11 @@ def terminal_canonical_todo_if_promoted(
             if command == "complete"
             else None
         )
+        implicit_monitor_cycle = (
+            command == "complete"
+            and completion_turn_key is None
+            and target.get("task_class") == "continuous_monitor"
+        )
         request = {
             "schema_version": _TERMINAL_REQUEST_SCHEMA,
             **({"review_basis": dict(review_basis)} if review_basis is not None else {}),
@@ -354,7 +359,14 @@ def terminal_canonical_todo_if_promoted(
             "registry_source": registry_source,
             "authority_reason": authority_reason,
             "decision_outcome": decision_outcome,
-            "operation_id": None,
+            "operation_identity": (
+                {"kind": "current_monitor_cycle"}
+                if implicit_monitor_cycle
+                else {"kind": "explicit", "operation_id": _terminal_operation_id(
+                    command=command, goal_id=goal_id, todo_id=todo_id,
+                    completion_turn_key=completion_turn_key,
+                )}
+            ),
             "lease_idempotency_key": task_lease_idempotency_key,
             "lease_expected_version": task_lease_expected_version,
             "allow_user_gate_auto_acquire": command == "complete",
@@ -374,12 +386,6 @@ def terminal_canonical_todo_if_promoted(
             "dry_run": dry_run,
             "observed_at": now_local(),
         }
-        request["operation_id"] = _terminal_operation_id(
-            command=command,
-            goal_id=goal_id,
-            todo_id=todo_id,
-            completion_turn_key=completion_turn_key,
-        )
     result = effect_runtime_result(
         "coordination.local_authority.todo_terminal", request
     )

@@ -4,13 +4,12 @@ import json
 from contextlib import nullcontext
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from heapq import merge
 from itertools import islice
 from pathlib import Path
 from typing import Any
 
-from .file_lock import exclusive_file_lock
+from .file_lock import exclusive_run_index_lock
 from .authority import goal_authority_registry_summary
 from .control_plane import compact_control_plane_policy
 from .control_plane.goals.activation import (
@@ -47,7 +46,7 @@ from .control_plane.runtime.run_index_rebuild import (
     collision_review_groups,
     validate_reviewed_collision_plan,
 )
-from .control_plane.runtime.time import now_local_iso, parse_timestamp
+from .control_plane.runtime.time import chronology_key, now_local_iso
 from .doctor import PROMOTION_READINESS_CLASSIFICATIONS
 from .execution_profile import compact_execution_profile
 from .explore_graph import compact_explore_graph_policy
@@ -129,22 +128,7 @@ def now_local() -> str:
     return now_local_iso()
 
 
-_MIN_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
-
-
-def _chronology_key(value: Any) -> tuple[int, datetime, str]:
-    """Return a UTC-aware ordering key while keeping legacy rows deterministic."""
-
-    raw = str(value or "")
-    try:
-        parsed = parse_timestamp(value)
-    except OverflowError:
-        # UTC conversion can overflow at datetime's representable boundaries.
-        parsed = None
-    if parsed is None:
-        # Malformed or missing legacy rows must never outrank valid timestamps.
-        return (0, _MIN_TIMESTAMP, raw)
-    return (1, parsed, raw)
+_chronology_key = chronology_key
 
 
 def unique_run_paths(runs_dir: Path, generated_at: str) -> tuple[Path, Path]:
@@ -179,7 +163,7 @@ def write_reserved_run_artifacts(
     ingest_usage_into_run_record(record, index_record=index_record)
     # GH-C07: one lock per goal history index, shared with the repair path.
     index_path = runs_dir / "index.jsonl"
-    with exclusive_file_lock(index_path, operation="history_run_append"):
+    with exclusive_run_index_lock(index_path, operation="history_run_append"):
         json_path, markdown_path = reserve_unique_run_paths(runs_dir, generated_at)
         index_record["json_path"] = str(json_path)
         index_record["markdown_path"] = str(markdown_path)
@@ -681,7 +665,7 @@ def repair_index_duplicates(
         # GH-C07: read and rewrite the index under the same lock the append
         # path takes. A dry run only reports, so it must not block writers.
         lock = (
-            exclusive_file_lock(index_path, operation="history_index_repair")
+            exclusive_run_index_lock(index_path, operation="history_index_repair")
             if execute
             else nullcontext()
         )

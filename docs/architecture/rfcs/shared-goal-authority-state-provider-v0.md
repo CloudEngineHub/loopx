@@ -2569,6 +2569,29 @@ not started: the runtime still never reads the shadow for decisions, and the
 migration, rollback, parity, read-flip, and legacy-writer fencing gates above
 remain open.
 
+### Deferred hard-lease lifecycle clarification (2026-09-23)
+
+The blanket terminal-fence rule above applies to execution-bearing `open`
+Todos. A `deferred` Todo cannot acquire a hard lease while deferred, so requiring
+one to leave that state makes both owner recovery and retirement impossible.
+For a promoted `hard_lease` Goal, a registered, eligible owner may explicitly
+reopen its own deferred Agent Todo (`status=open` with `clear_resume_when`) or
+supersede that deferred wait without an execution lease, but only when no
+time-active lease exists and no old execution proof is supplied. The provider
+CAS retires any retained expired lease generation together with the Todo
+transition. Reopening grants no execution authority: the next worker must
+acquire a fresh lease. `complete`, active-lease displacement, foreign-owner
+edits, and bundled execution changes retain their existing fences.
+
+上述终态租约门禁适用于处于 `open` 的执行型 Todo。`deferred` Todo 在等待期间本就
+无法取得 hard lease，若仍要求先持有租约才能离开等待态，负责人既不能恢复也不能
+终止该等待。对于已晋级的 `hard_lease` Goal，已注册且具备该 Todo 所有权的 Agent
+可以显式执行 `status=open` 加 `clear_resume_when`，或将该 deferred 等待标记为
+superseded；前提是没有仍在有效期内的租约，也未提交旧执行租约凭证。Provider CAS
+会把遗留的过期租约代际与 Todo 状态一并更新。重新打开不授予执行权限，下一次
+执行必须重新获取租约。`complete`、挤占有效租约、跨负责人修改及混入执行内容的
+更新仍受原有门禁约束。
+
 ### Relation to Staged Delivery
 
 Mapped to the five-stage plan from the #2787 review: the characterization

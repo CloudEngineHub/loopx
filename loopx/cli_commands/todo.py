@@ -15,6 +15,7 @@ from ..control_plane.quota.settlement import (
     read_heartbeat_settlement,
     settlement_result_payload,
 )
+from ..control_plane.runtime.time import chronology_key
 from ..control_plane.todos.markdown import render_todo_markdown
 from ..control_plane.todos.provider_projection import (
     project_current_canonical_todos,
@@ -137,7 +138,7 @@ def _validated_replan_successor_obligation(
         for _, run in sorted(
             enumerate(existing_runs),
             key=lambda item: (
-                str(item[1].get("generated_at") or ""),
+                *chronology_key(item[1].get("generated_at")),
                 item[0],
             ),
             reverse=True,

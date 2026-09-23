@@ -486,6 +486,7 @@ write boundary:
 | --- | --- | --- |
 | Turn a public issue into a reviewable, evidence-backed change | [Issue Fix](loopx/capabilities/issue_fix/README.md) | `loopx capability show issue-fix --format json` |
 | Qualify the exact final diff before delivery | [Change Quality](loopx/capabilities/change_quality/README.md) | `loopx capability show change-quality-qualification --format json` |
+| Notice busy-but-off-goal work rounds before the periodic review | [Progress-Review Sentinel](loopx/capabilities/progress_review/README.md) | `loopx capability show progress-review-sentinel --format json` |
 | Preserve a changing stack of already reviewed branches | [Integration Branch](loopx/capabilities/integration_branch/README.md) | `loopx capability show integration-branch-reconcile --format json` |
 | Explore uncertain research without losing hypotheses and findings | [Explore](loopx/capabilities/explore/README.md) | `loopx capability show explore --format json` |
 | Rebase decisions on current evidence and verified outcomes | [Decision Context](loopx/capabilities/decision_context/README.md) | `loopx capability show decision-context --format json` |
