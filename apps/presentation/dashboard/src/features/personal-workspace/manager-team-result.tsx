@@ -79,24 +79,25 @@ async function readAdoptedResult(goalId: string, todoIds: Set<string>): Promise<
 export function ManagerTeamResult({goalId, todoIds, zh, onOpenGoalEvidence}: {
   goalId: string; todoIds: string[]; zh: boolean; onOpenGoalEvidence: (goalId: string) => void;
 }) {
-  const [readback, setReadback] = useState<Readback | null>(null);
+  const [result, setResult] = useState<{key: string; readback: Readback} | null>(null);
   const [revision, setRevision] = useState(0);
   const todoKey = [...todoIds].sort().join(",");
+  const key = `${goalId}:${todoKey}`;
   useEffect(() => {
     if (!goalId || !todoKey) return;
     let cancelled = false;
-    setReadback(null);
     void readAdoptedResult(goalId, new Set(todoKey.split(",")))
-      .then(value => {if (!cancelled) setReadback(value);})
-      .catch(() => {if (!cancelled) setReadback({kind: "unavailable"});});
+      .then(value => {if (!cancelled) setResult({key, readback: value});})
+      .catch(() => {if (!cancelled) setResult({key, readback: {kind: "unavailable"}});});
     return () => {cancelled = true;};
-  }, [goalId, todoKey, revision]);
+  }, [goalId, todoKey, key, revision]);
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (!document.hidden) setRevision(value => value + 1);
     }, 30_000);
     return () => window.clearInterval(timer);
   }, []);
+  const readback = result?.key === key ? result.readback : null;
   if (!goalId || !todoKey || !readback) return null;
   return <section className={`personal-manager-team-result is-${readback.kind}`} aria-label={zh ? "团队结果回到管家" : "Team result returned to manager"}>
     {readback.kind === "adopted" ? <>
