@@ -7,6 +7,7 @@ import test from "node:test";
 import type {JsonObject} from "../../loopx/control_plane/effect_program.ts";
 import {FileAuthorityStore} from "../../loopx/control_plane/coordination/file_authority_store.ts";
 import {SqliteAuthorityStore} from "../../loopx/control_plane/coordination/sqlite_authority_store.ts";
+import {sqliteRuntimeIdentity} from "../../loopx/control_plane/coordination/sqlite_runtime.ts";
 import {canonicalAuthoritySha256} from "../../loopx/control_plane/coordination/authority_store_codec.ts";
 import {TODO_DOMAIN_ITEM_SCHEMA, TODO_DOMAIN_READ_RECORD_SCHEMA, TODO_DOMAIN_RECORD_CONTRACT} from
   "../../loopx/control_plane/coordination/coordination_state_contract.ts";
@@ -21,6 +22,8 @@ const GOAL = "synthetic-goal";
 const TODO = "todo_task";
 const OWNER = "agent-a";
 const AGENTS = [OWNER, "agent-b"];
+const sqliteSkip = sqliteRuntimeIdentity().sqlite_authority_qualified
+  ? false : "requires the qualified SQLite runtime";
 
 async function seeded(provider: "file" | "sqlite", overrides: JsonObject = {}, lease?: JsonObject) {
   const root = await mkdtemp(join(tmpdir(), `loopx-deferred-${provider}-`));
@@ -72,7 +75,8 @@ function oldLease(status: "active" | "released", expires_at: string): JsonObject
 }
 
 for (const provider of ["file", "sqlite"] as const) {
-  test(`${provider}: deferred resume is one CAS transition and never grants execution`, async () => {
+  test(`${provider}: deferred resume is one CAS transition and never grants execution`,
+    {skip: provider === "sqlite" && sqliteSkip}, async () => {
     const store = await seeded(provider);
     const before = await read(store);
     assert.equal(leaseOwnerRejection({status: "deferred", claimed_by: OWNER, excluded_agents: []}, OWNER, AGENTS),
@@ -99,7 +103,8 @@ for (const provider of ["file", "sqlite"] as const) {
       "coordination_operation_identity_mismatch");
   });
 
-  test(`${provider}: expired lease is retired atomically, while live execution and foreign edits fail closed`, async () => {
+  test(`${provider}: expired lease is retired atomically, while live execution and foreign edits fail closed`,
+    {skip: provider === "sqlite" && sqliteSkip}, async () => {
     const expired = await seeded(provider, {}, oldLease("active", "2026-09-05T22:30:00Z"));
     const resumed = await executeCoordinationTodoUpdate(expired, resume("retire-expired"));
     assert.equal(resumed.status, "applied", JSON.stringify(resumed));
@@ -123,7 +128,8 @@ for (const provider of ["file", "sqlite"] as const) {
     }
   });
 
-  test(`${provider}: an unclaimed deferred Todo stays unclaimed; excluded actors cannot reopen it`, async () => {
+  test(`${provider}: an unclaimed deferred Todo stays unclaimed; excluded actors cannot reopen it`,
+    {skip: provider === "sqlite" && sqliteSkip}, async () => {
     const unclaimed = await seeded(provider, {claimed_by: null});
     const applied = await executeCoordinationTodoUpdate(unclaimed, resume("unclaimed-resume"));
     assert.equal(applied.status, "applied", JSON.stringify(applied));
@@ -138,7 +144,8 @@ for (const provider of ["file", "sqlite"] as const) {
     assert.deepEqual(await read(excluded), before);
   });
 
-  test(`${provider}: deferred supersede closes one Todo and retires expired lease lineage`, async () => {
+  test(`${provider}: deferred supersede closes one Todo and retires expired lease lineage`,
+    {skip: provider === "sqlite" && sqliteSkip}, async () => {
     const store = await seeded(provider, {}, oldLease("active", "2026-09-05T22:30:00Z"));
     const input = supersede("supersede-once");
     const before = await read(store);
