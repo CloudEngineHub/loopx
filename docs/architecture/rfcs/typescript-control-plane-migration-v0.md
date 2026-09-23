@@ -1888,3 +1888,5 @@ This is a migration orchestration checkpoint, not completion of Stage 3 or a
 default-provider flip. Integrate claim-preserving migration separately, retain
 real-backend and captured-source qualification, and retire Python only where its
 actual callers have moved. [Operator contract](../../reference/reviewed-coordination-promotion.md).
+
+2026-09-24: [Typed complete-source assembly and remaining delivery packages](ledger/shared-goal-authority-state-provider-v0/2026-09-24-source-capture.md) unify source construction, identity rejection and current-graph membership; L7/D2/D3 and provider defaults remain open.

@@ -1449,3 +1449,5 @@ This is a migration orchestration checkpoint, not completion of Stage 3 or a
 default-provider flip. Integrate claim-preserving migration separately, retain
 real-backend and captured-source qualification, and retire Python only where its
 actual callers have moved. [Operator contract](../../reference/reviewed-coordination-promotion.md).
+
+2026-09-24：[完整源捕获的 TS 组装与剩余交付包](ledger/shared-goal-authority-state-provider-v0/2026-09-24-source-capture.zh-CN.md)统一源构造、身份拒绝和当前图成员规则；不关闭 L7/D2/D3 或启用默认 provider。
