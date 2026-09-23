@@ -3110,7 +3110,15 @@ This closes that T3/L5 consumer family, not D1 permanent display freshness,
 D2 durability, D3 whole-Goal qualification or default-provider selection. The
 conditional 5–8 remaining delivery-package estimate is unchanged.
 
-Summary/work-lane counts now remain independent of display limits and retain incomplete-source knowledge through Agent scoping; canonical list acceptance holds match status. This closes one L5 read consumer, not permanent projection freshness or D1–D3. See [count semantics](../../reference/todo-work-counts.md).
+The Todo summary consumer now uses one TS batch for scope, lanes, counts,
+claimant-balanced display and closure. It retires Python count/cap/allocation
+branches and two separate internal lane/closure calls. Recent completion uses
+actual completion instants, not edit time or ISO-string order; partial source
+knowledge cannot become a whole-source closure proof after selection. Public
+summary/persisted record schemas and display budgets stay unchanged. Real CLI
+and complete-graph provider readback qualify this read-model boundary, not
+permanent projection freshness or all D1–D3. See
+[count and chronology semantics](../../reference/todo-work-counts.md).
 
 The Goal Channel ownership observation consumes one complete provider revision before bounding display. It never repairs Markdown or revives old local leases; provider failures and truncation stay visible. This is a T3 read closure with shared TS interpretation, not D1/D2 qualification or D3 cutover. See [coordination observation](../../reference/coordination-observation.md).
 
@@ -3280,6 +3288,14 @@ PRs**, conditional on the caller audit finding no additional missing effects:
 | L6 / SQLite D2 | 1–2, contributor-owned #4224 | Capacity, crash/restore and separately authorized elapsed-soak evidence on one profile. |
 | L7 capture plus L8 integrated migration | 1–2 | Mixed-writer continuity, fenced whole-Goal rehearsal, export/rollback and cohort evidence. |
 | L9 default and bounded retirement | 1 | New-Goal onboarding/settings/install choose the qualified profile; remove final obsolete callers. |
+
+At the 2026-09-24 reconciliation, #4870/#4888/#4920 are merged;
+#4922 (snapshot pagination), #4931 (SQLite proof encoding), #4960 (qualified
+SQLite runtime admission) and #4961 (refresh display recovery) remain separate
+in-review dependencies. This summary slice closes shared read-model decisions,
+not those delivery gates. Requalify the combined accepted head before reducing
+the conditional **5–8 package** estimate; do not count each helper migration as
+one complete package. SQLite #4224 retains failing/missing D2 evidence.
 
 The command-observation/current-proof closure removes a concrete L2/L3 concurrency hold.
 The retained-Monitor cycle and grouped executor closure remove concrete L4 holds, not an entire

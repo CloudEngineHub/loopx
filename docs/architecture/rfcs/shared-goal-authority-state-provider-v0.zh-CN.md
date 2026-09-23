@@ -2421,6 +2421,14 @@ Scoped fallback 的选择与门禁关系也已复用同一 TS decision owner，�
 
 **D1 — 资格化永久投影交付，可与 T1/T2 重叠推进。**
 
+Todo 摘要现由一个 TS 批次决定范围、lanes、计数、claim 展示分配和收尾证明，删除
+Python 的重复汇总分支及分离的 lane／closure 内部调用。最近完成按真实完成时刻排序，
+不把编辑时间或 ISO 字符串顺序当作完成顺序；partial 来源不能在再次筛选后重新取得
+整源收尾证明。公开摘要／持久记录合同与展示预算保持不变。
+见[计数与时间语义](../../reference/todo-work-counts.md)。这关闭共享摘要决策，不宣称
+全部消费者、永久展示新鲜度或 D1–D3 已通过。
+
+
 摘要与 work-lane 计数已独立于展示上限，并在 Agent 筛选后保留来源不完整状态；canonical 列表的 acceptance 限制与 status 一致。这只闭合 L5 的一个读取消费者，不代表永久投影新鲜度或 D1–D3 完成。见[计数语义](../../reference/todo-work-counts.md)。
 
 Goal Channel 所有权观察先读取完整 provider revision，再限制展示；不修复 Markdown、不复活旧本地 lease，明确披露失败与截断。这是共用 TS 解释规则的 T3 读链路闭合，不完成 D1/D2 或 D3 切换，见 [coordination observation](../../reference/coordination-observation.md)。
@@ -2531,6 +2539,11 @@ D1 交付确认现于 Markdown 耐久读回后核对 canonical revision。未固
 | A–C／L7：capture 连续性 | 核对已合入的 #4315 归档／lease membership 修复，完成对应 ladder row／mutant 与持续 mixed-writer／event-source 矩阵；不重复实现已关闭缺陷。 | 真实 CLI／File capture、保留历史、半完成 drain 不合格、crash／replay，以及归档／rebootstrap 后再申请 lease。不能借 T4 跳过迁移窗口证明。 |
 | C／L8：整 Goal 演练与分组迁移 | L2–L7 后汇合一个精确 revision／profile；drain capture、fence 旧 writer、回读 canonical 与投影、演练 fenced export／rollback。 | D3 包绑定 lineage、cursor、source digest、命令覆盖和 profile；已有 Goal 分组迁移需明确批准，不能按命令拆 authority 或复活旧 Markdown。 |
 | D／L9：新 Goal 默认与有界退役 | 单独 default-change PR 让新建／onboarding 选择合格本地 profile，配齐 settings／readback、installer 和打包客户端；最后 caller 与迁移窗口退出才删除旧业务 writer。 | L8 整体产品／回滚资格；区分新 Goal 默认和已有 Goal 迁移。发布兼容／停用说明，保留显式 provider、永久 renderer 和合法 import/export。T4 可在默认启用后继续收尾。 |
+
+**2026-09-24 依赖核对。** #4870/#4888/#4920 已合并；#4922 快照分页、#4931
+SQLite 证明编码优化、#4960 SQLite runtime 准入和 #4961 刷新显示恢复仍属独立在评审
+依赖。#4224 的 D2 失败／缺项仍需关闭；本次摘要规则收口不替代它们。以下条件式
+**5–8 个交付包**需在组合 head 验收后更新，不能按 helper 迁移数量机械扣减。
 
 **开发节奏以证据推进。** 先核对在途 stack，再按完整操作交付 A；L6/L7 可独立推进。
 B 汇合为完整用户流程，C 形成一次可复现资格检查点，D 用独立 PR 修改默认。
