@@ -36,7 +36,7 @@ def _proof(value: object) -> tuple[str, int] | None:
 
 def _receipt_proof(
     *, runtime_root: Path, goal_id: str, effect_id: str
-) -> tuple[str, int] | None:
+) -> tuple[bool, tuple[str, int] | None]:
     transaction = (
         runtime_root / "goals" / goal_id / "runs" / ".transactions"
         / "quota-monitor-poll" / f"{hashlib.sha256(effect_id.encode()).hexdigest()[:24]}.json"
@@ -44,7 +44,7 @@ def _receipt_proof(
     try:
         receipt = json.loads(transaction.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return None
+        return False, None
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise QuotaCommandValidationError(
             "prior monitor-poll transaction receipt cannot be read for lease-proof replay"
@@ -55,21 +55,28 @@ def _receipt_proof(
         )
     status = receipt.get("status")
     if status == "provider_pending":
-        plan = receipt.get("provider_plan")
-        value = plan.get("lease_proof") if isinstance(plan, Mapping) else None
+        source = receipt.get("provider_plan")
+        unleased_schema = "monitor_poll_todo_provider_plan_v0"
     elif status in {"prepared", "committed"}:
         record = receipt.get("record")
         event = record.get("monitor_event") if isinstance(record, Mapping) else None
-        writeback = event.get("todo_writeback") if isinstance(event, Mapping) else None
-        value = writeback.get("lease_proof") if isinstance(writeback, Mapping) else None
+        source = event.get("todo_writeback") if isinstance(event, Mapping) else None
+        unleased_schema = "monitor_poll_todo_writeback_v0"
     else:
-        value = None
+        source = None
+        unleased_schema = ""
+    value = source.get("lease_proof") if isinstance(source, Mapping) else None
+    if value is None and isinstance(source, Mapping) and source.get("schema_version") == unleased_schema:
+        # A committed legacy or soft-claim observation has no lease to replay.
+        # Keep it distinct from a missing receipt so the caller can still
+        # reject a later hard-lease authority transition.
+        return True, None
     proof = _proof(value)
     if proof is None:
         raise QuotaCommandValidationError(
             "prior monitor-poll transaction receipt lacks a valid lease proof; reconcile this effect before retrying"
         )
-    return proof
+    return True, proof
 
 
 def current_monitor_lease_proof(
@@ -79,13 +86,22 @@ def current_monitor_lease_proof(
     snapshot = read_canonical_todos_if_promoted(
         runtime_root=runtime_root, goal_id=goal_id, include_leases=True,
     )
-    prior = _receipt_proof(runtime_root=runtime_root, goal_id=goal_id, effect_id=effect_id)
-    if prior is not None:
-        if snapshot is None:
+    has_prior, prior = _receipt_proof(
+        runtime_root=runtime_root, goal_id=goal_id, effect_id=effect_id
+    )
+    if has_prior:
+        if prior is not None and snapshot is None:
             raise QuotaCommandValidationError(
                 "prior monitor-poll lease receipt cannot replay without promoted canonical authority"
             )
-        return prior
+        if prior is None and snapshot is not None and (
+            snapshot.get("handoff_mode") == "hard_lease"
+            or any(lease.get("todo_id") == todo_id for lease in snapshot["leases"])
+        ):
+            raise QuotaCommandValidationError(
+                "prior monitor-poll transaction receipt has no lease proof for current canonical authority"
+            )
+        return prior if prior is not None else (None, None)
     if snapshot is None:
         return None, None
     leases = [lease for lease in snapshot["leases"] if lease.get("todo_id") == todo_id]
