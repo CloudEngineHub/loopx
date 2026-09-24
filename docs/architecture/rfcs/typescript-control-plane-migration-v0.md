@@ -1034,9 +1034,11 @@ lineage. Ambiguous, stale, truncated or unrelated material changes cannot close
 the current obligation. This closes one T3 rule group, not
 the remaining consumers or T1/T2/D1–D3.
 
-Long-chain scope correction (#4667): Agent lanes count 15 claimed advancement
-Todos or 20 claimed open Todos with claimed advancement work. Shared candidates
-remain selectable but no longer impose this duty; unscoped Goal observations
+Long-chain scope corrections (#4667, #5001): Agent lanes require at least 15 claimed
+open advancement Todos. Continuous monitors and shared candidates do not count;
+shared candidates remain selectable. The former 20-claimed-open trigger is
+retired for new Agent-lane obligations, while historical checkpoints and their
+predecessor recovery remain readable. Unscoped Goal observations
 retain the selectable-pool thresholds. Full material revisions include terminal advancement rows;
 timestamp-only maintenance does not rearm them. A complete agent-owned identity
 also keeps an accepted long-chain ACK valid when peers change shared unclaimed
@@ -1047,9 +1049,9 @@ an identity without a revision or an explicitly incomplete checkpoint cannot
 suppress replanning. Other trigger kinds cannot borrow long-chain identity
 matching. The same TS owner now supplies `obligation_identity_revision` from the
 owned basis for the existing Python identity codec and predecessor proof: peer
-churn cannot invalidate an open Turn before its ACK. Numeric thresholds and
-write authority remain unchanged. `replan_semantics.ts` accepts and projects an
-evidence-linked vision path for long-chain review, preserving existing progress
+churn cannot invalidate an open Turn before its ACK. Monitor due selection,
+no-change replan rules and write authority remain unchanged. `replan_semantics.ts`
+accepts and projects an evidence-linked vision path for long-chain review, preserving existing progress
 exits and stricter vision obligations. The real CLI regression follows the
 projected binding through durable ACK, satisfied checkpoint, one spend and next
 Turn readback; maintenance stays quiet and an owned material edit rearms.
