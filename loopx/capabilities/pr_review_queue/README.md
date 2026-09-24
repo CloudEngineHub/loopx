@@ -93,6 +93,12 @@ unverified scope evidence still cannot support approval. Existing short reviews
 on open heads must be expanded and checked before they qualify again; queue
 ordering and explicit post-merge audit selection remain unchanged.
 
+The [historical review corpus](../../../examples/fixtures/pr-review-history/README.md)
+exercises these checks with substantial public reviews and exact-commit source
+excerpts. Model probes receive code and bounded observations without the review
+or expected verdict. Historical validation reports stay explicitly historical;
+neither a long body nor a recorded approval supplies present-day evidence.
+
 Codex agents should use the dedicated `loopx-pr-review` skill for this slash
 command. Do not route `/loopx-pr-review` through the broader `loopx-project`
 workflow or the merge-focused `loopx-pr-merge` skill.

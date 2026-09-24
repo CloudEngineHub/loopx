@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -5,16 +6,28 @@ import pytest
 from loopx.capabilities.pr_review_queue.review_body import check_review_body
 
 HEAD = "a" * 40
+FIXTURES = Path(__file__).parents[2] / "examples/fixtures"
 
 
 def review_body():
-    return (Path(__file__).parents[2] / "examples/fixtures/pr-review.body.md").read_text().replace(
+    return (FIXTURES / "pr-review.body.md").read_text().replace(
         "HEAD_OID", HEAD).replace("VERDICT", "APPROVE")
 
 
 def test_standalone_body_contains_enough_explanation_but_does_not_certify_truth():
     result = check_review_body(review_body(), head_oid=HEAD, behavior_bearing=True)
     assert result["valid"]
+    assert not result["evidence_truth_verified"]
+
+
+@pytest.mark.parametrize("case", json.loads((FIXTURES / "pr-review-history/cases.json").read_text()),
+                         ids=lambda case: case["case_family"])
+def test_historical_reviews_pass_shape_checks_without_certifying_their_conclusions(case):
+    body = (FIXTURES / case["review_file"]).read_text().replace(
+        "HEAD_OID", case["head"]).replace("VERDICT", case["expected_verdict"])
+    result = check_review_body(body, head_oid=case["head"], behavior_bearing=True)
+    assert result["valid"], result["invalid_reasons"]
+    assert result["verdict"] == case["expected_verdict"]
     assert not result["evidence_truth_verified"]
 
 
@@ -39,9 +52,10 @@ def test_headings_inside_code_do_not_count_as_review_sections():
 
 
 def test_verdict_and_head_inside_code_do_not_count_as_published_conclusion():
-    body = review_body().replace(
-        f"English verdict: APPROVE - exact head {HEAD}; synthetic review fixture only.", ""
-    )
+    # Historical reviews also name the head in the motivation. Remove every
+    # visible occurrence to isolate the fenced-conclusion regression.
+    body = "\n".join(line for line in review_body().splitlines()
+                     if not line.startswith("English verdict:")).replace(HEAD, "reviewed revision")
     body += f"\n```text\nEnglish verdict: APPROVE - {HEAD}\n```"
     result = check_review_body(body, head_oid=HEAD, behavior_bearing=True)
     assert "missing_english_verdict" in result["invalid_reasons"]
