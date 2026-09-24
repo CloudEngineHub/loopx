@@ -187,7 +187,7 @@ def _target_for_profile_chat(
     bot_app_id: str = "",
     active_target_refs: set[str] | None = None,
     root_id: str = "",
-    binding_payloads: Mapping[str, Any] | None = None,
+    binding_payloads: Mapping[str, object] | None = None,
 ) -> tuple[str, Mapping[str, Any]] | None:
     targets = target_payload.get("targets")
     targets = targets if isinstance(targets, Mapping) else {}
