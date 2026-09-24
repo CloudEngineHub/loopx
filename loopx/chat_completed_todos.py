@@ -10,6 +10,47 @@ from threading import Lock
 from time import monotonic
 from urllib.parse import parse_qs, urlparse
 
+from .paths import resolve_runtime_root
+from .status_server import is_loopback_host
+
+
+def _goal_result_rows(*, registry_path, runtime_root, goal_id):
+    """Project only results that still pass exact canonical acceptance readback."""
+    from .control_plane.coordination.local_authority import read_canonical_todos_if_promoted
+    from .control_plane.todos.completion_result import read_completion_result
+
+    payload = read_canonical_todos_if_promoted(runtime_root=runtime_root, goal_id=goal_id)
+    if payload is None:
+        return []  # Only the canonical completion writer can bind result bytes.
+    candidates = sorted(
+        ((index, item) for index, item in enumerate(payload["todos"])
+         if item.get("role") == "agent" and item.get("status") == "done"),
+        key=lambda pair: (str(pair[1].get("completed_at") or ""), pair[0]),
+        reverse=True,
+    )
+    rows = []
+    for _, todo in candidates:
+        todo_id = todo.get("todo_id")
+        if not todo_id or not isinstance(todo.get("completion_result"), dict):
+            continue
+        try:
+            result = read_completion_result(
+                registry_path=registry_path, runtime_root=runtime_root,
+                goal_id=goal_id, todo_id=todo_id,
+            )["result"]
+        except (OSError, ValueError):
+            continue
+        rows.append({
+            "todo_id": todo_id,
+            "title": str(todo.get("title") or todo.get("text") or todo_id),
+            "producer_agent_id": result["producer_agent_id"],
+            "sha256": result["sha256"],
+            "content_type": result["content_type"],
+            "size_bytes": result["size_bytes"],
+            "completed_at": todo.get("completed_at"),
+        })
+    return rows
+
 
 class CompletedTodoPages:
     page_size = 40
@@ -55,6 +96,61 @@ class CompletedTodoPages:
 
 
 class CompletedTodoRequestMixin:
+    def _goal_result_scope(self, goal_id):
+        if not is_loopback_host(str(self.server.server_address[0])):
+            self._send_error("Goal results require a loopback LoopX Chat server.", status=403)
+            return None
+        if not self._require_loopback_origin():
+            return None
+        registry, _goal = self._registry_and_goal(goal_id)
+        return resolve_runtime_root(
+            registry, self.server.runtime_root_override,
+            registry_path=self.server.registry_path,
+        )
+
+    def _goal_results(self) -> None:
+        query = parse_qs(urlparse(self.path).query)
+        goal_id = query.get("goal_id", [""])[0]
+        cursor = query.get("cursor", [""])[0]
+        try:
+            runtime_root = self._goal_result_scope(goal_id)
+            if runtime_root is None:
+                return
+            self._send_json(self.server.completed_todo_pages.page(
+                scope=("accepted_goal_results", goal_id), cursor=cursor,
+                load=lambda: _goal_result_rows(
+                    registry_path=self.server.registry_path,
+                    runtime_root=runtime_root, goal_id=goal_id,
+                ),
+            ))
+        except ValueError as exc:
+            expired = str(exc) == "history_cursor_expired"
+            self._send_error("history_cursor_expired" if expired else
+                             "Goal results are unavailable.", status=409 if expired else 400)
+        except (OSError, RuntimeError):
+            self._send_error("Goal results could not be loaded.", status=503)
+
+    def _goal_result(self, todo_id: str) -> None:
+        from .control_plane.todos.completion_result import read_completion_result
+
+        goal_id = parse_qs(urlparse(self.path).query).get("goal_id", [""])[0]
+        try:
+            runtime_root = self._goal_result_scope(goal_id)
+            if runtime_root is None:
+                return
+            result = read_completion_result(
+                registry_path=self.server.registry_path, runtime_root=runtime_root,
+                goal_id=goal_id, todo_id=todo_id,
+            )
+            self._send_json({
+                "ok": True, "goal_id": goal_id, "todo_id": todo_id,
+                "result": result["result"], "text": result["text"],
+            })
+        except ValueError:
+            self._send_error("The report or its current acceptance could not be verified.", status=409)
+        except (OSError, RuntimeError):
+            self._send_error("The report could not be read.", status=503)
+
     def _completed_todos(self) -> None:
         # This loopback-only workspace read preserves task text and evidence.
         # Select display fields without returning the authority's internal metadata.

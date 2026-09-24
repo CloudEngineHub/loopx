@@ -32,6 +32,7 @@ import {
 import { ChannelHeader } from "./channel-header";
 import { GoalLoopXMode } from "./goal-loopx-mode";
 import { GoalTeamResults } from "./goal-team-results";
+import { GoalManagedResults } from "./goal-managed-results";
 import { sendLoopXMessage, type LoopXModeSnapshot } from "../../data/chat";
 import { ChannelTimeline } from "./channel-timeline";
 import { ContextDrawer } from "./context-drawer";
@@ -187,12 +188,16 @@ function GoalOutputsView({
   onSelect,
   reportState,
   teamSessionId,
+  goalId,
+  localResults,
 }: {
   active: boolean;
   items: Array<Extract<WorkspaceTimelineItem, { kind: "output" }>>;
   onSelect: (selection: WorkspaceDrawerSelection) => void;
   reportState?: WorkspaceModel["periodicReports"];
   teamSessionId?: string;
+  goalId: string;
+  localResults: boolean;
 }) {
   const { locale, t } = useWorkspaceI18n();
   const [teamSnapshot, setTeamSnapshot] = useState<LoopXModeSnapshot | null>(null);
@@ -226,7 +231,7 @@ function GoalOutputsView({
         {reportState?.error ? (
           <p className="personal-object-list-state is-error" role="alert"><AlertCircle size={14} />{t("files.reportLoadFailed")}: {reportState.error}</p>
         ) : null}
-        {!reportState?.loading && !reportState?.error && items.length === 0 && !teamConfigured
+        {!reportState?.loading && !reportState?.error && items.length === 0 && !teamConfigured && !localResults
           && (!teamSessionId || Boolean(teamSnapshot)) ? (
           <p className="personal-object-list-state"><FileText size={14} />{t("files.empty")}</p>
         ) : null}
@@ -242,6 +247,7 @@ function GoalOutputsView({
             ].filter(Boolean).join(" · ")}</small>
           </button>
         ))}
+        {localResults ? <GoalManagedResults goalId={goalId} zh={locale === "zh-CN"} /> : null}
       </section>
       {active && teamSessionId && !teamSnapshot && !teamError ? <p className="personal-object-list-state" role="status">{t("files.checkingTeam")}</p> : null}
       {active && teamSessionId && teamError ? <p className="personal-object-list-state is-error" role="alert">{t("files.teamLoadFailed")} <button type="button" onClick={() => setTeamRefresh(value => value + 1)}>{t("startup.retry")}</button></p> : null}
@@ -2030,6 +2036,8 @@ export function PersonalWorkspacePage({
                     onSelect={setSelection}
                     reportState={model.periodicReports}
                     teamSessionId={!readOnly && selectedAgentId === "codex" ? conversationSessionId : undefined}
+                    goalId={selectedGoal.goalId}
+                    localResults={!readOnly && selectedGoalTab === "files"}
                   />),
                   chat: (<>
                     {selectedGoal && activeSessionRun?.goalId === selectedGoal.goalId ? (
