@@ -92,6 +92,17 @@ graph TD
 
 The steward and Goal conversations share the same frontend activity view across task types. Command, tool and search phases appear when the executor reports them; missing activity stays an honest waiting state. Expand **Recent activity** for the latest six observations. **Interrupt turn** targets that reply, preserves already visible text, and keeps the conversation available for continuation. A rejected interruption leaves the live reply visible; completion wins a race with interruption. This control does not stop the Goal. Attached hosts that do not expose interruption report that limitation.
 
+运行中可点击「调整本轮」，向原任务追加指令。当前支持原生 Codex 执行器；只有收到匹配的执行器回执后才显示已接收，这不代表调整后的任务已经完成。不支持的执行器、过期回合或无法确认的回执会保留草稿，不自动变成新任务。重试相同指令沿用同一请求编号，防止重复投递。回合结束后，未发送的草稿仍可复制到输入框。草稿仅保存在当前页面，刷新前请自行保存。
+
+Use **Adjust turn** to add instructions to the running task. Native Codex executors currently support this control. A matching executor receipt confirms acceptance, not completion. Unsupported executors, expired turns and unconfirmed receipts retain the draft without starting another task. Retrying the same instructions retains the request identity to prevent duplicate delivery. After the turn ends, copy an unsent draft to the composer. Drafts are page-local; save them before refreshing.
+
+For API callers, `POST /api/chat/sessions/{session_id}/turns/{turn_id}/steer`
+accepts `message` (1–12000 characters) and a stable `client_ingress_id`.
+The successful receipt includes both identities, the ingress id and
+`status: delivered`. Reusing the ingress id with changed text or a different
+turn is rejected. The original turn stream continues; this endpoint never
+queues a new turn. Existing LoopX-mode and Lark ingress keep their contracts.
+
 Codex 上游声明仍会重试时，会话显示「Codex 正在重试」并继续等待最终结果。若上游明确终止，LoopX 保存失败回执，不把已经出现的部分文字当成完整回答。明确的策略拦截、用量限制、频率限制、上下文超限和身份验证失败会保留各自类别；未知错误仍显示通用失败，不从报错正文猜测原因。
 
 策略拦截是本轮已结束，不是仍在安全检查中。LoopX 不会自动重放该请求；重启或重复提交同一个请求编号也会返回原失败回执。界面提示只说明上游给出的类别，不解释其未提供的具体触发原因，也不公开上游原始错误详情。

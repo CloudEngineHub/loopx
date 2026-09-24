@@ -325,9 +325,15 @@
 .personal-message-work { margin-top: 8px; }
 .personal-message-work-current { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
 .personal-message-work-current .personal-message-pending { font-size: 13px; line-height: 1.5; }
-.personal-message-work-current button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--pw-line-strong); border-radius: 6px; font-size: 12px; color: var(--pw-text); background: var(--pw-card); cursor: pointer; }
-.personal-message-work-current button:disabled { opacity: .6; cursor: wait; }
-.personal-message-work-current button:focus-visible, .personal-message-activity summary:focus-visible { outline: 2px solid var(--pw-blue-ink); outline-offset: 3px; }
+.personal-message-work button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--pw-line-strong); border-radius: 6px; font-size: 12px; color: var(--pw-text); background: var(--pw-card); cursor: pointer; }
+.personal-message-work button:disabled { opacity: .6; cursor: not-allowed; }
+.personal-message-work button:focus-visible, .personal-message-steer textarea:focus-visible, .personal-message-activity summary:focus-visible { outline: 2px solid var(--pw-blue-ink); outline-offset: 3px; }
+.personal-message-work-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.personal-message-steer { display: grid; gap: 8px; margin: 12px 0; }
+.personal-message-steer label { display: grid; gap: 6px; font-size: 13px; }
+.personal-message-steer textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid var(--pw-line-strong); border-radius: 6px; background: var(--pw-card); color: var(--pw-text); resize: vertical; }
+.personal-message-steer span, .personal-message-work .personal-message-steer-receipt { color: var(--pw-muted); font-size: 12px; }
+.personal-message-steer button { justify-self: start; }
 .personal-message-activity { color: var(--pw-muted); font-size: 12px; }
 .personal-message-activity summary { cursor: pointer; padding: 8px 0; width: fit-content; }
 .personal-message-activity summary span { margin-left: 6px; font-variant-numeric: tabular-nums; }

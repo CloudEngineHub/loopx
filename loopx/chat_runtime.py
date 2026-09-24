@@ -904,6 +904,7 @@ class ChatRuntimeController:
         session_id: str,
         client_ingress_id: str,
         message: str,
+        expected_turn_id: str | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """Steer the exact active Codex Turn with durable ingress deduplication."""
 
@@ -915,6 +916,7 @@ class ChatRuntimeController:
             client_ingress_id=client_ingress_id,
             mode="live_steering",
             message=message,
+            expected_turn_id=expected_turn_id,
         )
         if session.get("session_mode") == CHAT_SESSION_MODE_ATTACHED:
             capabilities = session.get("attached_capabilities")
@@ -937,6 +939,12 @@ class ChatRuntimeController:
                 return turn, False
             raise RuntimeError("live_steering_delivery_unresolved")
         active_turn_id = str(session.get("active_turn_id") or "")
+        if expected_turn_id is not None and active_turn_id != expected_turn_id:
+            self.store.update_ingress_receipt(
+                session_id, client_ingress_id, status="failed",
+                error_code="live_steering_turn_mismatch",
+            )
+            raise RuntimeError("live_steering_turn_mismatch")
         if not active_turn_id:
             self.store.update_ingress_receipt(
                 session_id,
@@ -959,6 +967,14 @@ class ChatRuntimeController:
         deadline = time.monotonic() + min(5.0, self.startup_timeout_sec)
         while time.monotonic() < deadline:
             turn = self.store.load_turn(session_id, active_turn_id)
+            current_session = self.store.load_session(session_id) or {}
+            if (current_session.get("active_turn_id") != active_turn_id
+                    or (turn or {}).get("status") not in {"queued", "starting", "running"}):
+                self.store.update_ingress_receipt(
+                    session_id, client_ingress_id, status="failed",
+                    error_code="live_steering_turn_mismatch",
+                )
+                raise RuntimeError("live_steering_turn_mismatch")
             upstream_turn_id = str((turn or {}).get("upstream_turn_id") or "")
             if upstream_turn_id:
                 break

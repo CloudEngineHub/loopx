@@ -34,6 +34,34 @@ export const conversationActivityScenario = {
       };
       const turn = await send("请检查当前任务状态，并说明下一步。");
       const pending = page.locator(".personal-message").filter({ has: page.getByRole("button", { name: "中断本轮", exact: true }) });
+      const adjustments = [];
+      await page.route("**/steer", async route => {
+        const body = route.request().postDataJSON();
+        adjustments.push(body);
+        const [sessionId, turnId] = new URL(route.request().url()).pathname.match(/sessions\/([^/]+)\/turns\/([^/]+)\/steer/).slice(1);
+        if (adjustments.length === 1) return route.fulfill({ status: 409, json: { ok: false, error: "执行器暂时未确认接收，草稿已保留。" } });
+        return route.fulfill({ json: { ok: true, session_id: sessionId, turn_id: adjustments.length === 2 ? "wrong-turn" : turnId, client_ingress_id: body.client_ingress_id, status: "delivered" } });
+      });
+      await pending.getByRole("button", { name: "调整本轮", exact: true }).click();
+      await pending.getByLabel("追加给本轮的指令").fill("先核对依赖，再继续当前任务。");
+      await pending.getByRole("button", { name: "发送调整", exact: true }).click();
+      await pending.getByRole("alert").filter({ hasText: "暂时未确认" }).waitFor();
+      assert.equal(await pending.getByLabel("追加给本轮的指令").inputValue(), "先核对依赖，再继续当前任务。");
+      await pending.getByRole("button", { name: "发送调整", exact: true }).click();
+      await pending.getByRole("alert").filter({ hasText: "回执不匹配" }).waitFor();
+      await page.screenshot({ path: resolve(outputDir, "conversation-steering-draft.png"), animations: "disabled" });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await pending.getByLabel("追加给本轮的指令").scrollIntoViewIfNeeded();
+      assert.ok(await pending.evaluate(node => node.scrollWidth <= node.clientWidth + 1), "steering draft fits mobile width");
+      await page.screenshot({ path: resolve(outputDir, "conversation-steering-mobile.png"), animations: "disabled" });
+      await page.setViewportSize({ width: 1512, height: 982 });
+      await pending.getByRole("button", { name: "发送调整", exact: true }).focus();
+      await page.keyboard.press("Enter");
+      await pending.getByText("执行器已接收本轮追加指令。", { exact: true }).waitFor();
+      assert.equal(new Set(adjustments.map(row => row.client_ingress_id)).size, 1, "retries retain ingress identity");
+      assert.equal(api.turnRequests.length, 1, "steering never starts another turn");
+      assert.equal(streams.size, 1, "steering keeps the original output stream");
+      assert.equal(await page.locator(".personal-message.is-user").filter({ hasText: "先核对依赖" }).count(), 1);
       await pending.locator("summary").filter({ hasText: "最近活动" }).click();
       assert.deepEqual(await pending.locator(".personal-message-activity li").allTextContents(), ["正在连接管家", "Agent 正在执行命令", "Agent 正在检索", "Agent 正在执行命令"]);
       await page.screenshot({ path: resolve(outputDir, "conversation-activity-desktop.png"), animations: "disabled" });
@@ -69,6 +97,8 @@ export const conversationActivityScenario = {
       // Completion wins an interruption race; do not overwrite the result.
       const next = await send("继续完成这项检查。");
       assert.equal(next.sessionId, turn.sessionId, "continue uses the same conversation");
+      await page.getByRole("button", { name: "调整本轮", exact: true }).click();
+      await page.getByLabel("追加给本轮的指令").fill("保留我的未发送草稿。");
       await page.route("**/interrupt", async route => {
         const response = streams.get(`/events/${next.sessionId}/${next.turnId}`);
         const answer = "检查完成，下一步已列出。";
@@ -81,16 +111,22 @@ export const conversationActivityScenario = {
       await page.getByRole("button", { name: "中断本轮", exact: true }).click();
       await page.getByText("检查完成，下一步已列出。", { exact: true }).waitFor();
       assert.equal(await page.getByRole("button", { name: "中断本轮", exact: true }).count(), 0);
+      assert.equal(await page.getByLabel("追加给本轮的指令").inputValue(), "保留我的未发送草稿。");
+      assert.equal(await page.getByRole("button", { name: "发送调整", exact: true }).isDisabled(), true);
       await page.unroute("**/interrupt");
 
       // The same interaction is present in Goal Chat, through the same timeline.
       await page.locator(".personal-goal-link").first().click();
       await page.getByRole("navigation", { name: "Goal 视图" }).getByRole("button", { name: /^(Chat|对话)$/ }).click();
       const goalTurn = await send("请检查这个 Goal 的当前状态。");
+      await page.getByRole("button", { name: "调整本轮", exact: true }).click();
+      await page.getByLabel("追加给本轮的指令").fill("先检查最新证据。");
+      await page.getByRole("button", { name: "发送调整", exact: true }).click();
+      await page.getByText("执行器已接收本轮追加指令。", { exact: true }).waitFor();
       await page.getByRole("button", { name: "中断本轮", exact: true }).click();
       await page.getByText("已中断。你可以在当前会话继续发送消息。", { exact: true }).waitFor();
       assert.deepEqual(api.interrupts.at(-1), { sessionId: goalTurn.sessionId, turnId: goalTurn.turnId });
-      return { coverageEntries: context.coverageEntries, note: "Shared steward/Goal activity, repeated phases, scoped interruption, failure and receipt mismatch, partial output and completion race." };
+      return { coverageEntries: context.coverageEntries, note: "Shared steward/Goal activity, exact-turn steering and interruption, receipt mismatch, idempotent retry, preserved drafts/partial output and completion races." };
     } finally {
       for (const response of streams.values()) response.destroy();
       server.closeAllConnections();

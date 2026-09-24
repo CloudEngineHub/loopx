@@ -45,6 +45,7 @@ import {
   fetchChatSession,
   fetchChatSessions,
   interruptChatTurn,
+  steerChatTurn,
   previewGoalSubagentConfiguration,
   previewTodo,
   previewTypedAction,
@@ -2778,6 +2779,19 @@ function PersonalGoalHome({
               goalId: targetContextId,
               sessionId: binding.sessionId,
               turnId,
+            });
+          },
+          onSteerConversationTurn: async (targetContextId, turnId, message, ingressId) => {
+            const binding = runtimeBindings[targetContextId];
+            if (!binding?.sessionId || binding.turnId !== turnId || activeTurnIds.current.get(targetContextId) !== turnId) {
+              throw new Error("本轮已结束或已被新的回合取代，追加指令未发送，草稿已保留。");
+            }
+            await steerChatTurn(binding.sessionId, turnId, message, ingressId);
+            const id = managerMessageId.current++;
+            setMessagesByContext(current => {
+              const messages = current[targetContextId] ?? [];
+              if (messages.some(item => item.sourceMessageId === `steer:${ingressId}`)) return current;
+              return { ...current, [targetContextId]: [...messages, { id, sourceMessageId: `steer:${ingressId}`, sourceTurnId: turnId, lines: [], role: "user", text: message }] };
             });
           },
           onOpenGoal: openGoalChat,
