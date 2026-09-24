@@ -53,7 +53,7 @@ def test_chat_bundle_preflight_preserves_stdout_with_legacy_pointer(
 
     captured = capfd.readouterr()
     assert captured.out == ""
-    assert captured.err == "bundle progress\n"
+    assert captured.err.splitlines() == ["bundle progress"]
 
 
 @pytest.mark.skipif(os.name != "nt", reason="native Windows installer regression")
