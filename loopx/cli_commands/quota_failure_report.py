@@ -158,6 +158,13 @@ def quota_failure_payload(
                 "agent_must_attempt": error.admission_must_attempt,
                 "delivery_allowed": error.admission_delivery_allowed,
             }
+        if error.retained_selection:
+            selection_conflict["retained_selection"] = True
+            selection_conflict["retained_selection_todo_id"] = error.selected_todo_id
+        if error.receipt_replan_obligation_id:
+            selection_conflict["receipt_replan_obligation_id"] = (
+                error.receipt_replan_obligation_id
+            )
         payload.update(
             {
                 "reason": str(error),

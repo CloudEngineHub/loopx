@@ -177,6 +177,8 @@ def _requested_quota_action_selection_preflight(
             requested_todo_id=requested_todo_id,
             selected_todo_id=receipt_pending_action_todo_id,
             qualification_state="retained_selection",
+            receipt_replan_obligation_id=receipt_bound_replan_obligation_id,
+            retained_selection=True,
         )
     if admitted:
         return None
