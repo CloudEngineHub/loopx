@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
 import test from "node:test";
 import {projectCoordinationSource, SOURCE_PROJECTION_REQUEST_SCHEMA} from "../../loopx/control_plane/coordination/source_projection.ts";
 import {canonicalAuthoritySha256} from "../../loopx/control_plane/coordination/authority_store_codec.ts";
+
+// Frozen from the persisted pre-extension contract, not from today's field
+// list: deriving the shape by filtering the current manifest would silently
+// re-point this test at whichever release is current.
+const historicalManifest = JSON.parse(await readFile(new URL(
+  "../fixtures/coordination/todo-pre-validator-revision-fields.json", import.meta.url,
+), "utf8"));
 
 const todo = {schema_version: "todo_item_v0", todo_id: "a", role: "agent", status: "open",
   done: false, text: "Capture exact state", archive_state: "active", source_section: "Agent Todo"};
@@ -76,8 +84,7 @@ test("source revalidation preserves the supported pre-validator manifest and rej
   const source = await fixture(t);
   const head = projection([legacyTodo()]);
   const manifest = head.todo_read_model as Record<string, unknown>;
-  manifest.contract_fields = (manifest.contract_fields as string[]).filter(
-    key => !["completion_validation_revision", "completion_validation_revision_history"].includes(key));
+  manifest.contract_fields = historicalManifest.canonical_fields;
   const before = structuredClone(head);
   const request = await sourceRequest(source, head);
   await verifyShadowSourceSnapshot(request as import("../../loopx/control_plane/coordination/runtime_shadow.ts").ShadowRequest);
