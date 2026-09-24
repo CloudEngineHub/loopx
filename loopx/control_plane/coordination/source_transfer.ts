@@ -8,9 +8,13 @@ import type {JsonObject} from "../effect_program.ts";
 import {EffectRuntimeRequestError} from "../effect_runtime_errors.ts";
 import {hasExactAuthorityKeys} from "./authority_store_codec.ts";
 
-export const SOURCE_TRANSFER_SCHEMA = "loopx_coordination_source_transfer_v0";
-export const SOURCE_TRANSFER_RESULT_SCHEMA = "loopx_coordination_source_transfer_result_v0";
-export const MAX_SOURCE_TRANSFER_BYTES = 16 * 1024 * 1024;
+import {
+  COORDINATION_STATE_CONTRACT,
+  COORDINATION_SOURCE_TRANSFER_REQUEST_SCHEMA as SOURCE_TRANSFER_SCHEMA,
+  COORDINATION_SOURCE_TRANSFER_RESULT_SCHEMA as SOURCE_TRANSFER_RESULT_SCHEMA,
+} from "./coordination_state_contract.generated.ts";
+export {SOURCE_TRANSFER_SCHEMA, SOURCE_TRANSFER_RESULT_SCHEMA};
+export const MAX_SOURCE_TRANSFER_BYTES = COORDINATION_STATE_CONTRACT.source_transfer_limits.max_bytes;
 type Handler = (value: JsonObject) => unknown | Promise<unknown>;
 const digest = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 function ensure(value: unknown, message: string): asserts value {

@@ -55,6 +55,8 @@ PostgreSQL 部署，conformance 通过也不等于生产服务已合格。
 及管理命令仍传完整投影。裁剪来源记录会破坏 digest/parity；扩大通用 RPC 上限会
 影响所有方法。
 
+协议名称和字节上限由既有 coordination 合同统一生成给 Python/TS。Python 文件交换
+留在现有来源投影适配器，不新增独立维护的同名 Python/TS 模块对。
 仅携带来源的 handler 接受本机私有文件 envelope。Python 写临时 request；TS 核验
 method、字节数、SHA-256、普通文件身份和私有目录，然后调用原有 handler。TS 排他
 创建结果文件并返回紧凑的绑定回执；Python 校验结果字节，在成功和失败时均清理临时

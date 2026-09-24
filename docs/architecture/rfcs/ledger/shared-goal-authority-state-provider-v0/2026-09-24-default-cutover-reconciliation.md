@@ -65,6 +65,9 @@ canonical reads already exists, but source capture and management still send
 whole projections. Trimming source records would invalidate digests and parity;
 increasing the generic RPC budget would enlarge every method's exposure.
 
+The existing coordination contract generates both schema names and the byte cap
+for Python and TS. Python file exchange stays in its existing source projection
+adapter; there is no independently maintained same-name Python/TS module pair.
 Only source-bearing handlers accept a private host-local transfer envelope.
 Python writes a temporary request; TS verifies its method, byte length, SHA-256,
 regular-file identity and private directory, then invokes the same handler.
