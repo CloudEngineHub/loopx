@@ -12,7 +12,13 @@ const SCHEMA = "automation_cadence_store_v2";
 const RESULT = "automation_cadence_result_v1";
 type Scope = {agent_id: string | null; automation_id: string | null};
 type Rule = Scope & {min_interval_minutes: number; revision: number; owner_reference: string};
-type Start = Scope & {started_at_ms: number; trigger_at_ms: number; request_id: string; manual_reason: string | null};
+/** `reserved` is a start whose host may still be unstarted; `started` is a start
+ * whose host attempt is already durable in the Turn journal. Only the former can
+ * be resumed by the same request identity, and a record without this field is
+ * read as `started` so an older or hand-edited store fails closed. */
+type StartState = "reserved" | "started";
+type Start = Scope & {started_at_ms: number; trigger_at_ms: number; request_id: string;
+  manual_reason: string | null; state: StartState};
 type Store = {schema_version: typeof SCHEMA; goal_id: string; revision: number; rules: Rule[]; starts: Start[]};
 const fail = (message: string): never => {throw new EffectRuntimeRequestError(message, "automation_cadence_invalid");};
 function text(value: unknown, name: string): string {
@@ -62,7 +68,9 @@ function decode(value: unknown, goal: string): Store {
     const trigger_at_ms = integer(r.trigger_at_ms, "trigger_at_ms");
     if (trigger_at_ms > started_at_ms) fail("cadence start trigger follows its start");
     return {...s, started_at_ms, trigger_at_ms, request_id: text(r.request_id, "request_id"),
-      manual_reason: r.manual_reason == null ? null : text(r.manual_reason, "manual_reason")};
+      manual_reason: r.manual_reason == null ? null : text(r.manual_reason, "manual_reason"),
+      state: r.state === undefined ? "started"
+        : requireStringLiteral(r.state, ["reserved", "started"] as const, "start state")};
   });
   return {schema_version: SCHEMA, goal_id: goal, revision, rules, starts};
 }
@@ -99,7 +107,13 @@ function projection(store: Store, s: Scope, nowMs = Date.now()): JsonObject {
   };
 }
 
-/** Reserve a new managed-host start under the same lock as policy changes. */
+/** Reserve a managed-host start under the same lock as policy changes.
+ *
+ * A reserved start whose host attempt never became durable may be resumed by the
+ * same request identity, so a crash between reservation and the first journal
+ * attempt cannot strand the Turn. A start whose host attempt is already durable
+ * stays fail-closed, and the caller must confirm the reservation once the
+ * attempt is recorded. */
 export async function admitAutomationStart(p: JsonObject): Promise<JsonObject> {
   const goal = text(p.goal_id, "goal_id"), s = scope(p);
   if (!s.agent_id) fail("admission requires agent_id");
@@ -119,8 +133,16 @@ export async function admitAutomationStart(p: JsonObject): Promise<JsonObject> {
       .map(rule => rule.automation_id));
     const prior = store.starts.filter(start => start.agent_id === s.agent_id &&
       activeScopes.has(start.automation_id));
-    if (prior.some(start => start.request_id === request || trigger < start.trigger_at_ms)) {
+    const held = prior.find(start => start.request_id === request);
+    if (prior.some(start => trigger < start.trigger_at_ms) || (held !== undefined && held.state === "started")) {
       return {...current, admitted: false, reserved: false, reason: "duplicate_or_stale_trigger"};
+    }
+    if (held !== undefined) {
+      // Same identity, no durable host attempt: keep the original interval anchor.
+      return manual === null && current.eligible_now !== true
+        ? {...current, admitted: false, reserved: false, reason: "minimum_interval_wait"}
+        : {...current, admitted: true, reserved: true, resumed: true,
+          reason: "resumed_unstarted_reservation"};
     }
     if (manual === null && current.eligible_now !== true) {
       return {...current, admitted: false, reserved: false, reason: "minimum_interval_wait"};
@@ -130,12 +152,42 @@ export async function admitAutomationStart(p: JsonObject): Promise<JsonObject> {
     for (const item of scopes) {
       store.starts = store.starts.filter(start => key(start) !== key(item));
       store.starts.push({...item, started_at_ms: now, trigger_at_ms: trigger, request_id: request,
-        manual_reason: manual});
+        manual_reason: manual, state: "reserved"});
     }
     await atomicWriteJson(path, store);
     return {...projection(store, s, now), admitted: true, reserved: true,
       reason: manual === null ? "admitted" : "explicit_manual_interval_bypass"};
   });
+}
+
+/** Mark a reservation as an attempted host start once the Turn journal is durable.
+ *
+ * Confirmation is idempotent and never creates a store, so the default-off path
+ * stays free of new files. Until it lands, the record stays resumable; after it
+ * lands, the same request identity is rejected fail-closed. */
+export async function confirmAutomationStart(p: JsonObject): Promise<JsonObject> {
+  const goal = text(p.goal_id, "goal_id"), s = scope(p);
+  if (!s.agent_id) fail("confirmation requires agent_id");
+  const path = cadenceStorePath(requireNonEmptyString(p.runtime_root, "runtime_root"), goal);
+  const request = text(p.request_id, "request_id");
+  const record = async (store: Store): Promise<JsonObject> => {
+    const matches = store.starts.filter(start => start.agent_id === s.agent_id && start.request_id === request);
+    const pending = matches.some(start => start.state === "reserved");
+    if (pending) {
+      store.starts = store.starts.map(start => start.agent_id === s.agent_id && start.request_id === request
+        ? {...start, state: "started"} : start);
+      await atomicWriteJson(path, store);
+    }
+    return {schema_version: RESULT, ok: true, goal_id: goal, ...s, request_id: request, confirmed: true,
+      reason: pending ? "start_confirmed" : "already_confirmed"};
+  };
+  // An absent or empty reservation must not create a store or lock file.
+  const snapshot = await load(path, goal);
+  if (!snapshot.starts.some(start => start.agent_id === s.agent_id && start.request_id === request)) {
+    return {schema_version: RESULT, ok: true, goal_id: goal, ...s, request_id: request, confirmed: false,
+      reason: "reservation_missing"};
+  }
+  return withFileMutationLock(path, async () => record(await load(path, goal)));
 }
 /** Pure typed calculation shared by scheduler adapters; no policy mutation. */
 export function projectCadenceProgression(p: JsonObject): JsonObject {

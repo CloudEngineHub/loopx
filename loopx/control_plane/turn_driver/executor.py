@@ -754,6 +754,7 @@ def _host_result_stage(
     journal: dict[str, Any],
     journal_path: Path,
     effects: dict[str, bool],
+    confirm_start: Callable[[], None] | None = None,
 ) -> tuple[dict[str, Any] | None, list[str], dict[str, Any] | None]:
     completed_phases = list(journal.get("completed_phases") or [])
     result = (
@@ -764,6 +765,10 @@ def _host_result_stage(
     if "typed_result" not in completed_phases:
         journal["host_attempt_count"] = int(journal.get("host_attempt_count") or 0) + 1
         _write_journal(journal_path, journal)
+        # The attempt is durable now, so a later restart must not resume this
+        # reservation. Confirmation failure stops before the host starts.
+        if confirm_start is not None:
+            confirm_start()
         host_observation = (
             _run_host_runner(request, runner=host_runner)
             if host_runner is not None
@@ -1224,6 +1229,7 @@ def run_loopx_turn_once(
     scheduler: Scheduler | None = None,
     post_settlement: PostSettlement | None = None,
     admit_start: Callable[[Mapping[str, Any]], dict[str, Any]] | None = None,
+    confirm_start: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     if host_runner is not None and host_argv is not None:
         raise ValueError("run-once accepts either host_argv or host_runner, not both")
@@ -1426,6 +1432,11 @@ def run_loopx_turn_once(
             journal=journal,
             journal_path=journal_path,
             effects=effects,
+            confirm_start=(
+                confirm_start
+                if admission is not None and admission.get("reserved") is True
+                else None
+            ),
         )
         if terminal is not None:
             return finish_recovery(terminal)
