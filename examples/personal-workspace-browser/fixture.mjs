@@ -271,9 +271,18 @@ function teamPlanApplyReceipt(proposal) {
 
 export function startServer() {
   if (packaged) {
-    return spawn(process.env.LOOPX_PYTHON_BIN || "python3", [
-      "-m", "http.server", String(port), "--bind", "127.0.0.1", "--directory", resolve(repoRoot, "loopx/web"),
-    ], {
+    // An explicit installed interpreter must resolve its own package, not the checkout.
+    const isolation = process.env.LOOPX_PYTHON_BIN ? ["-I"] : [];
+    return spawn(process.env.LOOPX_PYTHON_BIN || "python3", [...isolation, "-c", `
+from loopx.chat_server import ChatHTTPServer, ChatRequestHandler, default_chat_assets_dir
+from loopx.presentation.chat_bundle import validate_bundle
+assets = default_chat_assets_dir()
+validate_bundle(assets)
+server = ChatHTTPServer(("127.0.0.1", ${port}), ChatRequestHandler)
+server.assets_dir = assets
+server.verbose = False
+server.serve_forever()
+`], {
       cwd: repoRoot,
       env: { ...process.env },
       stdio: "ignore",
