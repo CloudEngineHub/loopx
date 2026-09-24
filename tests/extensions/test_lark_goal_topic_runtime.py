@@ -5,6 +5,7 @@ import json
 import re
 import subprocess
 import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -2500,6 +2501,70 @@ def test_manager_receives_reaction_before_answer_and_preserves_sender(tmp_path, 
     before = list(stages)
     assert runtime.process_lark_goal_topic_event(**kwargs)["status"] == "already_acknowledged"
     assert stages == before
+
+
+def test_concurrent_manager_delivery_answers_one_source_message_once(tmp_path, monkeypatch):
+    from loopx.extensions.lark import goal_topic_runtime as runtime
+
+    target_path, binding_path = tmp_path / "targets.json", tmp_path / "bindings.json"
+    _seed_legacy_topic(target_path, binding_path)
+    original_decide = runtime.decide_lark_topic_event
+
+    def manager_decision(**kwargs):
+        result = original_decide(**kwargs)
+        result["route"] = {
+            **result["route"],
+            "conversation_kind": "manager",
+            "authority_mode": "turn_authorized",
+            "ingress_mode": "session_queue",
+        }
+        return result
+
+    monkeypatch.setattr(runtime, "decide_lark_topic_event", manager_decision)
+    monkeypatch.setattr(
+        runtime, "ensure_lark_event_inbox_received_reaction",
+        lambda **_kwargs: {"ok": True, "status": "already_received"},
+    )
+    entered, release = threading.Event(), threading.Event()
+    answers: list[str] = []
+    state: dict[str, Any] = {}
+
+    def answer(_route, _text):
+        answers.append("answer")
+        entered.set()
+        assert release.wait(5)
+        return "One verified answer."
+
+    kwargs = dict(
+        target_payload=read_goal_channel_targets(target_path),
+        binding_payloads={"goal-alpha": read_goal_channel_binding(binding_path)},
+        event={
+            "event_id": "evt_one_source", "message_id": "om_one_source",
+            "chat_id": "oc_public_fixture", "root_id": "om_topic_alpha",
+            "create_time": "2026-08-14T21:00:00Z", "content": "@linkmacbot question",
+            "sender_type": "user", "sender_id": "ou_owner_fixture",
+        },
+        runtime_root=tmp_path / "runtime",
+        answer=answer,
+        reply_runner=_reply_runner(state),
+    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(runtime.process_lark_goal_topic_event, **kwargs)
+        assert entered.wait(5)
+        second = pool.submit(runtime.process_lark_goal_topic_event, **kwargs)
+        try:
+            with pytest.raises(FutureTimeoutError):
+                second.result(timeout=0.1)
+        finally:
+            release.set()
+        assert first.result(timeout=5)["status"] == "replied_and_acknowledged"
+        assert second.result(timeout=5)["status"] == "already_acknowledged"
+    assert answers == ["answer"]
+    sends = [
+        call for call in state["calls"]
+        if "+messages-reply" in call and "--dry-run" not in call
+    ]
+    assert len(sends) == 1
 
 
 @pytest.mark.parametrize("error_code,label", [
