@@ -134,6 +134,7 @@ def complete(root: Path, actor: str, revision: str) -> dict:
     result = cli(root, "todo", "complete", "--goal-id", GOAL, "--agent-id", actor,
                  "--todo-id", todo_id(actor, revision), "--no-follow-up",
                  "--note", "Bounded artifact task; synthesis consumes dependencies through its separately bound task.",
+                 *(["--result-file", str(root / "lead" / "report.json")] if actor == "lead" else []),
                  workspace=root / "project")
     require_completed(canonical_tasks(root), actor, revision)
     return result

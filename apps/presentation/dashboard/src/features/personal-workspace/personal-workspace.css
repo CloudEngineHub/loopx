@@ -683,6 +683,10 @@
 .personal-manager-team-result-actions button { padding: 4px 0; border: 0; background: none; color: var(--pw-link, #0070f3); cursor: pointer; font-size: 12px; }
 .personal-manager-team-result .goal-team-report { max-height: 280px; overflow: auto; }
 .personal-manager-team-result .goal-team-artifact { min-width: 0; }
+.personal-manager-managed-report { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--pw-line); }
+.personal-manager-managed-report > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
+.personal-manager-managed-report > header strong { font-size: 13px; font-weight: 600; }
+.personal-manager-managed-report > header small { color: var(--pw-muted); font-size: 11px; }
 .personal-gated-summary { border: 1px solid #ead39c; border-radius: 14px; background: #fffaf0; }
 .personal-gated-summary > summary { display: flex; align-items: center; gap: 9px; padding: 12px 14px; color: #6d5620; cursor: pointer; list-style: none; }
 .personal-gated-summary > summary::-webkit-details-marker { display: none; }
