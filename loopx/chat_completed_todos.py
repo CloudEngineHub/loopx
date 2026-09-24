@@ -14,10 +14,9 @@ from .paths import resolve_runtime_root
 from .status_server import is_loopback_host
 
 
-def _goal_result_rows(*, registry_path, runtime_root, goal_id):
-    """Project only results that still pass exact canonical acceptance readback."""
+def _goal_result_candidates(*, runtime_root, goal_id):
+    """Snapshot bounded metadata; exact acceptance is checked per requested page."""
     from .control_plane.coordination.local_authority import read_canonical_todos_if_promoted
-    from .control_plane.todos.completion_result import read_completion_result
 
     payload = read_canonical_todos_if_promoted(runtime_root=runtime_root, goal_id=goal_id)
     if payload is None:
@@ -28,11 +27,25 @@ def _goal_result_rows(*, registry_path, runtime_root, goal_id):
         key=lambda pair: (str(pair[1].get("completed_at") or ""), pair[0]),
         reverse=True,
     )
+    return [
+        {
+            "todo_id": todo["todo_id"],
+            "title": str(todo.get("title") or todo.get("text") or todo["todo_id"]),
+            "sha256": todo["completion_result"].get("sha256"),
+            "producer_agent_id": todo["completion_result"].get("producer_agent_id"),
+            "completed_at": todo.get("completed_at"),
+        }
+        for _, todo in candidates
+        if todo.get("todo_id") and isinstance(todo.get("completion_result"), dict)
+    ]
+
+
+def _verify_goal_result_page(*, page, registry_path, runtime_root, goal_id):
+    from .control_plane.todos.completion_result import read_completion_result
+
     rows = []
-    for _, todo in candidates:
+    for todo in page["items"]:
         todo_id = todo.get("todo_id")
-        if not todo_id or not isinstance(todo.get("completion_result"), dict):
-            continue
         try:
             result = read_completion_result(
                 registry_path=registry_path, runtime_root=runtime_root,
@@ -40,16 +53,19 @@ def _goal_result_rows(*, registry_path, runtime_root, goal_id):
             )["result"]
         except (OSError, ValueError):
             continue
+        if (result["sha256"] != todo["sha256"] or
+                result["producer_agent_id"] != todo["producer_agent_id"]):
+            continue
         rows.append({
             "todo_id": todo_id,
-            "title": str(todo.get("title") or todo.get("text") or todo_id),
+            "title": todo["title"],
             "producer_agent_id": result["producer_agent_id"],
             "sha256": result["sha256"],
             "content_type": result["content_type"],
             "size_bytes": result["size_bytes"],
-            "completed_at": todo.get("completed_at"),
+            "completed_at": todo["completed_at"],
         })
-    return rows
+    return {**page, "items": rows, "unavailable_count": len(page["items"]) - len(rows)}
 
 
 class CompletedTodoPages:
@@ -116,12 +132,13 @@ class CompletedTodoRequestMixin:
             runtime_root = self._goal_result_scope(goal_id)
             if runtime_root is None:
                 return
-            self._send_json(self.server.completed_todo_pages.page(
+            page = self.server.completed_todo_pages.page(
                 scope=("accepted_goal_results", goal_id), cursor=cursor,
-                load=lambda: _goal_result_rows(
-                    registry_path=self.server.registry_path,
-                    runtime_root=runtime_root, goal_id=goal_id,
-                ),
+                load=lambda: _goal_result_candidates(runtime_root=runtime_root, goal_id=goal_id),
+            )
+            self._send_json(_verify_goal_result_page(
+                page=page, registry_path=self.server.registry_path,
+                runtime_root=runtime_root, goal_id=goal_id,
             ))
         except ValueError as exc:
             expired = str(exc) == "history_cursor_expired"

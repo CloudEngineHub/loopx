@@ -80,7 +80,15 @@ export function GoalManagedResults({goalId, zh}: {goalId: string; zh: boolean}) 
       <button type="button" disabled={busy} onClick={() => void load()}><RefreshCw size={14} aria-hidden="true"/>{zh ? "刷新" : "Refresh"}</button></header>
     {busy ? <p role="status">{zh ? "正在核验报告…" : "Verifying reports…"}</p> : null}
     {error ? <p role="alert">{error}</p> : null}
-    {page && !busy && !page.items.length ? <p>{zh ? "暂无可核验的团队报告。" : "No verifiable team reports yet."}</p> : null}
+    {page && page.unavailable_count > 0 ? <p role="status">{zh
+      ? `本页有 ${page.unavailable_count} 份报告已无法通过当前核验。`
+      : `${page.unavailable_count} report(s) on this page cannot pass current verification.`}</p> : null}
+    {page && !busy && !page.items.length ? <p>{page.next_cursor
+      ? (zh ? "本页没有可核验的报告，可继续下一页。" : "No verifiable reports on this page; continue to the next page.")
+      : (zh ? "暂无可核验的团队报告。" : "No verifiable team reports yet.")}</p> : null}
+    {page?.next_cursor && !page.items.length ? <button type="button" disabled={busy} onClick={() => void load(page.next_cursor!)}>
+      {zh ? "下一页" : "Next page"}
+    </button> : null}
     {page && page.items.length > 0 ? <div className="goal-team-results-layout">
       <nav className="goal-team-result-list" aria-label={zh ? "选择团队报告" : "Choose a team report"}>
         {page.items.map(row => <button type="button" key={row.todo_id} disabled={busy}

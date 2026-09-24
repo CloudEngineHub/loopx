@@ -19,7 +19,9 @@ from test_managed_research_scenario import fixture  # noqa: E402
 from loopx.control_plane.goals.acceptance import (  # noqa: E402
     configure_goal_acceptance, inspect_goal_acceptance, verify_goal_acceptance,
 )
-from loopx.chat_completed_todos import CompletedTodoPages, _goal_result_rows  # noqa: E402
+from loopx.chat_completed_todos import (  # noqa: E402
+    CompletedTodoPages, _goal_result_candidates, _verify_goal_result_page,
+)
 from loopx.chat_server import ChatHTTPServer, ChatRequestHandler  # noqa: E402
 
 
@@ -37,6 +39,17 @@ def plan(root, actor, revision):
     return demo.cli(root, "turn", "plan", "--goal-id", demo.GOAL, "--agent-id", actor,
                     "--todo-id", todo_id(actor, revision), "--host", "dsh",
                     "--scan-root", str(root / actor / revision))
+
+
+def listed_results(root):
+    page = CompletedTodoPages().page(
+        scope=("accepted_goal_results", demo.GOAL), cursor="",
+        load=lambda: _goal_result_candidates(runtime_root=root / "runtime", goal_id=demo.GOAL),
+    )
+    return _verify_goal_result_page(
+        page=page, registry_path=root / "registry.json",
+        runtime_root=root / "runtime", goal_id=demo.GOAL,
+    )["items"]
 
 
 def test_canonical_delivery_requires_completed_current_dependencies(team, monkeypatch):
@@ -146,7 +159,7 @@ def test_canonical_delivery_requires_completed_current_dependencies(team, monkey
     report.write_bytes(original_report)
     result_object = root / "runtime" / "goals" / demo.GOAL / "result-objects" / result_read["result"]["sha256"]
     result_object.write_text("tampered")
-    assert _goal_result_rows(registry_path=root / "registry.json", runtime_root=root / "runtime", goal_id=demo.GOAL) == []
+    assert listed_results(root) == []
     with pytest.raises(RuntimeError, match="completion result bytes no longer match"):
         demo.cli(root, "todo", "result-read", "--goal-id", demo.GOAL,
                  "--todo-id", "todo_lead-report")
@@ -155,9 +168,7 @@ def test_canonical_delivery_requires_completed_current_dependencies(team, monkey
     assert verify_goal_acceptance(**route, execute=True)["acceptance_ready"]
     demo.cli(root, "todo", "archive-completed", "--goal-id", demo.GOAL,
              "--max-active-done", "0", "--execute")
-    assert [row["todo_id"] for row in _goal_result_rows(
-        registry_path=root / "registry.json", runtime_root=root / "runtime", goal_id=demo.GOAL,
-    )] == ["todo_lead-report"]
+    assert [row["todo_id"] for row in listed_results(root)] == ["todo_lead-report"]
     assert demo.cli(root, "todo", "result-read", "--goal-id", demo.GOAL,
                     "--todo-id", "todo_lead-report")["text"] == result_read["text"]
     assert json.loads((root / "registry.json").read_text())["goals"][0]["status"] == "active"
@@ -169,7 +180,7 @@ def test_canonical_delivery_requires_completed_current_dependencies(team, monkey
     with pytest.raises(RuntimeError, match="completion result acceptance basis is stale"):
         demo.cli(root, "todo", "result-read", "--goal-id", demo.GOAL,
                  "--todo-id", "todo_lead-report")
-    assert _goal_result_rows(registry_path=root / "registry.json", runtime_root=root / "runtime", goal_id=demo.GOAL) == []
+    assert listed_results(root) == []
 
 
 def test_bootstrap_refuses_existing_state(team):
