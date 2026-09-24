@@ -247,8 +247,10 @@ export const typedActionsScenario = {
     });
     try {
       const { api, page } = workspaceGateUi;
+      await page.reload({ waitUntil: "networkidle" });
+      await page.getByTestId("personal-goal-home").waitFor({ state: "visible" });
       await page.locator(".personal-goal-link", { hasText: "Product Release" }).click();
-      await page.locator(".personal-goal-tabs button", { hasText: "Chat" }).click();
+      await page.getByRole("navigation", { name: "Goal 视图" }).getByRole("button", { name: /^(Chat|对话)$/ }).click();
       await page.locator(".personal-gated-summary summary").click();
       const proposalRow = page.locator(".personal-proposal-row", { hasText: "Stored workspace Goal" });
       try {
@@ -258,13 +260,30 @@ export const typedActionsScenario = {
       }
       await proposalRow.click();
       const drawer = page.locator('.personal-context-drawer[data-context-kind="proposal"]');
+      if ((await drawer.innerText()).includes("需要宿主确认")) {
+        throw new Error("Workspace selection gate was mislabeled as host-only confirmation");
+      }
+      const writesBeforeSelection = api.durableWriteCount;
       await drawer.getByRole("button", { name: /Workspace 1/ }).click();
+      await page.getByRole("button", { name: "创建 Goal 并开始首轮", exact: true }).waitFor({ state: "visible" });
       const regenerated = api.actionPreviews.at(-1);
       if (regenerated?.normalized_parameters.workspace_ref !== "workspace-fixture") {
         throw new Error(`Stored workspace selection did not regenerate the Goal preview: ${JSON.stringify(regenerated)}`);
       }
-      if ((await drawer.innerText()).includes("Host confirmation required")) {
-        throw new Error("Workspace selection gate was mislabeled as host-only confirmation");
+      if (api.durableWriteCount !== writesBeforeSelection) throw new Error("Selecting a workspace applied without confirmation");
+      await page.getByRole("button", { name: "创建 Goal 并开始首轮", exact: true }).click();
+      await page.getByText("已应用，LoopX 状态将刷新。", { exact: true }).waitFor({ state: "visible" });
+      if (!api.actionApplies.includes(regenerated.proposalId)) throw new Error("Confirmation did not apply the regenerated preview");
+      if (api.durableWriteCount !== writesBeforeSelection + 1) throw new Error("Confirmation did not write exactly one Goal");
+      await page.reload({ waitUntil: "networkidle" });
+      await page.getByTestId("personal-goal-home").waitFor({ state: "visible" });
+      const stored = await page.evaluate(async (proposalId) => {
+        const response = await fetch("/api/actions?goal_id=product-release");
+        const payload = await response.json();
+        return payload.proposals?.find((proposal) => proposal.proposal_id === proposalId);
+      }, regenerated.proposalId);
+      if (stored?.status !== "applied" || stored.receipt?.projection_verified !== true) {
+        throw new Error(`Confirmed workspace Goal did not survive readback: ${JSON.stringify(stored)}`);
       }
     } finally {
       await workspaceGateUi.close();
