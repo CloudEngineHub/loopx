@@ -367,7 +367,7 @@
     },
     {
       "site": "loopx/chat_server.py::<module>.ChatRequestHandler._goal_channel_extension_ready::codec_read:load_registry#1",
-      "line": 906,
+      "line": 942,
       "column": 24,
       "kind": "codec_read",
       "api": "load_registry",
@@ -383,7 +383,7 @@
     },
     {
       "site": "loopx/chat_server.py::<module>.serve_chat::codec_read:load_registry#1",
-      "line": 1422,
+      "line": 1460,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",
