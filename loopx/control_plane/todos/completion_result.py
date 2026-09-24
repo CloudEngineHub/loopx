@@ -11,6 +11,7 @@ import json
 import os
 import re
 import stat
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,37 @@ def _read_regular(path: Path) -> bytes:
     return data
 
 
+def _install_object(target: Path, data: bytes) -> None:
+    """Install exact content-addressed bytes with one atomic replace.
+
+    A digest path can only ever hold the bytes it names, so a pre-existing
+    regular file that does not match is the artifact of an interrupted store
+    (or a corrupt entry) rather than a competing object. It is replaced by the
+    complete staged bytes instead of failing the retry with a partial file on
+    disk. ``os.replace`` installs the staged name without following a link, so
+    an existing symlink is replaced rather than written through.
+    """
+    try:
+        if _read_regular(target) == data:
+            return
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError):
+        pass
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def store_completion_result(*, source: Path, runtime_root: Path, goal_id: str,
                             persist: bool = True) -> dict[str, Any]:
     """Stage exact local bytes before the canonical completion transaction."""
@@ -50,17 +82,7 @@ def store_completion_result(*, source: Path, runtime_root: Path, goal_id: str,
     if persist:
         target = _object_path(runtime_root, goal_id, digest)
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        try:
-            fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
-                         getattr(os, "O_NOFOLLOW", 0), 0o600)
-        except FileExistsError:
-            if _read_regular(target) != data:
-                raise ValueError("content-addressed completion result changed")
-        else:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
+        _install_object(target, data)
     return {"provider": "local_runtime_v0", "sha256": digest,
             "size_bytes": len(data), "content_type": content_type}
 
