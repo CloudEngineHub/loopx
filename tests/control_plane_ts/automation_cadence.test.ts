@@ -23,7 +23,13 @@ test("owner floor inherits without changing another agent; reductions and concur
     assert.equal((await read({agent_id: "a", automation_id: "other"})).min_interval_minutes, 1440);
     assert.equal((await read({agent_id: "b"})).min_interval_minutes, 60);
     await assert.rejects(manage({...base, agent_id: "a", expected_revision: 3, min_interval_minutes: 1}), /owner-approved/);
-    await assert.rejects(manage({...base, expected_revision: 0, min_interval_minutes: 100}), /revision conflict/);
+    // Stale configuration intent is a typed conflict, so callers do not have to
+    // parse the message to tell "refresh and retry" from an invalid request.
+    const staleRevision = await manage({...base, expected_revision: 0, min_interval_minutes: 100})
+      .then(() => null, (error: {kind?: string; code?: string; message?: string}) => error);
+    assert.equal(staleRevision?.kind, "conflict");
+    assert.equal(staleRevision?.code, "automation_cadence_revision_conflict");
+    assert.match(String(staleRevision?.message), /revision conflict/);
     const concurrent = await Promise.allSettled([120, 180].map(min => manage({...base, expected_revision: 3, min_interval_minutes: min})));
     assert.equal(concurrent.filter(r => r.status === "fulfilled").length, 1);
     assert.equal(concurrent.filter(r => r.status === "rejected").length, 1);

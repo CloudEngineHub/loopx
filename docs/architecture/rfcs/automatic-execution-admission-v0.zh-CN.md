@@ -157,20 +157,27 @@ M1 对 App 调度管理有独立价值，但不代表多宿主产品旅程完成
 
 ## 附录：实现记录
 
-`23edcb19c` 基线没有持久用户最短间隔。M1 已由 PR #4921 合并。M2 候选在
+`23edcb19c` 基线没有持久用户最短间隔。M1 已由
+[#4921](https://github.com/loopx-project/loopx/pull/4921) 合入，受管 Turn 准入已由
+[#4929](https://github.com/loopx-project/loopx/pull/4929) 合入。M2 候选在
 同一 quota 策略文件与锁中预留 managed Turn 的启动位，再调用 host。拒绝时返回下次
 可执行时间，不调用 host、不写回、不花 quota；失败的 host 消耗已预留间隔，结算回放
 跳过准入。Goal 下限按 agent 生效；automation 下限要求显式稳定的 `--automation-id`。
 手动启动要求 `--manual-interval-bypass-reason`，记录这次启动，只绕过时间下限。
 本地 CLI 仍以相同 OS 用户为信任边界。
 
-App 定时器到 hook、非 Turn launcher、打包设置界面及真实模型宿主推广仍未验收。
-本提案不激活、不改绑任何已有自动化。
 managed 启动在同一 store 内分两步：准入预留间隔位，Turn executor 只在该 host 尝试
 已写入 Turn journal 之后确认该预留。两步之间进程退出时，同一 Turn 身份在满足时间
 下限后仍可恢复，因此"已预留但未启动"不会永久卡住 Turn；已确认的启动对同一身份保持
 fail-closed，显式手动理由也无法绕过。缺少阶段字段的旧记录按"已尝试启动"读取，
 旧版或手工改写的文件因此 fail-closed，而不是被当作可恢复预留。
+
+M3 设置页阶段成果复用 quota 权威，提供 Goal／Agent／Automation 作用域的修订号锁定
+预览、应用与读回，并把过期的配置意图作为 typed conflict 报出，而不是解析错误文案。
+它不修改已有 Codex App 定时器；下次可运行时间及 Lark／CLI 等待反馈一致性仍未完成。
+App 定时器到 hook、非 Turn launcher 及真实模型宿主推广仍未验收，M4 仍是设计选项。
+本提案不激活、不改绑任何已有自动化；测试和 PR 必须区分确定性验证与宿主推广。
+
 M1 的 v1 策略文件在首次配置写入或获准启动时原地升级为 v2，文件路径保持不变。
 旧版程序会拒绝 v2 schema，避免静默丢弃启动记录；降级前必须暂停 launcher。
 
