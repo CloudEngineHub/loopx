@@ -193,6 +193,39 @@ COMPATIBILITY_CASES = [
 ]
 CASES.extend(COMPATIBILITY_CASES)
 
+# Scope approval and subject readiness are distinct; refusal is not recovery.
+SCOPE_CASES = [
+    (
+        {"request": "Review an owner-configured acceptance gate after bypass fixes.",
+         "problem": "The owner enabled checks for two validation jobs in a project containing other independent work.",
+         "proposal": "On project activation, every existing or future advancement job must have an owner binding. Changing a selected job's role no longer bypasses the gate.",
+         "evidence": "Selected-job, selected-job recovery and feature-off tests pass. A newly created unrelated job is rejected as unbound even though its ordinary validator passes. No owner instruction authorizes a project-wide contract. Prior review approved the bypass repair."},
+        "REQUEST_CHANGES", "architecture",
+    ),
+    (
+        {"request": "Review an owner-configured acceptance gate after bypass fixes.",
+         "problem": "The owner enabled checks for two validation jobs in a project containing other independent work.",
+         "proposal": "The shared gate distinguishes explicit selected-job coverage from binding readiness. Covered unbound jobs stay held even after editable role changes. Unselected jobs retain ordinary admission.",
+         "evidence": "Real CLI tests cover selected missing binding, existing independent work, a new independent job after activation, role-change escape, and owner repair followed by resumed selected work. Feature-off and ordinary validation remain unchanged; other required evidence is verified."},
+        "APPROVE", "none",
+    ),
+    (
+        {"request": "Review recovery of jobs stranded behind a policy gate.",
+         "problem": "The accepted outcome is to restore useful work after an overly broad gate captured independent jobs.",
+         "proposal": "When admission fails, persist a blocker receipt and mark replan complete. Require the same per-job owner binding on every retry.",
+         "evidence": "The receipt write, replan completion and retry recommendation tests pass. The real job remains rejected after following those steps. No runnable owner route, scope correction or accepted prerequisite boundary is delivered. Author calls this automatic recovery."},
+        "REQUEST_CHANGES", "lifecycle",
+    ),
+    (
+        {"request": "Review a deliberately project-wide owner policy gate and its recovery.",
+         "problem": "The owner explicitly requires every current and future job in the project to satisfy an approval contract.",
+         "proposal": "The gate applies to all jobs, including newly created jobs. Unbound jobs fail closed with a repair command owned by the authorized operator.",
+         "evidence": "Owner intent explicitly covers future work. Real CLI tests prove unbound new work is held, owner correction restores execution, workers cannot change scope, and disabling the optional feature preserves baseline behavior. All other required evidence is verified. Global coverage is deliberate, not inferred from activation."},
+        "APPROVE", "none",
+    ),
+]
+CASES.extend(SCOPE_CASES)
+
 
 def test_decision_procedure_is_in_the_real_packet_before_prose():
     response = build_agent_response_contract()
