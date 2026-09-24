@@ -87,3 +87,5 @@ def test_turn_with_a_settlement_binding_still_offers_the_poll_command() -> None:
     assert projection["turn_instance_id"] == "turn-auxiliary-monitor-availability"
     assert "quota monitor-poll" in str(projection["command"])
     assert DUE_MONITOR_TODO_ID in str(projection["command"])
+    assert "--use-current-task-lease" in str(projection["command"])
+    assert projection["input_contract"]["task_lease_proof"]["source"] == "canonical_lease_or_same_turn_receipt"

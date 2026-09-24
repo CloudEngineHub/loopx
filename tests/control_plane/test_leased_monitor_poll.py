@@ -11,6 +11,8 @@ from canonical_authority_fixture import isolate_sqlite_runtime
 from test_native_monitor_poll import _canonical
 from test_monitor_followthrough_contract import GOAL_ID, AGENT_ID, _write_fixture, _add_monitor
 from loopx.control_plane.coordination.local_authority import read_canonical_todos_if_promoted
+from loopx.control_plane.quota.error_codes import QuotaCommandValidationError
+from loopx.control_plane.quota.monitor_poll_lease_transport import current_monitor_lease_proof
 from loopx.control_plane.scheduler.monitor_poll_writeback import write_monitor_poll_todo_state
 from loopx.control_plane.testing.canary_harness import run_json_cli, run_json_cli_result
 
@@ -59,6 +61,13 @@ def arguments(monitor):
         "--task-lease-expected-version", str(PROOF["expected_version"]), "--execute"]
 
 
+def automatic_arguments(monitor, *, turn_id="leased-monitor-automatic"):
+    explicit = arguments(monitor)
+    key_index = explicit.index("--task-lease-idempotency-key")
+    del explicit[key_index:key_index + 4]
+    return [*explicit, "--turn-instance-id", turn_id, "--use-current-task-lease"]
+
+
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
 @pytest.mark.parametrize("native", [False, True])
 def test_leased_monitor_public_cli_settles_once_without_display(tmp_path, monkeypatch, provider, native):
@@ -78,6 +87,94 @@ def test_leased_monitor_public_cli_settles_once_without_display(tmp_path, monkey
     records = [json.loads(line) for line in (runtime / "goals" / GOAL_ID / "runs" / "index.jsonl").read_text().splitlines()]
     assert sum(row.get("classification") == "quota_monitor_poll" for row in records) == 1
     assert all(row.get("classification") != "quota_slot_spend" for row in records)
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_current_lease_cli_transport_replays_after_release(tmp_path, monkeypatch, provider):
+    isolate_sqlite_runtime(tmp_path, monkeypatch)
+    registry, runtime, _state, monitor = _canonical(tmp_path, provider=provider, lease=LEASE)
+    args = automatic_arguments(monitor)
+    guard = run_json_cli("quota", "should-run", "--goal-id", GOAL_ID, "--agent-id", AGENT_ID,
+        "--runtime-profile", "generic_cli", "--turn-instance-id", "leased-monitor-automatic",
+        "--available-capability", "network", "--available-capability", "external_evidence_poll",
+        registry_path=registry, runtime_root=runtime)
+    assert guard["selected_todo"]["todo_id"] == monitor["todo_id"]
+    args.extend(["--available-capability", "network", "--available-capability", "external_evidence_poll"])
+    first = run_json_cli(*args, registry_path=registry, runtime_root=runtime)
+    assert first["ok"] is True
+    assert first["todo_writeback"]["lease_proof"] == PROOF
+    run_json_cli("task-lease", "release", "--goal-id", GOAL_ID, "--todo-id", monitor["todo_id"],
+        "--owner", AGENT_ID, "--idempotency-key", PROOF["idempotency_key"], "--expected-version", "3",
+        registry_path=registry, runtime_root=runtime)
+    replay = run_json_cli(*args, registry_path=registry, runtime_root=runtime)
+    assert replay["replayed"] is True
+    records = [json.loads(line) for line in (runtime / "goals" / GOAL_ID / "runs" / "index.jsonl").read_text().splitlines()]
+    assert sum(row.get("classification") == "quota_monitor_poll" for row in records) == 1
+    assert all(row.get("classification") != "quota_slot_spend" for row in records)
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_current_lease_cli_transport_rejects_expired_lease_without_pending(tmp_path, monkeypatch, provider):
+    isolate_sqlite_runtime(tmp_path, monkeypatch)
+    registry, runtime, _state, monitor = _canonical(tmp_path, provider=provider,
+        lease={**LEASE, "expires_at": "2026-01-01T01:00:00Z"})
+    guard = run_json_cli("quota", "should-run", "--goal-id", GOAL_ID, "--agent-id", AGENT_ID,
+        "--runtime-profile", "generic_cli", "--turn-instance-id", "leased-monitor-automatic",
+        "--available-capability", "network", "--available-capability", "external_evidence_poll",
+        registry_path=registry, runtime_root=runtime)
+    assert guard["selected_todo"]["todo_id"] == monitor["todo_id"]
+    before = read_canonical_todos_if_promoted(runtime_root=runtime, goal_id=GOAL_ID, include_leases=True)
+    code, failure = run_json_cli_result(*automatic_arguments(monitor), registry_path=registry, runtime_root=runtime)
+    assert code != 0
+    assert failure["ok"] is False
+    assert "current active task lease" in str(failure.get("reason"))
+    assert read_canonical_todos_if_promoted(runtime_root=runtime, goal_id=GOAL_ID, include_leases=True) == before
+    pending = runtime / "goals" / GOAL_ID / "runs" / ".transactions" / "quota-monitor-poll"
+    assert not pending.exists() or not list(pending.glob("*.json"))
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_current_lease_cli_transport_rejects_foreign_owner_without_pending(tmp_path, monkeypatch, provider):
+    isolate_sqlite_runtime(tmp_path, monkeypatch)
+    registry, runtime, _state, monitor = _canonical(
+        tmp_path, provider=provider, lease={**LEASE, "owner": "another-agent"},
+    )
+    # The public command also requires a committed same-Turn receipt first;
+    # exercise the read-only transport directly to prove its owner fence.
+    with pytest.raises(QuotaCommandValidationError, match="owned by --agent-id"):
+        current_monitor_lease_proof(
+            runtime_root=runtime, goal_id=GOAL_ID, todo_id=monitor["todo_id"],
+            agent_id=AGENT_ID, effect_id="foreign-owner-monitor-poll",
+        )
+    pending = runtime / "goals" / GOAL_ID / "runs" / ".transactions" / "quota-monitor-poll"
+    assert not pending.exists() or not list(pending.glob("*.json"))
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_current_lease_cli_transport_keeps_soft_claim_compatible(tmp_path, monkeypatch, provider):
+    isolate_sqlite_runtime(tmp_path, monkeypatch)
+    registry, runtime, _state, monitor = _canonical(tmp_path, provider=provider)
+    turn_id = "soft-claim-monitor-automatic"
+    guard = run_json_cli("quota", "should-run", "--goal-id", GOAL_ID, "--agent-id", AGENT_ID,
+        "--runtime-profile", "generic_cli", "--turn-instance-id", turn_id,
+        "--available-capability", "network", "--available-capability", "external_evidence_poll",
+        registry_path=registry, runtime_root=runtime)
+    assert guard["selected_todo"]["todo_id"] == monitor["todo_id"]
+    result = run_json_cli(*automatic_arguments(monitor, turn_id=turn_id),
+        "--available-capability", "network", "--available-capability", "external_evidence_poll",
+        registry_path=registry, runtime_root=runtime)
+    assert result["ok"] is True
+    assert "lease_proof" not in result["todo_writeback"]
+
+
+def test_current_lease_cli_transport_rejects_ambiguous_proof_arguments(tmp_path):
+    registry, runtime, _state, monitor = _canonical(tmp_path, lease=LEASE)
+    code, failure = run_json_cli_result(*automatic_arguments(monitor),
+        "--task-lease-idempotency-key", PROOF["idempotency_key"],
+        "--task-lease-expected-version", "3", registry_path=registry, runtime_root=runtime)
+    assert code != 0
+    assert failure["error_code"] == "QUOTA_VALIDATION_FAILED"
+    assert "cannot be combined" in failure["reason"]
 
 
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
@@ -107,7 +204,8 @@ def test_explicit_proof_never_falls_back_to_legacy_writer(tmp_path):
 
 
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
-def test_process_death_after_business_commit_recovers_after_lease_release(tmp_path, monkeypatch, provider):
+@pytest.mark.parametrize("automatic", [False, True])
+def test_process_death_after_business_commit_recovers_after_lease_release(tmp_path, monkeypatch, provider, automatic):
     isolate_sqlite_runtime(tmp_path, monkeypatch)
     registry, runtime, _state, monitor = _canonical(tmp_path, provider=provider, lease=LEASE)
     turn_id = "leased-monitor-crash"
@@ -116,7 +214,10 @@ def test_process_death_after_business_commit_recovers_after_lease_release(tmp_pa
         "--available-capability", "network", "--available-capability", "external_evidence_poll",
         registry_path=registry, runtime_root=runtime)
     assert guard["selected_todo"]["todo_id"] == monitor["todo_id"]
-    args = [*arguments(monitor), "--turn-instance-id", turn_id,
+    proof_args = automatic_arguments(monitor, turn_id=turn_id) if automatic else [
+        *arguments(monitor), "--turn-instance-id", turn_id,
+    ]
+    args = [*proof_args,
         "--available-capability", "network", "--available-capability", "external_evidence_poll"]
     # Kill the actual CLI process after the authority transaction returned its
     # receipt, before the separate quota transaction can settle it.

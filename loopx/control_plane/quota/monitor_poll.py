@@ -697,6 +697,7 @@ def record_quota_monitor_poll_for_decision(
     next_claimed_by: str | None = None,
     task_lease_idempotency_key: str | None = None,
     task_lease_expected_version: int | None = None,
+    use_current_task_lease: bool = False,
     turn_instance_id: str | None = None,
     _index_lock_held: bool = False,
     status_reloader: Callable[[], dict[str, Any]] | None = None,
@@ -720,7 +721,19 @@ def record_quota_monitor_poll_for_decision(
         todo_id=safe_todo_id,
         target_key=safe_target_key,
     )
-    if execute and (safe_todo_id or safe_target_key):
+    if use_current_task_lease:
+        from .monitor_poll_lease_transport import current_monitor_lease_proof
+
+        if not safe_todo_id or not normalized_turn_id or not decision_agent_id:
+            raise ValueError("current task lease transport requires exact Turn, Todo, and agent identity")
+        task_lease_idempotency_key, task_lease_expected_version = current_monitor_lease_proof(
+            runtime_root=runtime_root,
+            goal_id=goal_id,
+            todo_id=safe_todo_id,
+            agent_id=decision_agent_id,
+            effect_id=effect_id,
+        )
+    if execute and (safe_todo_id or safe_target_key) and not use_current_task_lease:
         from ..scheduler.provider_monitor_poll import (
             require_monitor_poll_source_available,
         )
