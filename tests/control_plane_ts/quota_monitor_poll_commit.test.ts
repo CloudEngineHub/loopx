@@ -12,6 +12,7 @@ import {
   QUOTA_LEASED_MONITOR_POLL_COMMIT_REQUEST_SCHEMA,
 } from "../../loopx/control_plane/quota/monitor_poll_commit.ts";
 import { EffectRuntimeRequestError } from "../../loopx/control_plane/effect_runtime_errors.ts";
+import { resolveTestPython } from "../../scripts/test-python.mjs";
 
 const goalId = "monitor-native-goal";
 
@@ -621,7 +622,7 @@ test("successor normalization preserves the legacy pending observation fingerpri
   // The shipped v0 identity recipe hashes wire observation, not its normalized route.
   const legacyEnvelope = Object.fromEntries(["schema_version", "effect_id", "runtime_root", "goal_id",
     "source", "turn_instance_id", "observation"].map(key => [key, params[key]]));
-  const oracle = spawnSync("python", ["-c", "import hashlib,json,sys; print('sha256:'+hashlib.sha256(json.dumps(json.load(sys.stdin),ensure_ascii=False,sort_keys=True).encode()).hexdigest())"],
+  const oracle = spawnSync(resolveTestPython(), ["-c", "import hashlib,json,sys; print('sha256:'+hashlib.sha256(json.dumps(json.load(sys.stdin),ensure_ascii=False,sort_keys=True).encode()).hexdigest())"],
     {input: JSON.stringify(legacyEnvelope), encoding: "utf8"});
   assert.equal(oracle.status, 0, oracle.stderr);
   const first = await evaluateQuotaMonitorPollCommit(params);
