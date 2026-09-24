@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import pytest
 from loopx import chat_goal_lifecycle_actions
 from loopx.chat_action_store import ChatActionStore
 from loopx.chat_actions import ChatActionService
+from loopx.control_plane.goals import activation_service
 from loopx.control_plane.goals.activation import (
     GoalActivationState,
     build_goal_activation,
@@ -127,6 +129,10 @@ def test_stop_preview_is_zero_write(connected_registries: tuple[Path, Path]) -> 
     assert result["dry_run"] is True
     assert result["changed"] is True
     assert result["written"] is False
+    assert (
+        result["source_fingerprint_schema_version"]
+        == "loopx_goal_activation_source_fingerprint_v1"
+    )
     assert source_registry.read_bytes() == before_source
     assert global_registry.read_bytes() == before_global
 
@@ -475,6 +481,49 @@ def test_owner_confirmed_lifecycle_action_rejects_a_changed_source_registry(
     )
 
 
+def test_owner_confirmed_lifecycle_action_rejects_equal_content_source_route_change(
+    connected_registries: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    source_a, global_registry = connected_registries
+    service = ChatActionService(
+        store=ChatActionStore(tmp_path / "actions"),
+        registry_path=global_registry,
+    )
+    proposal = service.preview(
+        {
+            "action_kind": "goal.lifecycle",
+            "summary": "Stop a Goal",
+            "normalized_parameters": {
+                "goal_id": "goal-one",
+                "operation": "stop",
+                "reason": "Owner confirmed from the workspace",
+            },
+            "context": {"kind": "goal_directory"},
+            "idempotency_key": "stop-goal-one-before-source-route-change",
+        }
+    )
+    source_b = tmp_path / "project-b" / ".loopx" / "registry.json"
+    source_b.parent.mkdir(parents=True)
+    source_b.write_bytes(source_a.read_bytes())
+    global_payload = load_registry(global_registry)
+    registry_goals(global_payload)[0]["source_registry"] = str(source_b)
+    _write_json(global_registry, global_payload)
+    before = source_a.read_bytes(), source_b.read_bytes(), global_registry.read_bytes()
+
+    applied = service.apply(str(proposal["proposal_id"]))
+
+    assert applied["proposal"]["status"] == "stale"
+    assert applied["proposal"]["receipt"] is None
+    assert (
+        source_a.read_bytes(),
+        source_b.read_bytes(),
+        global_registry.read_bytes(),
+    ) == before
+    assert goal_activation_state(_goal(source_a)) is GoalActivationState.ACTIVE
+    assert goal_activation_state(_goal(source_b)) is GoalActivationState.ACTIVE
+
+
 def test_owner_confirmed_lifecycle_action_rechecks_source_inside_write_lock(
     connected_registries: tuple[Path, Path],
     tmp_path: Path,
@@ -530,6 +579,161 @@ def test_owner_confirmed_lifecycle_action_rechecks_source_inside_write_lock(
         goal_activation_state(_goal(global_registry))
         is GoalActivationState.ACTIVE
     )
+
+
+def test_owner_confirmed_lifecycle_action_rechecks_route_before_execute(
+    connected_registries: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_a, global_registry = connected_registries
+    source_b = tmp_path / "project-b" / ".loopx" / "registry.json"
+    source_b.parent.mkdir(parents=True)
+    source_b.write_bytes(source_a.read_bytes())
+    service = ChatActionService(
+        store=ChatActionStore(tmp_path / "actions"),
+        registry_path=global_registry,
+    )
+    proposal = service.preview(
+        {
+            "action_kind": "goal.lifecycle",
+            "summary": "Stop a Goal",
+            "normalized_parameters": {
+                "goal_id": "goal-one",
+                "operation": "stop",
+                "reason": "Owner confirmed from the workspace",
+            },
+            "context": {"kind": "goal_directory"},
+            "idempotency_key": "stop-goal-one-before-execute-route-race",
+        }
+    )
+    original = chat_goal_lifecycle_actions.set_goal_activation_state
+    switched_global_bytes: bytes | None = None
+
+    def change_route_before_execute(**kwargs: object) -> dict[str, object]:
+        nonlocal switched_global_bytes
+        if kwargs.get("execute") is True and switched_global_bytes is None:
+            global_payload = load_registry(global_registry)
+            registry_goals(global_payload)[0]["source_registry"] = str(source_b)
+            _write_json(global_registry, global_payload)
+            switched_global_bytes = global_registry.read_bytes()
+        return original(**kwargs)
+
+    monkeypatch.setattr(
+        chat_goal_lifecycle_actions,
+        "set_goal_activation_state",
+        change_route_before_execute,
+    )
+    before_sources = source_a.read_bytes(), source_b.read_bytes()
+
+    applied = service.apply(str(proposal["proposal_id"]))
+
+    assert switched_global_bytes is not None
+    assert applied["proposal"]["status"] == "stale"
+    assert applied["proposal"]["receipt"] is None
+    assert (source_a.read_bytes(), source_b.read_bytes()) == before_sources
+    assert global_registry.read_bytes() == switched_global_bytes
+    assert goal_activation_state(_goal(source_a)) is GoalActivationState.ACTIVE
+    assert goal_activation_state(_goal(source_b)) is GoalActivationState.ACTIVE
+
+
+def test_lifecycle_execute_rechecks_route_before_source_commit(
+    connected_registries: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_a, global_registry = connected_registries
+    preview = set_goal_activation_state(
+        registry_path=global_registry,
+        goal_id="goal-one",
+        state=GoalActivationState.STOPPED,
+        execute=False,
+    )
+    source_b = tmp_path / "project-b" / ".loopx" / "registry.json"
+    source_b.parent.mkdir(parents=True)
+    source_b.write_bytes(source_a.read_bytes())
+    original_transaction = activation_service.project_registry_transaction
+    switched_global_bytes: bytes | None = None
+
+    @contextmanager
+    def change_route_before_source_lock(*args: object, **kwargs: object):
+        nonlocal switched_global_bytes
+        global_payload = load_registry(global_registry)
+        registry_goals(global_payload)[0]["source_registry"] = str(source_b)
+        _write_json(global_registry, global_payload)
+        switched_global_bytes = global_registry.read_bytes()
+        with original_transaction(*args, **kwargs) as transaction:
+            yield transaction
+
+    monkeypatch.setattr(
+        activation_service,
+        "project_registry_transaction",
+        change_route_before_source_lock,
+    )
+    before_sources = source_a.read_bytes(), source_b.read_bytes()
+
+    result = set_goal_activation_state(
+        registry_path=global_registry,
+        goal_id="goal-one",
+        state=GoalActivationState.STOPPED,
+        actor_kind="owner",
+        expected_state_fingerprint=preview["observed_state_fingerprint"],
+        execute=True,
+    )
+
+    assert switched_global_bytes is not None
+    assert result["ok"] is False
+    assert result["error_kind"] == "goal_action_stale"
+    assert result["written"] is False
+    assert (source_a.read_bytes(), source_b.read_bytes()) == before_sources
+    assert global_registry.read_bytes() == switched_global_bytes
+
+
+def test_owner_confirmed_lifecycle_action_does_not_recover_across_route_change(
+    connected_registries: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    source_a, global_registry = connected_registries
+    service = ChatActionService(
+        store=ChatActionStore(tmp_path / "actions"),
+        registry_path=global_registry,
+    )
+    proposal = service.preview(
+        {
+            "action_kind": "goal.lifecycle",
+            "summary": "Stop a Goal",
+            "normalized_parameters": {
+                "goal_id": "goal-one",
+                "operation": "stop",
+                "reason": "Owner confirmed from the workspace",
+            },
+            "context": {"kind": "goal_directory"},
+            "idempotency_key": "stop-goal-one-before-route-recovery",
+        }
+    )
+    source_b = tmp_path / "project-b" / ".loopx" / "registry.json"
+    source_b_payload = load_registry(source_a)
+    registry_goals(source_b_payload)[0]["activation"] = build_goal_activation(
+        state=GoalActivationState.STOPPED,
+        updated_at="2026-09-24T00:00:00+00:00",
+        reason="Stopped through another source",
+        actor_kind="owner",
+    )
+    _write_json(source_b, source_b_payload)
+    global_payload = load_registry(global_registry)
+    registry_goals(global_payload)[0]["source_registry"] = str(source_b)
+    _write_json(global_registry, global_payload)
+    before = source_a.read_bytes(), source_b.read_bytes(), global_registry.read_bytes()
+
+    applied = service.apply(str(proposal["proposal_id"]))
+
+    assert applied["proposal"]["status"] == "stale"
+    assert applied["proposal"]["receipt"] is None
+    assert (
+        source_a.read_bytes(),
+        source_b.read_bytes(),
+        global_registry.read_bytes(),
+    ) == before
 
 
 def test_owner_confirmed_lifecycle_action_recovers_after_committed_stop(

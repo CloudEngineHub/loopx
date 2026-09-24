@@ -9,16 +9,19 @@ from .control_plane.goals.activation_service import set_goal_activation_state
 from .control_plane.goals.deletion_service import delete_stopped_goal
 
 
+GOAL_LIFECYCLE_SOURCE_BASIS_SCHEMA_VERSION = "loopx_goal_lifecycle_source_basis_v1"
+
+
 class ChatGoalLifecycleActionMixin:
     """Keep Goal activation policy separate from general action orchestration."""
 
-    def _goal_lifecycle_preview_fingerprint(
+    def _goal_lifecycle_preview(
         self,
         parameters: dict[str, Any],
-    ) -> str:
+    ) -> dict[str, Any]:
         operation = str(parameters["operation"])
         if operation == "delete":
-            return self._registry_fingerprint()
+            return {"state_fingerprint": self._registry_fingerprint()}
         target_state = (
             GoalActivationState.STOPPED
             if operation == "stop"
@@ -32,14 +35,21 @@ class ChatGoalLifecycleActionMixin:
             execute=False,
         )
         fingerprint = str(preview.get("observed_state_fingerprint") or "")
-        if not preview.get("ok") or not fingerprint:
+        source_identity = str(preview.get("source_identity") or "")
+        if not preview.get("ok") or not fingerprint or not source_identity:
             raise ValueError(
                 str(
                     preview.get("error")
-                    or "Goal lifecycle source fingerprint is unavailable"
+                    or "Goal lifecycle source identity is unavailable"
                 )
             )
-        return fingerprint
+        return {
+            "state_fingerprint": fingerprint,
+            "source_basis": {
+                "schema_version": GOAL_LIFECYCLE_SOURCE_BASIS_SCHEMA_VERSION,
+                "source_identity": source_identity,
+            },
+        }
 
     def _normalize_goal_lifecycle(
         self, parameters: dict[str, Any]
@@ -146,8 +156,21 @@ class ChatGoalLifecycleActionMixin:
         )
         current_fingerprint = str(current.get("observed_state_fingerprint") or "")
         current_state = GoalActivationState(str(current.get("before_state") or ""))
+        source_basis = proposal.get("canonical_update_basis")
+        expected_source_identity = (
+            str(source_basis.get("source_identity") or "")
+            if isinstance(source_basis, dict)
+            and source_basis.get("schema_version")
+            == GOAL_LIFECYCLE_SOURCE_BASIS_SCHEMA_VERSION
+            else ""
+        )
+        source_route_matches = bool(
+            expected_source_identity
+            and expected_source_identity == current.get("source_identity")
+        )
         idempotent_reapply = (
-            current_state is target_state
+            source_route_matches
+            and current_state is target_state
             and current_fingerprint != expected_fingerprint
         )
         if current_fingerprint != expected_fingerprint and not idempotent_reapply:
