@@ -102,6 +102,12 @@ jobs:
           cache-dependency-path: apps/presentation/dashboard/package-lock.json
       - run: python scripts/chat_bundle.py build --install
       - run: python scripts/chat_bundle.py verify --source
+      - name: Qualify the actual compiled UI before saving the artifact
+        working-directory: apps/presentation/dashboard
+        run: |
+          ./node_modules/.bin/playwright install --with-deps chromium
+          npm run smoke:personal-workspace-packaged
+          npm run smoke:chat-upgrade
       - uses: actions/upload-artifact@v7
         with:
           name: chat-bundle-${{ github.sha }}
@@ -585,32 +591,18 @@ jobs:
     needs: [changes, chat-bundle]
     if: needs.changes.outputs.presentation_tests == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v7
         with:
           name: chat-bundle-${{ github.sha }}
           path: loopx/web/chat/
-
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-          cache: pip
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: apps/presentation/dashboard/package-lock.json
-      - run: python -m pip install --disable-pip-version-check -e ".[test]"
-      - name: Build and test the actual packaged Dashboard
-        working-directory: apps/presentation/dashboard
-        run: |
-          npm ci --ignore-scripts
-          python ../../../scripts/chat_bundle.py verify --source
-          ./node_modules/.bin/playwright install --with-deps chromium
-          npm run smoke:personal-workspace-packaged
-          npm run smoke:chat-upgrade
+      - name: Verify the source-bound, browser-qualified Dashboard artifact
+        run: python scripts/chat_bundle.py verify --source
 
   merge-gate:
     # Always publish one stable outcome, including documentation-only PRs.

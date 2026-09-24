@@ -37,9 +37,9 @@ and freshness metadata, not a signature or a replacement for release attestation
 
 ## PR qualification and releases
 
-PR CI builds a clean bundle once and uploads `chat-bundle-<checkout SHA>`. Consumers
-download that exact artifact; the presentation job exercises the packaged UI in a
-browser. On pull requests the checkout SHA is GitHub's tested merge commit, which
+PR CI builds a clean bundle once, exercises its actual pages in a browser, then
+uploads `chat-bundle-<checkout SHA>`. Consumers download that qualified artifact;
+both frontend-only and mixed/backend PRs pass through this producer. On pull requests the checkout SHA is GitHub's tested merge commit, which
 may differ from the branch head. Generated-file Git cleanliness is no longer a
 qualification gate. Browser, integrity and workflow gates remain required.
 

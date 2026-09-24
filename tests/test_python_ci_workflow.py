@@ -202,7 +202,10 @@ def test_merge_gate_runs_on_all_prs_and_checks_every_core_aggregate() -> None:
 def test_presentation_exemption_retains_real_frontend_checks_and_force_full() -> None:
     job = WORKFLOW.split("  presentation:\n", 1)[1].split("  merge-gate:\n", 1)[0]
     assert "name: chat-bundle-${{ github.sha }}" in job
-    assert "npm run smoke:personal-workspace-packaged" in job
+    producer = WORKFLOW.split("  chat-bundle:\n", 1)[1].split("  kernel-static-checks:\n", 1)[0]
+    assert "npm run smoke:personal-workspace-packaged" in producer
+    assert "npm run smoke:chat-upgrade" in producer
+    assert producer.index("npm run smoke:personal-workspace-packaged") < producer.index("actions/upload-artifact")
     assert "scripts/chat_bundle.py verify --source" in job
     assert "status --short --untracked-files=all -- loopx/web/chat" not in job
     assert "continue-on-error" not in job
@@ -300,3 +303,12 @@ def test_four_shards_execute_each_test_once_and_merge_portable_coverage(
     assert re.search(r"shard: \[1, 2, 3, 4\]", WORKFLOW)
     assert "include-hidden-files: true" in WORKFLOW
     assert "--cov-fail-under" not in template
+
+
+def test_backend_and_mixed_prs_require_the_browser_qualified_artifact() -> None:
+    producer = WORKFLOW.split("  chat-bundle:\n", 1)[1].split("  kernel-static-checks:\n", 1)[0]
+    assert "needs.changes.outputs.core_tests == 'true'" in producer
+    for name in ("kernel-static-checks", "dashboard-acceptance", "test-shard", "stage2c-suite", "windows-powershell", "presentation"):
+        job = WORKFLOW.split(f"  {name}:\n", 1)[1].split("      - uses: actions/setup-", 1)[0]
+        assert "needs: [changes, chat-bundle]" in job
+        assert "name: chat-bundle-${{ github.sha }}" in job
