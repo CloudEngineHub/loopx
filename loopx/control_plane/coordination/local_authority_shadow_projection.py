@@ -1,4 +1,4 @@
-"""Pure projection rules shared by the local authority shadow capture and parity.
+"""Source projection encoding and transport for local authority capture and parity.
 
 TS owns complete Todo capture assembly; Python retains exact-byte encoding
 and source-file identity adaptation. Neither path changes source state. The same complete record contracts and canonical
@@ -11,11 +11,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+from pathlib import Path
+import stat
+import tempfile
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import Any, NoReturn
 
 from .coordination_state_contract import TODO_CANONICAL_READ_RECORD_FIELDS
-from .coordination_state_contract_generated import LOCAL_AUTHORITY_SHADOW_PROJECTION_SCHEMA
+from .coordination_state_contract_generated import (
+    LOCAL_AUTHORITY_SHADOW_PROJECTION_SCHEMA,
+    COORDINATION_STATE_CONTRACT,
+    COORDINATION_SOURCE_TRANSFER_REQUEST_SCHEMA as TRANSFER_SCHEMA,
+    COORDINATION_SOURCE_TRANSFER_RESULT_SCHEMA as TRANSFER_RESULT_SCHEMA,
+)
 
 
 LOCAL_AUTHORITY_SHADOW_PROJECTION_SCHEMA_V0 = LOCAL_AUTHORITY_SHADOW_PROJECTION_SCHEMA
@@ -82,22 +91,77 @@ def text_digest(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+MAX_TRANSFER_BYTES: int = COORDINATION_STATE_CONTRACT["source_transfer_limits"]["max_bytes"]
+
+
+def source_effect_runtime_result(method: str, request: dict[str, Any], **kwargs: Any) -> Any:
+    """Keep RPC envelopes small without truncating a source or its result."""
+    from ..effect_runtime import EffectRuntimeRejected, effect_runtime_result
+
+    def reject(message: str) -> NoReturn:
+        raise EffectRuntimeRejected(message, diagnostic_code="coordination_source_transfer_invalid")
+
+    encoded = json.dumps(request, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    if len(encoded) > MAX_TRANSFER_BYTES:
+        reject("coordination source transfer exceeds the 16 MiB artifact limit")
+    request_digest = hashlib.sha256(encoded).hexdigest()
+    # A timed-out TS handler can still hold its output open on Windows. Preserve
+    # the ambiguous-operation error even when the OS cannot yet unlink that file.
+    with tempfile.TemporaryDirectory(prefix="loopx-coordination-", ignore_cleanup_errors=True) as temporary:
+        directory = Path(temporary).resolve()
+        source = directory / "request.json"
+        with source.open("xb") as writer:
+            writer.write(encoded)
+        result = effect_runtime_result(method, {
+            "schema_version": TRANSFER_SCHEMA,
+            "method": method,
+            "directory": str(directory),
+            "request_sha256": request_digest,
+            "request_bytes": len(encoded),
+        }, **kwargs)
+        if (
+            not isinstance(result, dict)
+            or set(result) != {"schema_version", "method", "request_sha256", "result_sha256", "result_bytes"}
+            or result.get("schema_version") != TRANSFER_RESULT_SCHEMA
+            or result.get("method") != method
+            or result.get("request_sha256") != request_digest
+            or type(result.get("result_bytes")) is not int
+            or not 0 < result["result_bytes"] <= MAX_TRANSFER_BYTES
+        ):
+            reject("coordination source transfer result does not match its request")
+        target = directory / "result.json"
+        before = target.lstat()
+        if not stat.S_ISREG(before.st_mode) or before.st_size != result["result_bytes"]:
+            reject("coordination source transfer result is not the witnessed regular file")
+        descriptor = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(descriptor, "rb") as handle:
+            opened = os.fstat(handle.fileno())
+            if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+                reject("coordination source transfer result changed before readback")
+            data = handle.read(MAX_TRANSFER_BYTES + 1)
+        if len(data) != result["result_bytes"] or hashlib.sha256(data).hexdigest() != result["result_sha256"]:
+            reject("coordination source transfer result digest mismatch")
+        return json.loads(data)
+
+
 def project_coordination_source(request: dict[str, Any]) -> dict[str, Any]:
     """One bounded call for a complete capture, never one call per record."""
-    from ..effect_runtime import EffectRuntimeRejected, effect_runtime_result
+    from ..effect_runtime import EffectRuntimeRejected
 
     _reject_floats(request, "$")
     try:
-        result = effect_runtime_result("coordination.source.project", {
+        result = source_effect_runtime_result("coordination.source.project", {
             "schema_version": "coordination_source_projection_request_v0", **request,
         })
     except EffectRuntimeRejected as error:
         raise ProjectionValueError(str(error)) from error
     if (not isinstance(result, dict)
-        or result.get("schema_version") != "coordination_source_projection_result_v0"
-        or not isinstance(result.get("projection"), dict)):
+        or result.get("schema_version") != "coordination_source_projection_result_v0"):
         raise ProjectionValueError("invalid coordination source projection result")
-    return result["projection"]
+    projection = result.get("projection")
+    if not isinstance(projection, dict):
+        raise ProjectionValueError("invalid coordination source projection result")
+    return projection
 
 
 def compact_lease(raw: object, *, goal_id: str, file_stem: str) -> dict[str, Any]:
