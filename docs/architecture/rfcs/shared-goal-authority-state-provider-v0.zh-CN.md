@@ -2465,10 +2465,12 @@ route planner 本身仍不授予权限。CLI 将已提交回执交给既有 jour
 - caller 迁走后才删除旧 projection repair/receipt 路径。退出条件是可复核的
   freshness/readback 和可操作修复路径，不能只证明成功渲染过一次。
 
-D1 交付确认现于 Markdown 耐久读回后核对 canonical revision。未固定版本的结算
-最多追赶三次，复用返回的完整快照；固定版本不擅自换目标。并发、持续变化及确认故障
-保留 pending，不重做业务提交。这闭合有界交付／重试，不代表永久新鲜度、后台 drain、
-全部 L5 或 D2/D3；见[投影合同](../../reference/protocols/active-state-structured-projection-v0.md)。
+D1 的最新／固定版本意图和三次追赶决定收口到 TS；Python 保留文件锁、耐久落盘与
+渲染。已提交的 `refresh-state` 及同 Turn 重试通过现有投影路径恢复显示，不重做 Todo
+或 quota 变更。规划、缺失工作诊断及首次渲染复用完整 canonical 快照，耐久写后仍读
+provider 确认；权威空集合不回退到陈旧 Markdown。Legacy 与预览行为保持不变。
+这关闭刷新恢复／诊断调用方，不代表全部 L5、后台 drain 或 D2/D3 完成；
+见[投影合同](../../reference/protocols/active-state-structured-projection-v0.md)。
 
 **D2 — 资格化一个本地 profile，不等待 PostgreSQL 部署。**
 
@@ -2532,6 +2534,13 @@ D1 交付确认现于 Markdown 耐久读回后核对 canonical revision。未固
 | A–C／L7：capture 连续性 | 核对已合入的 #4315 归档／lease membership 修复，完成对应 ladder row／mutant 与持续 mixed-writer／event-source 矩阵；不重复实现已关闭缺陷。 | 真实 CLI／File capture、保留历史、半完成 drain 不合格、crash／replay，以及归档／rebootstrap 后再申请 lease。不能借 T4 跳过迁移窗口证明。 |
 | C／L8：整 Goal 演练与分组迁移 | L2–L7 后汇合一个精确 revision／profile；drain capture、fence 旧 writer、回读 canonical 与投影、演练 fenced export／rollback。 | D3 包绑定 lineage、cursor、source digest、命令覆盖和 profile；已有 Goal 分组迁移需明确批准，不能按命令拆 authority 或复活旧 Markdown。 |
 | D／L9：新 Goal 默认与有界退役 | 单独 default-change PR 让新建／onboarding 选择合格本地 profile，配齐 settings／readback、installer 和打包客户端；最后 caller 与迁移窗口退出才删除旧业务 writer。 | L8 整体产品／回滚资格；区分新 Goal 默认和已有 Goal 迁移。发布兼容／停用说明，保留显式 provider、永久 renderer 和合法 import/export。T4 可在默认启用后继续收尾。 |
+
+**2026-09-24 基线核对。** 保留 claim 的 #4870、reviewed cutover #4888、shadow drain
+规划 #4920 已合并，快照分页 #4922 也已合并，后续应验收组合 head，而不是继续沿用
+旧的 PR hold；SQLite 读取证明优化 #4931 仍在评审。#4910 已加入更大测量轴；#4224
+实测 1 MiB receipt/scan 超预算，恢复和自然时间资格仍有缺项，不能将优化 PR 当成 D2
+通过。本次刷新恢复推进下表中第 4 项投影恢复边界，但没有把其他调用方或默认切换
+标记完成。
 
 **开发节奏以证据推进。** 2026-09-23 将旧计划的五类粗粒度交付包细化为
 **七个明确 PR 边界；D2 和迁移各拆两批时最多九个**，其中包含本批一致性分页。
