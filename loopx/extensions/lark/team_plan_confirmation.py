@@ -680,7 +680,14 @@ def handle_team_plan_review_callback(
     profile: str,
     runner: CommandRunner = default_subprocess_runner,
 ) -> dict[str, Any]:
-    """Apply one authenticated decision and patch every audience readback."""
+    """Apply one authenticated decision and patch every audience readback.
+
+    The card's sending identity is authoritative from the authenticated
+    delivery record. One App-scoped consumer may handle several local profile
+    aliases, so ``profile``/``cli_bin`` describe the listening alias and must
+    never be treated as the sender when they differ (see
+    :func:`active_profile_chat_ids`).
+    """
 
     action = _callback_action(event)
     callback_token = str(event.get("token") or "").strip()
@@ -719,10 +726,12 @@ def handle_team_plan_review_callback(
         raise ActionConflictError("team plan review card delivery was not recorded")
     if action["state_fingerprint"] != proposal.get("expected_state_fingerprint"):
         raise ActionConflictError("team plan callback state fingerprint drifted")
+    delivery_profile = str(delivery.get("sender_profile") or "")
+    delivery_cli_bin = str(delivery.get("cli_bin") or "")
     if (
         profile_app_id != delivery.get("app_id")
-        or cli_bin != delivery.get("cli_bin")
-        or profile != delivery.get("sender_profile")
+        or not delivery_profile
+        or not delivery_cli_bin
         or str(event["message_id"]) != delivery.get("message_id")
         or str(event["chat_id"]) != delivery.get("chat_id")
     ):
@@ -744,8 +753,8 @@ def handle_team_plan_review_callback(
         if card_content is None or card_content == "":
             card_content = _read_callback_card_content(
                 runner=runner,
-                cli_bin=cli_bin,
-                profile=profile,
+                cli_bin=delivery_cli_bin,
+                profile=delivery_profile,
                 message_id=str(event["message_id"]),
                 chat_id=str(event["chat_id"]),
                 app_id=profile_app_id,
@@ -756,8 +765,8 @@ def handle_team_plan_review_callback(
             raise ActionConflictError("team plan callback card content drifted")
     if not _operator_membership_verified(
         runner=runner,
-        cli_bin=cli_bin,
-        profile=profile,
+        cli_bin=delivery_cli_bin,
+        profile=delivery_profile,
         chat_id=str(event["chat_id"]),
         operator_id=operator_id,
     ):
