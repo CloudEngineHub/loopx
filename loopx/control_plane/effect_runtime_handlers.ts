@@ -1,3 +1,4 @@
+import {deliverShadowEntry} from "./coordination/shadow_entry_delivery.ts";
 import {readShadowDrainPlan} from "./coordination/shadow_drain_plan.ts";
 import {manageAutomationCadence, projectCadenceSchedule} from "./quota/automation_cadence.ts";
 import {readCanonicalSnapshotPage} from "./coordination/canonical_snapshot_page.ts";
@@ -148,7 +149,6 @@ import {
 import {executeTaskLeaseAcquire} from "./work_items/task_lease_acquire.ts";
 import { executeTaskLeaseLifecycle } from "./work_items/task_lease_lifecycle.ts";
 import {
-  commitLocalAuthorityShadowEntry,
   readLocalAuthorityShadow,
   recordLocalAuthorityShadow,
 } from "./coordination/local_authority_shadow.ts";
@@ -589,7 +589,7 @@ export function createEffectRuntimeHandlers(
     ["scheduler.monitor_target.select", selectMonitorTodoRequest],
     ["capabilities.issue_fix.monitor_reconciliation.plan", planIssueFixMonitorReconciliation],
     ["coordination.local_authority_shadow.record", recordLocalAuthorityShadow],
-    ["coordination.runtime_shadow.commit_entry", commitLocalAuthorityShadowEntry],
+    ["coordination.runtime_shadow.commit_entry", deliverShadowEntry],
     ["coordination.runtime_shadow.outbox_read", readLocalAuthorityShadow],
     ["coordination.runtime_shadow.plan_drain", readShadowDrainPlan],
     [
