@@ -58,6 +58,9 @@ function decode(value: unknown): SourceProjectionRequest {
   if (input.handoff_mode !== "legacy" && input.handoff_mode !== "soft_claim" && input.handoff_mode !== "hard_lease") {
     fail("unsupported handoff mode");
   }
+  // Bind the narrowed mode once: an object literal property would widen the
+  // checked literal union back to string and lose the request contract.
+  const handoffMode: HandoffMode = input.handoff_mode;
   const readSchema = kind === "todo_partition" ? TODO_CANONICAL_READ_RECORD_SCHEMA : input.read_model_schema;
   if (readSchema !== TODO_CANONICAL_READ_RECORD_SCHEMA && readSchema !== TODO_DOMAIN_READ_RECORD_SCHEMA) {
     fail("unsupported Todo read-model schema");
@@ -74,7 +77,7 @@ function decode(value: unknown): SourceProjectionRequest {
       : canonicalTodoRecord(record, `canonical Todo read record ${index}`);
     return validated;
   }).sort((left, right) => authorityUnicodeCompare(String(left.todo_id), String(right.todo_id)));
-  const shared = {handoff_mode: input.handoff_mode, todos};
+  const shared = {handoff_mode: handoffMode, todos};
   if (kind === "todo_partition") return {kind, ...shared};
   const goalId = requireAuthorityStoreId(input.goal_id, "goal id");
   const leases = records(input.leases, "leases");
