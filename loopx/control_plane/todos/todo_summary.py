@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import re
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TypeGuard
 
 from ..goals.goal_vision_wait_projection import attach_active_vision_waits
 from .contract import (
@@ -85,6 +85,19 @@ MAX_COMPLETED_SUCCESSION_WARNING_ITEMS = 5
 
 TASK_ORCHESTRATION_AUTHORITY_SCHEMA_VERSION = "task_orchestration_authority_v0"
 TODO_ARCHIVE_STATE_ACTIVE = "active"
+
+# One internal batch carries the whole source, so the adapter sends columnar
+# facts: repeating every key name per Todo pushed a long-history request past the
+# effect-runtime request budget. The typed owner decodes the declared columns
+# back into row objects before validating them, so no cell changes meaning.
+SUMMARY_PROJECTION_REQUEST_SCHEMA_VERSION = "todo_summary_projection_request_v1"
+SUMMARY_PROJECTION_COLUMNS = (
+    "status", "done", "task_class", "has_resume", "resume_ready", "resume_evaluated",
+    "acceptance_blocked", "claimed", "preferred", "watch_only", "due_at", "expires_at",
+    "sort", "completed_at", "updated_at", "completion_index", "linked_user_action",
+    "no_followup", "successor_gap", "handoff_state", "replan", "todo_id", "claim",
+    "bound", "blocks", "global", "excluded",
+)
 AttentionItemBuilder = Callable[..., dict[str, Any]]
 GoalLifecycleFields = Callable[[dict[str, Any], Optional[dict[str, Any]]], dict[str, Any]]
 PublicSafeText = Callable[..., Optional[str]]
@@ -805,6 +818,16 @@ def _structured_resume_source_items(
     ]
 
 
+def _resume_condition_evaluated(item: dict[str, Any], resume: str | None) -> bool:
+    """The source's own full-source resume evaluation for this condition."""
+    condition = item.get("resume_condition")
+    return (isinstance(condition, dict)
+        and condition.get("schema_version") == "todo_resume_condition_v0"
+        and condition.get("resume_when") == resume
+        and isinstance(condition.get("satisfied"), bool)
+        and item.get("resume_ready") is condition.get("satisfied"))
+
+
 def _project_summary(items: list[dict[str, Any]], preferred_todo_ids: set[str] | None,
     *, selection: dict[str, Any] | None, role: str | None, source_section: str | None,
     item_limit: int | None, full_selection: bool,
@@ -814,6 +837,14 @@ def _project_summary(items: list[dict[str, Any]], preferred_todo_ids: set[str] |
 
     from .succession_warning import project_succession
 
+    # Display may never invent the source's resume decision. Assert the
+    # full-source precondition before any RPC that reuses the evaluation, so an
+    # unevaluated source fails with its own diagnostic instead of a downstream
+    # "succession evaluation must be an object" from a later owner.
+    for item in items:
+        resume = normalize_todo_resume_when(item.get("resume_when"))
+        if resume and not _resume_condition_evaluated(item, resume):
+            raise ValueError("Todo display requires a matching full-source resume evaluation")
     succession = project_succession(items, reuse=True)
     handoff_gates = build_todo_handoff_gate_states(items, evaluations=succession)
     replan_gates = {gate.get("todo_id") for gate in handoff_gates
@@ -821,12 +852,7 @@ def _project_summary(items: list[dict[str, Any]], preferred_todo_ids: set[str] |
     rows = []
     for item, evaluation in zip(items, succession, strict=True):
         resume = normalize_todo_resume_when(item.get("resume_when"))
-        condition = item.get("resume_condition")
-        evaluated = (isinstance(condition, dict)
-            and condition.get("schema_version") == "todo_resume_condition_v0"
-            and condition.get("resume_when") == resume
-            and isinstance(condition.get("satisfied"), bool)
-            and item.get("resume_ready") is condition.get("satisfied"))
+        evaluated = _resume_condition_evaluated(item, resume)
         due = projection_todo_item_next_due_at(item)
         expires = projection_todo_item_expires_at(item)
         guard = item.get("goal_acceptance_guard")
@@ -853,8 +879,10 @@ def _project_summary(items: list[dict[str, Any]], preferred_todo_ids: set[str] |
                 "excluded": normalize_todo_excluded_agents(item.get("excluded_agents"))}})
     try:
         result = effect_runtime_result("todo.summary.project", {
-            "schema_version": "todo_summary_projection_request_v0",
-            "rows": rows, "observed_at": now_utc().timestamp(),
+            "schema_version": SUMMARY_PROJECTION_REQUEST_SCHEMA_VERSION,
+            "columns": list(SUMMARY_PROJECTION_COLUMNS),
+            "rows": [[row[name] for name in SUMMARY_PROJECTION_COLUMNS] for row in rows],
+            "observed_at": now_utc().timestamp(),
             "selection": selection, "role": role, "source_section": source_section,
             "item_limit": item_limit, "full_selection": full_selection,
         })
@@ -863,13 +891,15 @@ def _project_summary(items: list[dict[str, Any]], preferred_todo_ids: set[str] |
     if not isinstance(result, dict) or result.get("schema_version") != "todo_summary_projection_v0":
         raise ValueError("invalid typed Todo summary projection")
 
-    def valid_ordinals(value: Any) -> bool:
+    def valid_ordinals(value: Any) -> TypeGuard[list[int]]:
         return (isinstance(value, list)
             and all(type(index) is int and 0 <= index < len(items) for index in value)
             and len(set(value)) == len(value))
 
     selected = result.get("source_indices")
-    if not valid_ordinals(selected) or type(result.get("full_selection")) is not bool:
+    if not valid_ordinals(selected):
+        raise ValueError("invalid typed Todo selection ordinals")
+    if type(result.get("full_selection")) is not bool:
         raise ValueError("invalid typed Todo selection ordinals")
     selected_set = set(selected)
     lanes, orchestration = result.get("lanes"), result.get("orchestration")
@@ -982,7 +1012,7 @@ def compact_evaluated_todo_group(
     items = projected["items"]
     if not items and not include_empty_source:
         return None
-    summary = projected["summary"]
+    summary: dict[str, Any] = projected["summary"]
     handoff_gates = build_todo_handoff_gate_states(items, evaluations=projected["succession"])
     attach_advancement_frontier_revision_index(summary, items, role=role)
     attach_active_vision_waits(

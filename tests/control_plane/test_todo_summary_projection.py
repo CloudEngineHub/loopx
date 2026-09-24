@@ -1,4 +1,6 @@
 """Whole-source summary decisions precede display limits and preserve chronology."""
+import json
+
 from loopx.control_plane.todos.todo_summary import compact_todo_group
 
 
@@ -60,3 +62,25 @@ def test_a_selection_cannot_restore_a_lost_full_source_proof():
         full_selection=False, selection={"role": "agent", "status": None, "todo_id": None, "agent_id": None})
     assert "source_proof" not in result and "terminal_closure_proof" not in result
     assert result["done_count"] == 1
+
+
+def test_long_history_stays_inside_the_runtime_request_budget(monkeypatch):
+    """A whole-source batch must not outgrow the co-deployed runtime's request."""
+    from loopx.control_plane import effect_runtime
+    from loopx.control_plane.effect_runtime import MAX_REQUEST_BYTES
+    requests = []
+    original = effect_runtime.effect_runtime_result
+
+    def track(method, request, **kwargs):
+        if method == "todo.summary.project":
+            requests.append(request)
+        return original(method, request, **kwargs)
+
+    monkeypatch.setattr(effect_runtime, "effect_runtime_result", track)
+    items = [row(index, status="done", no_followup=True,
+                 completed_at="2026-01-01T00:00:00Z") for index in range(4096)]
+    result = summarize(items, item_limit=None)
+    assert result["done_count"] == 4096
+    request = requests[0]
+    encoded = json.dumps(request, separators=(",", ":")).encode()
+    assert len(encoded) < MAX_REQUEST_BYTES

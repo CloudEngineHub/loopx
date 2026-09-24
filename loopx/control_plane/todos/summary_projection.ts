@@ -18,6 +18,36 @@ interface SummaryProjection {
   orchestration: {candidate_items: number[]; user_blocker_items: number[]};
 }
 
+/** The declared order is this request version's schema, not a hint: the same
+ * cells in a different order would silently change meaning. */
+export const TODO_SUMMARY_PROJECTION_COLUMNS = [
+  "status", "done", "task_class", "has_resume", "resume_ready", "resume_evaluated",
+  "acceptance_blocked", "claimed", "preferred", "watch_only", "due_at", "expires_at",
+  "sort", "completed_at", "updated_at", "completion_index", "linked_user_action",
+  "no_followup", "successor_gap", "handoff_state", "replan", "todo_id", "claim",
+  "bound", "blocks", "global", "excluded",
+] as const;
+
+/** One whole-source batch carries every Todo, so the co-deployed adapter sends
+ * columnar facts. Decoding restores the row objects the lane and closure owners
+ * already validate; nothing is defaulted or inferred from absence. */
+function decodeRows(request: JsonObject): JsonObject[] {
+  const columns = request.columns;
+  if (!Array.isArray(columns) || columns.length !== TODO_SUMMARY_PROJECTION_COLUMNS.length ||
+      columns.some((name, index) => name !== TODO_SUMMARY_PROJECTION_COLUMNS[index])) {
+    throw new EffectRuntimeRequestError("Todo summary row columns do not match the typed adapter order");
+  }
+  if (!Array.isArray(request.rows)) {
+    throw new EffectRuntimeRequestError("Todo summary rows must be a list");
+  }
+  return request.rows.map((value, ordinal) => {
+    if (!Array.isArray(value) || value.length !== columns.length) {
+      throw new EffectRuntimeRequestError(`Todo summary row ${ordinal} does not match its declared columns`);
+    }
+    return Object.fromEntries(TODO_SUMMARY_PROJECTION_COLUMNS.map((name, index) => [name, value[index]]));
+  });
+}
+
 /** Allocate a bounded display across claimants, then restore source ordering. */
 function claimedVisibility(indices: readonly number[], rows: readonly JsonObject[], limit: number): number[] {
   if (indices.length <= limit) return [...indices];
@@ -42,7 +72,7 @@ function claimedVisibility(indices: readonly number[], rows: readonly JsonObject
 
 export function projectTodoSummary(value: unknown): SummaryProjection {
   const request = requireJsonObject(value, "Todo summary request");
-  if (request.schema_version !== "todo_summary_projection_request_v0" || !Array.isArray(request.rows)) {
+  if (request.schema_version !== "todo_summary_projection_request_v1") {
     throw new EffectRuntimeRequestError("Todo summary request schema mismatch");
   }
   const role = request.role === null ? null : requireStringLiteral(request.role, ["user", "agent"], "role");
@@ -54,7 +84,7 @@ export function projectTodoSummary(value: unknown): SummaryProjection {
     throw new EffectRuntimeRequestError("item_limit must be a non-negative integer or null");
   }
   const full = requireBoolean(request.full_selection, "full_selection");
-  const rows = request.rows.map(value => requireJsonObject(value, "summary row"));
+  const rows = decodeRows(request);
   // The co-deployed adapter sends source facts, not prose or full Todo bodies.
   for (const row of rows) {
     if ((row.claim !== null && typeof row.claim !== "string") || row.claimed !== Boolean(row.claim)) {

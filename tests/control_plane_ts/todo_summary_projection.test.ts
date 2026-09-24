@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {JsonObject} from "../../loopx/control_plane/effect_program.ts";
-import {projectTodoSummary} from "../../loopx/control_plane/todos/summary_projection.ts";
+import {TODO_SUMMARY_PROJECTION_COLUMNS, projectTodoSummary} from "../../loopx/control_plane/todos/summary_projection.ts";
 import {productionScaleCoordinationFixture} from "./production_scale_coordination_fixture.ts";
 
 const row = (fields: JsonObject = {}): JsonObject => ({status: "open", done: false,
@@ -12,7 +12,10 @@ const row = (fields: JsonObject = {}): JsonObject => ({status: "open", done: fal
   completion_index: 0, linked_user_action: false, no_followup: false,
   successor_gap: false, handoff_state: null, replan: false, ...fields});
 const request = (rows: JsonObject[], fields: JsonObject = {}): JsonObject => ({
-  schema_version: "todo_summary_projection_request_v0", rows, observed_at: 100,
+  schema_version: "todo_summary_projection_request_v1",
+  columns: [...TODO_SUMMARY_PROJECTION_COLUMNS],
+  rows: rows.map(row => TODO_SUMMARY_PROJECTION_COLUMNS.map(name => row[name] ?? null)),
+  observed_at: 100,
   selection: null, role: "agent", source_section: "Agent Todo", item_limit: 12, full_selection: true, ...fields});
 const done = (fields: JsonObject = {}) => row({status: "done", done: true, no_followup: true, ...fields});
 
