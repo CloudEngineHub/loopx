@@ -1921,3 +1921,5 @@ preserved independently of query matching. See [semantics and rollback](../../re
 This advances T3/L5; it does not replace D2/D3 or flip a provider default.
 
 2026-09-24: [Typed complete-source assembly and remaining delivery packages](ledger/shared-goal-authority-state-provider-v0/2026-09-24-source-capture.md) unify source construction, identity rejection and current-graph membership; L7/D2/D3 and provider defaults remain open.
+
+2026-09-24: [Leased continuation and remaining local-default packages](ledger/shared-goal-authority-state-provider-v0/2026-09-24-leased-continuation.md).
