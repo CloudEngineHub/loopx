@@ -33,6 +33,29 @@ def _run_loopx(
     )
 
 
+def test_chat_bundle_preflight_preserves_stdout_with_legacy_pointer(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    bundle_builder = source_root / "bundle_builder.py"
+    bundle_builder.write_text("print('bundle progress')\n", encoding="utf-8")
+    pointer = tmp_path / "current-release.json"
+    pointer.write_text('{"release_id":"known-good"}\n', encoding="utf-8")
+
+    windows_install._ensure_chat_bundle(
+        bundle_builder=bundle_builder,
+        source_root=source_root,
+        python=Path(sys.executable),
+        pointer=pointer,
+    )
+
+    captured = capfd.readouterr()
+    assert captured.out == ""
+    assert captured.err == "bundle progress\n"
+
+
 @pytest.mark.skipif(os.name != "nt", reason="native Windows installer regression")
 def test_windows_installer_promotes_release_and_runs_doctor(tmp_path: Path) -> None:
     pwsh = shutil.which("pwsh")
