@@ -14,6 +14,7 @@ from loopx.control_plane.testing.model_tool_behavior import (
 from loopx.control_plane.testing.replan_semantic_action_behavior import (
     DoubaoReplanSemanticActionBehaviorActor, _build_fixture,
 )
+from loopx.control_plane.testing import vision_shell_host
 from loopx.control_plane.testing.vision_shell_host import VisionShellHost, shell_isolation_available
 
 pytestmark = pytest.mark.skipif(not shell_isolation_available(), reason="Native shell needs sandbox-exec or bubblewrap")
@@ -194,6 +195,28 @@ def test_os_boundary_protects_inputs_authority_private_data_and_network(tmp_path
         assert fixture.work_source_target.read_bytes() == original
         assert (fixture.project_root / "draft.txt").read_text().strip() == "draft"
         assert not (fixture.runtime_root / "forged.json").exists()
+    finally:
+        host.close()
+
+
+def test_timed_out_shell_kills_process_group_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fixture = _build_fixture(tmp_path / "fixture", required_vision=True)
+    host = VisionShellHost(fixture.project_root, lambda *args: "ok", turn_instance_id="shell-timeout-test")
+    original_killpg = vision_shell_host.os.killpg
+    calls: list[int] = []
+
+    def kill_once(pid: int, sig: int) -> None:
+        calls.append(pid)
+        if len(calls) > 1:
+            raise AssertionError("A timed-out process group must not be killed twice")
+        original_killpg(pid, sig)
+
+    monkeypatch.setattr(vision_shell_host, "_COMMAND_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(vision_shell_host.os, "killpg", kill_once)
+    try:
+        _, code = host.execute("sleep 5")
+        assert code == 124
+        assert len(calls) == 1
     finally:
         host.close()
 
