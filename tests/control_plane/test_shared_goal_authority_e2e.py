@@ -44,21 +44,7 @@ FULL_LADDER_VARIABLE = "LOOPX_LADDER_FULL"
 # renamed or deleted so the skip cannot outlive its coverage.
 CLI_E2E_TWIN_FILE = Path(__file__).with_name("test_local_authority_shadow_cli_e2e.py")
 CLI_E2E_COVERAGE = {
-    "s2c1.configure_enable_disable_roundtrip": (
-        "test_product_cli_configure_capture_readback_disable_and_default_off_lifecycle_isolation"
-    ),
-    "s2c1.default_off_isolation": (
-        "test_product_cli_configure_capture_readback_disable_and_default_off_lifecycle_isolation"
-    ),
-    "s2c1.candidate_failure_preserves_primary": (
-        "test_product_cli_candidate_failure_preserves_the_primary_lifecycle_commit"
-    ),
-    "s2c1.crash_gap_loses_observation": (
-        "test_product_cli_loses_capture_between_commit_and_observer_then_refreshes_snapshot"
-    ),
-    "s2c1.dual_runtime_root_consistency": (
-        "test_product_cli_runtime_root_override_keeps_one_candidate_lineage"
-    ),
+    "s2c1.retired_observation_upgrade": "test_retired_setting_cannot_enable_capture_or_satisfy_bootstrap",
 }
 CLI_E2E_COVERED_ROW_IDS = tuple(CLI_E2E_COVERAGE)
 CLI_E2E_COVERAGE_REASON = (

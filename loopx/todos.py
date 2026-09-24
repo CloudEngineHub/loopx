@@ -1027,7 +1027,7 @@ def add_goal_todo(
     )
     return settle_todo_runtime_shadow_capture(
         payload, registry_path=registry_path, runtime_root=shadow_runtime_root,
-        goal_id=goal_id, write_class="todo_add", capture=shadow_capture,
+        goal_id=goal_id, capture=shadow_capture,
     )
 
 
@@ -1541,7 +1541,7 @@ def update_goal_todo(
     )
     return settle_todo_runtime_shadow_capture(
         payload, registry_path=registry_path, runtime_root=shadow_runtime_root,
-        goal_id=goal_id, write_class=write_class, capture=shadow_capture,
+        goal_id=goal_id, capture=shadow_capture,
     )
 
 
@@ -1798,7 +1798,7 @@ def complete_goal_todo(
                 return settle_todo_runtime_shadow_capture(
                     event_result, registry_path=registry_path,
                     runtime_root=shadow_runtime_root, goal_id=goal_id,
-                    write_class="todo_complete_event_projection", capture=shadow_capture,
+                    capture=shadow_capture,
                 )
         if not isinstance(completion_state, dict):
             raise RuntimeError(
@@ -1931,7 +1931,7 @@ def complete_goal_todo(
     result["self_merged"] = effective_self_merged
     return settle_todo_runtime_shadow_capture(
         result, registry_path=registry_path, runtime_root=shadow_runtime_root,
-        goal_id=goal_id, write_class="todo_complete", capture=shadow_capture,
+        goal_id=goal_id, capture=shadow_capture,
     )
 
 @provider_first_terminal_lifecycle("supersede")
@@ -2091,7 +2091,7 @@ def supersede_goal_todo(
     }
     return settle_todo_runtime_shadow_capture(
         result, registry_path=registry_path, runtime_root=shadow_runtime_root,
-        goal_id=goal_id, write_class="todo_supersede", capture=shadow_capture,
+        goal_id=goal_id, capture=shadow_capture,
     )
 
 
@@ -2157,5 +2157,5 @@ def archive_completed_todos(
     }
     return settle_todo_runtime_shadow_capture(
         result, registry_path=registry_path, runtime_root=shadow_runtime_root,
-        goal_id=goal_id, write_class="todo_archive_completed", capture=shadow_capture,
+        goal_id=goal_id, capture=shadow_capture,
     )
