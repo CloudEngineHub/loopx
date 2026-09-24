@@ -1479,7 +1479,13 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
       };
       loopxModes.set(sessionId, current);
       if (request.method() === "GET") {
-        await route.fulfill({ contentType: "application/json", json: current, status: 200 });
+        // A conversation's own mode is its work index: the Todos it dispatched
+        // work for and the coordinator bindings it was configured with. Only
+        // these Todo identities can make a Goal conversation relevant.
+        const deliveries = current.fixturePlanTodoId
+          ? [{operation_id: "accepted-analysis", agent_id: "local-analyst", todo_id: current.fixturePlanTodoId, status: "accepted"}]
+          : current.deliveries;
+        await route.fulfill({ contentType: "application/json", json: {...current, deliveries}, status: 200 });
         return;
       }
       const body = request.postDataJSON();
@@ -1525,6 +1531,10 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
       if (body.operation === "operations") {
         if (!current.settings.agent_id) {
           await route.fulfill({status: 400, json: {ok: false, error: "configure a coordinator identity first"}});
+          return;
+        }
+        if (current.fixtureTeamInventoryError) {
+          await route.fulfill({status: 503, json: {ok: false, error: "delegation inventory unavailable"}});
           return;
         }
         const items = body.cursor ? [{record_id: "c".repeat(64), operation_id: "needs-recovery",

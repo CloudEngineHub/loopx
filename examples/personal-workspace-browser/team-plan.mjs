@@ -285,7 +285,9 @@ export const teamPlanScenario = {
       check(await managerResult.getByRole("table").count() === 0, "an accepted result from another Todo is never returned to the manager");
       const goalSession = [...page.__loopxRuntime.sessions.values()].find(session => session.channel_id === `goal.${GOAL_ID}`);
       check(Boolean(goalSession), "the original Goal conversation has a session for result readback");
+      let goalSessionId = "";
       if (goalSession) {
+        goalSessionId = goalSession.session_id;
         const mode = page.__loopxRuntime.loopxModes.get(goalSession.session_id);
         check(Boolean(mode), "the Goal session exposes a complete LoopX mode readback");
         mode.settings.agent_id = "lead";
@@ -300,11 +302,26 @@ export const teamPlanScenario = {
             ...goalSession, session_id: sessionId, agent_id: `ordinary-${index}`,
           });
         }
+        // Other coordinator conversations of the same Goal are just as unrelated:
+        // their own work index names other Todos, never this plan's.
+        for (let index = 0; index < 9; index += 1) {
+          const sessionId = `session-coordinator-${index}`;
+          page.__loopxRuntime.sessions.set(sessionId, {
+            ...goalSession, session_id: sessionId, agent_id: `coordinator-${index}`,
+          });
+          page.__loopxRuntime.loopxModes.set(sessionId, {
+            ...mode, session_id: sessionId,
+            settings: {...mode.settings, agent_id: `coordinator-${index}`},
+            fixturePlanTodoId: null,
+            deliveries: [{operation_id: `other-${index}`, agent_id: "other-agent",
+              todo_id: `todo_other_${index}`, status: "accepted"}],
+          });
+        }
         await managerResult.getByRole("button", {name: "刷新结果"}).click();
         await managerResult.getByRole("table").waitFor();
         check((await managerResult.innerText()).includes("Reviewed cash allocation"), "the accepted adopted report returns inside the original manager conversation");
         check(!api.loopxModeRequests.some(request => request.operation === "operations"
-          && request.sessionId.startsWith("session-ordinary-")), "ordinary Goal sessions are not queried for delegation operations");
+          && /^session-(ordinary|coordinator)-/.test(request.sessionId)), "unrelated Goal conversations are not queried for delegation operations");
         check(await managerResult.getByLabel("证据内容: report.md").count() === 1, "the adopted Markdown report is preferred over machine JSON");
         await page.screenshot({path: resolve(outputDir, "team-plan-manager-adopted-result.png"), fullPage: false, animations: "disabled"});
         await page.setViewportSize({width: 390, height: 844});
@@ -316,6 +333,13 @@ export const teamPlanScenario = {
         await managerResult.getByText("团队结果或采用证据无法核验，请到 Goal 查看版本关系。").waitFor();
         check(await managerResult.getByRole("table").count() === 0, "an unreadable earlier inventory page withholds the adopted report");
         mode.fixtureInventoryGap = false;
+        // The related conversation's own inventory being unreadable is different
+        // from an unrelated conversation existing: this must withdraw the report.
+        mode.fixtureTeamInventoryError = true;
+        await managerResult.getByRole("button", {name: "刷新结果"}).click();
+        await managerResult.getByText("团队结果或采用证据无法核验，请到 Goal 查看版本关系。").waitFor();
+        check(await managerResult.getByRole("table").count() === 0, "an unreadable inventory for the related conversation withholds the report");
+        mode.fixtureTeamInventoryError = false;
         mode.fixtureAdoptionState = "unavailable";
         mode.fixtureTeamReadDelayMs = 1000;
         await managerResult.getByRole("button", {name: "刷新结果"}).click();
@@ -338,9 +362,14 @@ export const teamPlanScenario = {
         scriptErrors.length === 0,
         `no client-side exception was raised (${scriptErrors.join(" | ")})`,
       );
+      const injected = [
+        `503 ${new URL(url).origin}/api/actions/${MANAGER_PROPOSAL_ID}/apply`,
+        `503 ${new URL(url).origin}/api/chat/sessions/${goalSessionId}/loopx`,
+      ];
       check(
-        failedResponses.length === 1 && failedResponses[0].includes(`503 ${new URL(url).origin}/api/actions/${MANAGER_PROPOSAL_ID}/apply`),
-        `only the injected lost response failed (${failedResponses.join(" | ")})`,
+        failedResponses.length === injected.length
+        && failedResponses.every(response => injected.includes(response)),
+        `only the injected failures were observed (${failedResponses.join(" | ")})`,
       );
     } finally {
       await context.close();
