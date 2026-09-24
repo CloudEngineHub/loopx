@@ -102,7 +102,8 @@ export function registerCanonicalSnapshotConformance(name: string, factory: Auth
       await assert.rejects(readCanonicalSnapshotFromStore(snapshotRequest({after: next}), store),
         {code: "canonical_snapshot_changed"}, key);
     }
-    for (const changed of [{include_leases: false}, {projection_readback: {provider_revision: "other", changed: true}}]) {
+    for (const changed of [{include_leases: false},
+      {projection_readback: {provider_revision: "other", changed: true, attempt: 1, target: "latest" as const}}]) {
       await assert.rejects(readCanonicalSnapshotFromStore(snapshotRequest({...changed, after: first.next}), store),
         {code: "canonical_snapshot_changed"});
     }
@@ -128,7 +129,8 @@ export function registerCanonicalSnapshotConformance(name: string, factory: Auth
     if (head.status !== "loaded") throw new Error("missing seeded head");
     for (const [revision, changed, expected] of [[head.provider_revision, false, "current"],
       [head.provider_revision, true, "delivered"], ["stale", true, "pending"]] as const) {
-      const result = await collectSnapshot(store, snapshotRequest({projection_readback: {provider_revision: revision, changed}}));
+      const result = await collectSnapshot(store, snapshotRequest({projection_readback:
+        {provider_revision: revision, changed, attempt: 1, target: "latest" as const}}));
       assert.ok(result.pages.every(page => ((page.metadata as JsonObject).projection_readback as JsonObject).status === expected));
     }
   });
