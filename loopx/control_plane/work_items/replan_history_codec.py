@@ -6,10 +6,14 @@ existing Python codecs; trigger selection and history windows have one owner.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, Literal
 
-from ..effect_runtime import EffectRuntimeRejected, effect_runtime_result
+from ..effect_runtime import MAX_REQUEST_BYTES, EffectRuntimeRejected, effect_runtime_result
 from ..runtime.time import parse_timestamp
 from ..todos.contract import normalize_todo_claimed_by, normalize_todo_id, normalize_todo_id_list
 from ..todos.resume_planning import build_todo_resume_planning_request
@@ -134,7 +138,7 @@ def project_replan_history(
         "todos": _todo_facts(agent_todos, include_resume=needs_resume),
     }
     try:
-        result = effect_runtime_result("work_item.replan_history.project", params)
+        result = _project(params)
     except EffectRuntimeRejected as exc:
         raise ValueError(str(exc)) from None
     if not isinstance(result, dict) or result.get("schema_version") != "replan_history_result_v0":
@@ -143,3 +147,23 @@ def project_replan_history(
     if trigger is not None and not isinstance(trigger, dict):
         raise RuntimeError("TypeScript replan history trigger mismatch")
     return trigger
+
+
+def _project(params: dict[str, Any]) -> Any:
+    # Same serialization as the bridge. Reserve envelope overhead; the limit is
+    # a wire budget, not permission to drop older evidence or duplicate TS policy.
+    encoded = json.dumps(params, separators=(",", ":")).encode()
+    if len(encoded) <= MAX_REQUEST_BYTES // 2:
+        return effect_runtime_result("work_item.replan_history.project", params)
+    # Local same-UID runtime only. The private directory survives runtime retries
+    # and is removed on success/rejection. This snapshot is never durable state.
+    with TemporaryDirectory(prefix="loopx-replan-history-") as directory:
+        path = Path(directory) / "request.json"
+        with path.open("xb") as handle:
+            path.chmod(0o600)
+            handle.write(encoded)
+        return effect_runtime_result("work_item.replan_history.project_snapshot", {
+            "schema_version": "replan_history_snapshot_v0",
+            "path": str(path), "byte_count": len(encoded),
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+        })

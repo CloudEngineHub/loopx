@@ -173,3 +173,67 @@ test("malformed typed facts fail visibly rather than falling back to Python poli
     { progress: { ...observation, fingerprint: "" } }, { monitor: [] },
   ]) assert.throws(() => projectReplanHistory(request([run(1, patch)])));
 });
+
+// Transport parity covers representative policy cases without another reducer.
+// Large histories remain complete; snapshot validation precedes policy evaluation.
+import { createHash } from "node:crypto";
+import { chmod, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { projectReplanHistorySnapshot } from "../../loopx/control_plane/work_items/replan_history_snapshot.ts";
+
+async function withSnapshot(payload: unknown, body: (ref: JsonObject) => Promise<void>) {
+  const directory = await mkdtemp(join(tmpdir(), "replan-history-test-"));
+  const path = join(directory, "request.json");
+  const bytes = Buffer.from(JSON.stringify(payload));
+  try {
+    await writeFile(path, bytes, { mode: 0o600 });
+    await body({ schema_version: "replan_history_snapshot_v0", path,
+      byte_count: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}
+
+test("snapshot transport preserves scope, ACK, retries, precedence and all operations", async () => {
+  const cases = [many(20), many(6, poll), many(2, n => run(n, { progress: observation })),
+    [run(3, { accepted_ack: true }), ...many(20)],
+    [run(3, { agent_id: "peer", accepted_ack: true }), ...many(20)],
+    [run(3), ...many(2, n => run(n, { progress: observation }))],
+    many(30, () => run(1)), many(20, n => run(n, { agent_id: null }))];
+  for (const operation of ["all", "progress", "periodic", "monitor_streak"]) {
+    for (const rows of cases) {
+      const payload = request(rows, { operation });
+      await withSnapshot(payload, async ref => {
+        assert.deepEqual(await projectReplanHistorySnapshot(ref), projectReplanHistory(payload));
+      });
+    }
+  }
+});
+
+test("snapshot rejects changed, missing, malformed and unsafe references", async () => {
+  await withSnapshot(request(many(20)), async ref => {
+    for (const patch of [
+      { byte_count: 1 }, { sha256: "0".repeat(64) }, { byte_count: -1 },
+      { path: "relative.json" }, { schema_version: "future" },
+    ]) await assert.rejects(projectReplanHistorySnapshot({ ...ref, ...patch }));
+    const path = ref.path as string;
+    if (process.platform !== "win32") {
+      const link = `${path}.link`;
+      await symlink(path, link);
+      await assert.rejects(projectReplanHistorySnapshot({ ...ref, path: link }));
+      await chmod(path, 0o644);
+      await assert.rejects(projectReplanHistorySnapshot(ref));
+      await chmod(path, 0o600);
+    }
+    const malformed = "x".repeat(ref.byte_count as number);
+    await writeFile(path, malformed);
+    await assert.rejects(projectReplanHistorySnapshot(ref), /snapshot unavailable or invalid/);
+    await assert.rejects(projectReplanHistorySnapshot({ ...ref,
+      sha256: createHash("sha256").update(malformed).digest("hex"),
+    }), /snapshot unavailable or invalid/);
+    await rm(path);
+    await assert.rejects(projectReplanHistorySnapshot(ref), /snapshot unavailable or invalid/);
+  });
+  await withSnapshot({ schema_version: "invalid" }, async ref => {
+    await assert.rejects(projectReplanHistorySnapshot(ref), /replan history schema/);
+  });
+});

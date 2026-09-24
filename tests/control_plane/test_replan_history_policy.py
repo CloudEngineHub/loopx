@@ -144,3 +144,55 @@ def test_codec_keeps_prose_out_of_the_history_decision_request(monkeypatch) -> N
     assert prose not in encoded
     assert len(encoded) < 5000
     assert requests[0][1]["todos"]["resume"] is None
+
+
+def test_long_history_keeps_evidence_beyond_rpc_limit() -> None:
+    # A retry flood is not twenty turns. The second distinct observation is
+    # deliberately older than the entire flood; tail/window truncation loses it.
+    repeated = {**run(2, turn="retried-turn"), "progress_observation": observation()}
+    rows = [repeated] * 12000 + [{**run(1, turn="older-turn"),
+                                "progress_observation": observation()}]
+    result = obligation(rows)
+    assert result is not None
+    trigger = result["triggers"][0]
+    assert trigger["kind"] == "typed_progress_repeat"
+    assert trigger["run_count"] == 2
+    assert trigger["oldest_counted_generated_at"] == rows[-1]["generated_at"]
+
+
+def test_snapshot_transport_is_private_compact_and_always_removed(monkeypatch) -> None:
+    import json
+    import os
+    from pathlib import Path
+    import pytest
+    from loopx.control_plane.work_items import replan_history_codec as codec
+    from loopx.control_plane.effect_runtime import EffectRuntimeRejected
+
+    original = codec.effect_runtime_result
+    snapshots = []
+    def inspect(method, params):
+        assert method == "work_item.replan_history.project_snapshot"
+        assert len(json.dumps(params)) < 1024
+        path = Path(params["path"])
+        snapshots.append(path)
+        assert path.is_file()
+        if os.name != "nt":
+            assert path.stat().st_mode & 0o077 == 0
+            assert path.parent.stat().st_mode & 0o077 == 0
+        return original(method, params)
+    # Force both request forms over the exact same semantic fixture.
+    rows = [{**run(2), "progress_observation": observation()},
+            {**run(1), "progress_observation": observation()}]
+    expected = codec.project_replan_history(rows, agent_id=AGENT)
+    monkeypatch.setattr(codec, "MAX_REQUEST_BYTES", 1)
+    monkeypatch.setattr(codec, "effect_runtime_result", inspect)
+    assert codec.project_replan_history(rows, agent_id=AGENT) == expected
+    assert all(not path.parent.exists() for path in snapshots)
+
+    def reject(method, params):
+        snapshots.append(Path(params["path"]))
+        raise EffectRuntimeRejected("synthetic rejection")
+    monkeypatch.setattr(codec, "effect_runtime_result", reject)
+    with pytest.raises(ValueError, match="synthetic rejection"):
+        codec.project_replan_history(rows, agent_id=AGENT)
+    assert all(not path.parent.exists() for path in snapshots)

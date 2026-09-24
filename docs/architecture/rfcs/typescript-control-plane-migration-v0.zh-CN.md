@@ -847,6 +847,14 @@ T3/D1 reader，未完成全部 Todo writer、retention/compaction 或 promotion�
 
 配额准入与结算消费者现在从统一 Todo reader 读取完整来源，在显示压缩前解析显式 Todo 选择。它删除直接追加 Markdown 候选的路径，保留 promote 前的事件适配；promote 后权威为空或不可读都不能复活展示行。结算进度由现有 TS 回执链归约，Python 负责完整身份命令及 JSON/Markdown 展示。现有幂等 writer 可补齐缺失的 spend 回执而不再次扣款。这关闭已复现的 T3 消费者缺口，不代表 D1–D3、provider promotion 或剩余 Python 事务适配已完成。操作语义见[结算进度契约](../../quota-allocation.md#receipt-backed-settlement-progress)。
 
+**长历史传输边界。** Replan 历史仍由一个 TS owner 决策。小请求保留 inline
+codec；较大的完整事实快照通过私有临时文件和摘要绑定的引用传递。同一 reducer
+校验全部记录、agent 作用域内的 ACK 及重试身份；RPC 预算和展示窗口都不允许截断
+历史。快照缺失、改变或无效时在决策前拒绝，适配器在返回或失败后清理临时文件。
+这修复 T3/S2 的结算阻塞并补充 S7/R7 的传输增长证据，不代表全历史解析已经恒定
+内存，也不证明分布式执行。游标/checkpoint 归约保留为以测量驱动、完整源语义一致
+为前提的后续工作，不再造 Python 规则。见[历史决策证据](ledger/typescript-control-plane-migration-v0/2026-09-22-replan-history-policy.zh-CN.md)。
+
 **恢复边界（2026-09-22）。** [authority archive 命令](../../reference/authority-archive.md)
 由现有 TS coordination owner 负责历史校验、状态 delta 重建和可重入恢复；Python
 只解析 CLI 路径、传递请求并展示紧凑结果。复用 state-log codec，避免各 provider
@@ -1401,6 +1409,7 @@ transaction 要和 matched durability baseline 比较，而不是套用 2 ms ker
 
 迁移不能要求用户管理服务。Python 过渡版本要求 Node.js 22.18.0 或更新版本，
 但 installer 与 `loopx doctor` 必须在正常控制面工作前检测，并给出精确修复方式。
+当前源码版本已将最低要求升至 Node.js 22.22.3，以覆盖内嵌 SQLite 的 WAL-reset 修复。
 Wheel 与 sdist 携带 TS source 和版本化 schema。
 
 Runtime 因 idle 退出时仍是健康状态：`stopped` 表示下一次控制面请求会自动拉起，
