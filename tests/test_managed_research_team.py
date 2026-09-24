@@ -114,6 +114,9 @@ def test_canonical_delivery_requires_completed_current_dependencies(team, monkey
                            "--todo-id", "todo_lead-report")
     assert json.loads(result_read["text"]) == json.loads(original_report)
     assert result_read["result"]["sha256"] == lead_completion["completion_result"]["sha256"]
+    report.unlink()
+    assert demo.complete(root, "lead", "report")["idempotent_replay"] is True
+    report.write_bytes(original_report)
     result_object = root / "runtime" / "goals" / demo.GOAL / "result-objects" / result_read["result"]["sha256"]
     result_object.write_text("tampered")
     with pytest.raises(RuntimeError, match="completion result bytes no longer match"):
