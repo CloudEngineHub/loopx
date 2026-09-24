@@ -1128,8 +1128,15 @@ export const typedActionsScenario = {
       if (providerOverlap) throw new Error(`Model provider category ${providerOverlap}`);
       await page.screenshot({ path: resolve(outputDir, "model-provider-settings-zh-cn.png"), fullPage: false, animations: "disabled" });
 
+      api.failNextMachineInspection = true;
       await page.getByRole("button", { name: "能力中心", exact: true }).click();
       await page.getByRole("heading", { level: 1, name: "能力中心", exact: true }).waitFor({ state: "visible" });
+      const loadError = page.getByRole("alert").filter({ hasText: "无法读取机器配置" });
+      await loadError.waitFor({ state: "visible" });
+      if (await page.getByText("当前没有注册可在机器作用域配置的能力。", { exact: true }).count()) {
+        throw new Error("A failed machine catalog request was presented as an empty registry");
+      }
+      await loadError.getByRole("button", { name: "重试" }).click();
       // The catalog workbench mounts after its inspection resolves, so the
       // category's contents are asserted only once the workbench itself exists.
       await page.locator(".personal-capability-layout").waitFor({ state: "visible" });
