@@ -20,6 +20,37 @@ LEASE = {"status": "active", "idempotency_key": "monitor-execution", "version": 
 PROOF = {"idempotency_key": "monitor-execution", "expected_version": 3}
 
 
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_rejected_missing_proof_can_retry_same_turn_with_valid_lease(tmp_path, monkeypatch, provider):
+    isolate_sqlite_runtime(tmp_path, monkeypatch)
+    registry, runtime, _state, monitor = _canonical(tmp_path, provider=provider, lease=LEASE)
+    turn = ["--turn-instance-id", "monitor-rejected-proof",
+        "--available-capability", "network", "--available-capability", "external_evidence_poll"]
+    guard = run_json_cli("quota", "should-run", "--goal-id", GOAL_ID, "--agent-id", AGENT_ID,
+        "--runtime-profile", "generic_cli", *turn, registry_path=registry, runtime_root=runtime)
+    assert guard["selected_todo"]["todo_id"] == monitor["todo_id"]
+    before = read_canonical_todos_if_promoted(runtime_root=runtime, goal_id=GOAL_ID, include_leases=True)
+    args = arguments(monitor)
+    start = args.index("--task-lease-idempotency-key")
+    missing_proof = args[:start] + args[start + 4:]
+    code, rejected = run_json_cli_result(*missing_proof, *turn, registry_path=registry, runtime_root=runtime)
+    assert code != 0
+    assert "lease proof" in json.dumps(rejected)
+    assert read_canonical_todos_if_promoted(runtime_root=runtime, goal_id=GOAL_ID, include_leases=True) == before
+    pending = runtime / "goals" / GOAL_ID / "runs" / ".transactions" / "quota-monitor-poll"
+    assert not list(pending.glob("*.json")), "definitively rejected provider request must not reserve the Turn effect"
+    result = run_json_cli(*args, *turn, registry_path=registry, runtime_root=runtime)
+    assert result["ok"] is True
+    assert result["todo_writeback"]["lease_proof"] == PROOF
+    assert run_json_cli(*args, *turn, registry_path=registry, runtime_root=runtime)["replayed"] is True
+    after = read_canonical_todos_if_promoted(runtime_root=runtime, goal_id=GOAL_ID, include_leases=True)
+    assert after["leases"] == before["leases"]
+    assert len(after["todos"]) == len(before["todos"]) + 1
+    records = [json.loads(line) for line in (runtime / "goals" / GOAL_ID / "runs" / "index.jsonl").read_text().splitlines()]
+    assert sum(row.get("classification") == "quota_monitor_poll" for row in records) == 1
+    assert all(row.get("classification") != "quota_slot_spend" for row in records)
+
+
 def arguments(monitor):
     return ["quota", "monitor-poll", "--goal-id", GOAL_ID, "--agent-id", AGENT_ID,
         "--runtime-profile", "generic_cli", "--todo-id", monitor["todo_id"],
