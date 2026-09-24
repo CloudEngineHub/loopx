@@ -121,3 +121,70 @@ def test_failure_payload_reports_the_conflict_instead_of_collection_failure() ->
         "selected_todo_id": SELECTED_TODO_ID,
         "qualification_state": "qualified",
     }
+
+
+def test_requested_todo_that_is_the_projection_selection_is_not_a_conflict() -> None:
+    """The projection already selects the requested Todo, so name the refusal."""
+
+    error = _raise(
+        _payload(
+            should_run=False,
+            selected_todo={"todo_id": REQUESTED_TODO_ID},
+            action_selection_qualification=_qualified_for(REQUESTED_TODO_ID),
+        )
+    )
+
+    assert error.kind is QuotaActionSelectionConflictKind.NOT_ADMITTED
+    assert error.error_code == "quota_action_selection_conflict"
+    assert REQUESTED_TODO_ID in str(error)
+    # The self-contradictory sentence puts the same id on both sides; a caller
+    # cannot act on it.
+    assert "neither the projection's current selection" not in str(error)
+    assert "not admitted to settle" in str(error)
+
+
+def test_unsettled_prior_turn_is_named_instead_of_a_selection_conflict() -> None:
+    """A refused receipt write caused by an unsettled prior Turn names that Turn."""
+
+    prior_turn_id = "2026-09-23T07:29:19.141Z"
+    error = _raise(
+        _payload(
+            should_run=False,
+            selected_todo={"todo_id": REQUESTED_TODO_ID},
+            action_selection_qualification=_qualified_for(REQUESTED_TODO_ID),
+            unsettled_host_turn_recovery={
+                "schema_version": "unsettled_host_turn_recovery_v0",
+                "binding_id": REQUESTED_TODO_ID,
+                "prior_turn_instance_id": prior_turn_id,
+                "repair": "resume_prior_turn",
+            },
+        )
+    )
+
+    assert error.kind is QuotaActionSelectionConflictKind.NOT_ADMITTED
+    assert prior_turn_id in str(error)
+    assert "resume_prior_turn" in str(error)
+    assert "neither the projection's current selection" not in str(error)
+
+    args = argparse.Namespace(
+        quota_command="should-run",
+        goal_id="quota-conflict-fixture",
+        agent_id="agent-fixture",
+        runtime_root=None,
+        verbose=False,
+    )
+    payload = quota_failure_payload(
+        args,
+        registry_path=Path("/tmp/quota-conflict-registry.json"),
+        runtime_root_arg=None,
+        error=error,
+    )
+
+    assert payload["action_selection_conflict"] == {
+        "kind": "not_admitted",
+        "requested_todo_id": REQUESTED_TODO_ID,
+        "selected_todo_id": REQUESTED_TODO_ID,
+        "qualification_state": "qualified",
+        "unsettled_prior_turn_instance_id": prior_turn_id,
+        "unsettled_repair": "resume_prior_turn",
+    }

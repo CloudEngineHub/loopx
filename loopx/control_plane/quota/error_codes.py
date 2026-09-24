@@ -64,6 +64,7 @@ class QuotaActionSelectionConflictKind(StrEnum):
 
     UNQUALIFIED = "unqualified"
     CONFLICT = "conflict"
+    NOT_ADMITTED = "not_admitted"
 
 
 class QuotaActionSelectionConflictError(RuntimeError):
@@ -84,11 +85,15 @@ class QuotaActionSelectionConflictError(RuntimeError):
         requested_todo_id: str | None,
         selected_todo_id: str | None = None,
         qualification_state: str | None = None,
+        unsettled_prior_turn_instance_id: str | None = None,
+        unsettled_repair: str | None = None,
     ) -> None:
         self.kind = kind
         self.requested_todo_id = requested_todo_id
         self.selected_todo_id = selected_todo_id
         self.qualification_state = qualification_state
+        self.unsettled_prior_turn_instance_id = unsettled_prior_turn_instance_id
+        self.unsettled_repair = unsettled_repair
         if kind is QuotaActionSelectionConflictKind.UNQUALIFIED:
             reason = (
                 "the current projection carries no typed action-selection "
@@ -96,6 +101,28 @@ class QuotaActionSelectionConflictError(RuntimeError):
                 f"{requested_todo_id or '(none)'} cannot be reconciled with the "
                 "delivery frontier"
             )
+        elif kind is QuotaActionSelectionConflictKind.NOT_ADMITTED:
+            # The projection already selects the requested Todo, so calling this
+            # a selection conflict would name the same id on both sides of the
+            # sentence and leave the caller with no next read.  Name the refusal
+            # that actually happened, and the prior Turn that owes a closeout
+            # when the payload carries one.
+            reason = (
+                f"the requested Todo {requested_todo_id or '(none)'} is the "
+                "projection's current selection, so this Turn was not refused by "
+                "a selection conflict; the Turn was not admitted to settle that "
+                f"Todo (qualification state: {qualification_state or 'absent'})"
+            )
+            if unsettled_prior_turn_instance_id:
+                reason += (
+                    f"; the prior Turn {unsettled_prior_turn_instance_id} is still "
+                    "unsettled and must be settled first"
+                    + (
+                        f" (repair: {unsettled_repair})"
+                        if unsettled_repair
+                        else ""
+                    )
+                )
         else:
             reason = (
                 f"requested Todo {requested_todo_id or '(none)'} is neither the "
@@ -103,11 +130,18 @@ class QuotaActionSelectionConflictError(RuntimeError):
                 f"({selected_todo_id or 'none'}) nor deferred or rejected by it "
                 f"(qualification state: {qualification_state or 'absent'})"
             )
-        self.recommended_action = (
-            "rerun `loopx quota should-run` without --todo-id to read the current "
-            "selection, then bind that Todo, a deferred Todo, or the Todo the "
-            "recovery obligation must settle"
-        )
+        if kind is QuotaActionSelectionConflictKind.NOT_ADMITTED:
+            self.recommended_action = (
+                "read the payload's admission facts and delivery boundary; when "
+                "the prior Turn named in the reason is the blocker, settle that "
+                "Turn first and then rerun this Turn"
+            )
+        else:
+            self.recommended_action = (
+                "rerun `loopx quota should-run` without --todo-id to read the current "
+                "selection, then bind that Todo, a deferred Todo, or the Todo the "
+                "recovery obligation must settle"
+            )
         super().__init__(reason)
 
 
