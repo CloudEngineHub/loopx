@@ -1,6 +1,7 @@
 /** Admission for Todo edits; terminal completion retains its own lease proof.
  * Grants may cross a claim owner;
  * exclusions, bindings and execution lineage remain independent restrictions. */
+import {acceptanceRestoration} from "./todo_acceptance_restoration.ts";
 import {monitorMutationRejection} from "./todo_monitor_cycle.ts";
 import type {JsonObject} from "../effect_program.ts";
 import type {CoordinationTodoUpdateInput} from "./todo_update_intent.ts";
@@ -131,6 +132,11 @@ export function todoUpdateAdmissionRejection(
         lease_idempotency_key: input.lease_idempotency_key ?? null,
         lease_expected_version: input.lease_expected_version ?? null, now: input.now});
       if (fence.outcome !== "apply") {
+        const restoration = acceptanceRestoration(head, todo, lease, input);
+        if (restoration?.kind === "exact_restoration") return null;
+        if (restoration?.kind === "unavailable") {
+          return reject("goal_acceptance_restoration_unavailable", restoration.reason);
+        }
         return reject(String(fence.code), "Todo update requires the current active lease execution proof");
       }
       if (lease !== undefined && todo.claimed_by !== input.actor_agent_id) {
