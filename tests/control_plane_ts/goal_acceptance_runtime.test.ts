@@ -11,6 +11,7 @@ import {FileAuthorityStore} from "../../loopx/control_plane/coordination/file_au
 import {PostgreSqlAuthorityStore, installPostgreSqlAuthorityStoreSchema} from "../../loopx/control_plane/coordination/postgresql_authority_store.ts";
 import {canonicalAuthoritySha256} from "../../loopx/control_plane/coordination/authority_store_codec.ts";
 import {coordinationTodoReadModel} from "../../loopx/control_plane/coordination/coordination_projection.ts";
+import {configureGoalAcceptance} from "../../loopx/control_plane/goals/acceptance_authority.ts";
 import {acceptanceWorkGuard, goalAcceptanceTodoDigest, normalizeGoalAcceptanceDocument, projectGoalAcceptance,
   projectGoalAcceptanceWorkGuards} from "../../loopx/control_plane/goals/acceptance_contract.ts";
 import {executeCoordinationTodoClaim} from "../../loopx/control_plane/coordination/todo_claim.ts";
@@ -86,6 +87,26 @@ async function seeded(t: TestContext, provider: string, state: "bound" | "unboun
 }
 
 for (const provider of ["file", ...(process.env.LOOPX_TEST_POSTGRES_URL ? ["postgresql"] : [])]) {
+  test(`${provider}: scoped probe permits an independent claim/lease but preserves ordinary completion validation`, async t => {
+    const {store, head} = await seeded(t, provider, "unbound");
+    const declaration = {validation_command: null, validation_command_argv: ["true"],
+      validation_label: "ordinary-check", validation_timeout_seconds: 5};
+    const records = [todo({completion_validation_required: true,
+      completion_validation_sha256: canonicalAuthoritySha256(declaration)}), todo({todo_id: "todo_probe"})];
+    await replace(store, projection(records, head.goal_acceptance as JsonObject), "add-probe");
+    const basis = await loaded(store);
+    const doc = {...(head.goal_acceptance as JsonObject).document as JsonObject,
+      scope: {kind: "selected_work", todo_ids: ["todo_probe"]}};
+    assert.equal((await configureGoalAcceptance(store, {goal_id: "goal-a", operation_id: "scope-correction",
+      actor_agent_id: null, expected_provider_revision: basis.provider_revision, document: doc})).status, "applied");
+    assert.equal((await executeCoordinationTodoClaim(store, claim)).status, "applied");
+    const plan = await executeCoordinationTodoTerminalLifecycle(store, {...terminal, validation_declaration: declaration});
+    assert.equal(plan.status, "execute_validation");
+    assert.equal((plan.validation_effect as JsonObject).validation_label, "ordinary-check");
+    assert.deepEqual(plan.goal_acceptance_validation_effects ?? [], []);
+    assert.equal((await executeCanonicalTaskLeaseAcquire(store, acquire)).status, "applied");
+    assert.equal(acceptanceWorkGuard((await loaded(store)).head, "goal-a", "todo_probe")?.allowed, false);
+  });
   test(`${provider}: absent acceptance preserves ordinary completion, receipts, and unrelated fields`, async t => {
     const {store, head} = await seeded(t, provider, "off");
     const result = await executeCoordinationTodoTerminalLifecycle(store, terminal);
