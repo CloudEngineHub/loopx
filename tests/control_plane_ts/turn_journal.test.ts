@@ -112,13 +112,17 @@ test("legal terminal replay is projected without effects or private fields", () 
   assert.deepEqual(input, before);
 });
 
-test("journal interpretation preserves the canonical Effect Program slots", () => {
+test("journal replay uses its own decision without a quota action slot", () => {
   const turn = interpretTurnJournalEffect(request());
 
   assert.equal(turn.request.kind, "turn_journal");
   assert.equal(turn.interpretation.route, "turn_journal_replay");
   assert.equal(turn.observation.decision, "replay_legal");
   assert.equal(turn.observation.should_run, false);
+  assert.equal("effective_action" in turn.observation, false);
+  const blocked = interpretTurnJournalEffect({...request(), agent_id: "other-agent"});
+  assert.equal(blocked.observation.decision, "replay_blocked");
+  assert.equal("effective_action" in blocked.observation, false);
   assert.deepEqual(turn.next_effect.cli_actions, []);
   assert.deepEqual(interpretTurnJournal(request()), {
     ok: true,
@@ -367,6 +371,30 @@ test("caller-authored Host retryability fails closed", () => {
 
   assert.equal(result.recovery_decision.action, "blocked");
   assert.equal(result.recovery_decision.reason, "host_retry_contract_invalid");
+});
+
+test("output budget exhaustion cannot reinvoke the Host", () => {
+  const input = failedHostRetryRequest({ kind: "output_budget_exhausted" });
+  input.journal.host_failure = {
+    schema_version: "loopx_turn_host_failure_v0",
+    kind: "output_budget_exhausted",
+    attempt: 1,
+    retryable: false,
+  };
+
+  const result = interpretTurnJournal(input);
+
+  assert.equal(result.recovery_decision.action, "blocked");
+  assert.equal(result.recovery_decision.reinvoke_host, false);
+  assert.equal(result.recovery_decision.reason, "host_retry_not_available");
+  assert.deepEqual(result.recovery_decision.checks, [
+    { kind: "journal_consistency", outcome: "passed" },
+    {
+      kind: "host_retry_policy",
+      outcome: "failed",
+      reason: "host_retry_not_available",
+    },
+  ]);
 });
 
 test("Host retry metadata with extra fields fails closed", () => {

@@ -25,13 +25,12 @@ export const COORDINATION_TERMINAL_FENCE_REQUEST_SCHEMA =
   "loopx_coordination_terminal_fence_request_v0";
 export const COORDINATION_TERMINAL_FENCE_RESULT_SCHEMA =
   "loopx_coordination_terminal_fence_result_v0";
-const HANDOFF_MODES = ["legacy", "soft_claim", "hard_lease"] as const;
+import {HANDOFF_MODES, type HandoffMode} from "./handoff_mode_policy.ts";
 const OUTCOMES = ["approve", "reject", "cancel"] as const;
 const AUTHORITY_ACTIONS = ["complete", "reassign", "supersede", "update"] as const;
 const EXECUTOR_RECLAIM_ACTION = "reclaim";
 
 type LifecycleCommand = typeof COMMANDS[number] | typeof MUTATION_COMMANDS[number];
-type HandoffMode = typeof HANDOFF_MODES[number];
 type DecisionOutcome = typeof OUTCOMES[number];
 
 interface DecisionScope extends JsonObject {
@@ -346,27 +345,42 @@ function result(
   };
 }
 
+/** Registered-actor restrictions, independent of single-agent compatibility or
+ * delegated authority. Native edits and multi-agent lifecycle admission share it. */
+export function registeredTodoMutationRejection(raw: JsonObject, actor: string | null,
+  registered: readonly string[]): string | null {
+  const todo = todoFact(raw, "todo");
+  if (actor === null) return "actor_required";
+  if (!registered.includes(actor)) return "actor_not_registered";
+  if (todo.excluded_agents.includes(actor)) return "actor_excluded";
+  const boundAgent = todo.bound_agent ?? (todo.role === "user" ? todo.blocks_agent : null);
+  if (boundAgent !== null && boundAgent !== actor) return "bound_agent_mismatch";
+  if (todo.claimed_by !== null && todo.claimed_by !== actor) return "claim_owner_mismatch";
+  return null;
+}
+
 function authority(request: LifecycleDecisionRequest):
   | { mode: string; ownershipGate: CoordinationTodoTerminalDecisionResult["ownership_gate"] }
   | CoordinationTodoTerminalDecisionResult {
   const { todo, actor_agent_id: actor, registered_agents: registered } = request;
   if (registered.length <= 1) {
-    if (actor !== null && registered.length > 0 && !registered.includes(actor)) {
-      return result("rejected", "actor_not_registered");
+    if (actor !== null) {
+      const rejection = registeredTodoMutationRejection(todo, actor, registered);
+      if (rejection !== null) return result("rejected", rejection);
+    } else if (todo.claimed_by !== null || todo.bound_agent !== null ||
+        todo.blocks_agent !== null || todo.excluded_agents.length > 0) {
+      // Actorless compatibility is limited to genuinely unowned Todo records;
+      // ownership, binding, and exclusion facts require an accountable actor.
+      return result("rejected", "actor_required");
     }
     return { mode: "single_agent_compatibility", ownershipGate: "not_required" };
   }
   if (exactUserGateOverride(request)) {
     return { mode: "exact_user_gate_decision_scope_override", ownershipGate: "not_required" };
   }
-  if (actor === null) return result("rejected", "actor_required");
-  if (!registered.includes(actor)) return result("rejected", "actor_not_registered");
-  if (todo.excluded_agents.includes(actor)) return result("rejected", "actor_excluded");
-  const boundAgent = todo.bound_agent ?? (todo.role === "user" ? todo.blocks_agent : null);
-  if (boundAgent !== null && boundAgent !== actor) {
-    return result("rejected", "bound_agent_mismatch");
-  }
-  if (todo.claimed_by !== null && todo.claimed_by !== actor) {
+  const rejection = registeredTodoMutationRejection(todo, actor, registered);
+  if (rejection !== null && rejection !== "claim_owner_mismatch") return result("rejected", rejection);
+  if (rejection === "claim_owner_mismatch") {
     const grant = request.lifecycle_grants.find((candidate) => candidate.agent_id === actor);
     if (grant === undefined) return result("rejected", "claim_owner_mismatch");
     if (!grant.actions.includes(request.authority_action)) {
@@ -385,13 +399,19 @@ function authority(request: LifecycleDecisionRequest):
 
 type FenceRequest = Pick<LifecycleDecisionRequest,
   "todo" | "lease" | "registered_agents" | "handoff_mode" | "actor_agent_id" |
-  "lease_idempotency_key" | "lease_expected_version" | "allow_user_gate_auto_acquire">;
+  "lease_idempotency_key" | "lease_expected_version" | "allow_user_gate_auto_acquire"> & {
+    readonly command?: LifecycleCommand;
+  };
 
-function ownerEligible(request: FenceRequest, owner: string | null): boolean {
+function ownerIdentityEligible(request: FenceRequest, owner: string | null): boolean {
   const todo = request.todo;
-  return todo.status === "open" && owner !== null &&
+  return owner !== null &&
     request.registered_agents.includes(owner) && !todo.excluded_agents.includes(owner) &&
     (todo.claimed_by === null || todo.claimed_by === owner);
+}
+
+function ownerEligible(request: FenceRequest, owner: string | null): boolean {
+  return request.todo.status === "open" && ownerIdentityEligible(request, owner);
 }
 
 function terminalFence(
@@ -405,6 +425,20 @@ function terminalFence(
   const explicitFence = request.lease_idempotency_key !== null ||
     request.lease_expected_version !== null;
   const delegated = authorityMode === "delegated_orchestration_override";
+  // Deferred work cannot acquire a lease. Superseding a retired wait is a
+  // terminal lifecycle edit, not execution, and the provider CAS retires any
+  // expired lease lineage together with the Todo transition.
+  if (request.command === "supersede" && request.handoff_mode === "hard_lease" &&
+      request.todo.role === "agent" && request.todo.status === "deferred" &&
+      !delegated && !timeActive && !explicitFence &&
+      ownerIdentityEligible(request, request.actor_agent_id)) {
+    return result("apply", "terminal_fence_not_required", {
+      authority_mode: authorityMode,
+      lease_fence: "not_required",
+      next_lease: lease?.present && lease.status !== "released"
+        ? {...lease, active: false, status: "released"} : null,
+    });
+  }
   const autoAcquire = request.handoff_mode === "hard_lease" && !delegated &&
     request.allow_user_gate_auto_acquire && request.todo.role === "user" &&
     request.todo.task_class === "user_gate";

@@ -25,8 +25,9 @@ Gate、事件、配置和回执仍由控制面事实源拥有。
 | Context / Settings | 当前 repository、Session、Goal Channel 和可选功能如何配置？ | 写入必须 preview、apply 并 read back |
 
 这不是一套新的事实源。浏览器不能绕开 Kernel 直接修改 registry、Todo、quota 或 Host
-automation；远端 SSH source 也保持只读。Stage 2C authority 与其他候选 Provider 仍按阶段提升，
-1.0 标签不代表所有 tenant 已经迁移。
+automation；远端 SSH 投影仍保持只读，唯一例外是通过精确匹配的已配置 Host alias
+路由 Goal 的 stop/resume；手工 URL 不会获得该权限。Stage 2C authority 与其他候选
+Provider 仍按阶段提升，1.0 标签不代表所有 tenant 已经迁移。
 
 发布事实以 [LoopX v1.0.0 release](https://github.com/huangruiteng/loopx/releases/tag/v1.0.0)
 为准；界面细节与恢复路径见
@@ -100,9 +101,12 @@ Preview 冻结规范化参数、影响范围和当前 revision。Apply 只能执
 
 ```bash
 loopx goal-lifecycle --goal-id <goal-id> --operation stop
-loopx goal-lifecycle --goal-id <goal-id> --operation stop --execute
+loopx goal-lifecycle --goal-id <goal-id> --operation stop --actor-kind owner --execute
 loopx quota status --goal-id <goal-id>
 ```
+
+执行 lifecycle transition 时必须显式传入 `--actor-kind owner` 或 `controller`；
+匿名预览仍然保持只读。
 
 暂停会让该 Goal 退出 active attention，并使有效自动运行 quota 投影为 0；Todo、历史、证据和配置
 仍保留。恢复使用显式 `resume --execute`，且不会绕过 Todo、Gate 或 quota。不要把 stop 写成

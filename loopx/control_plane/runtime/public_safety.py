@@ -10,20 +10,21 @@ CompactText = Callable[..., Optional[str]]
 DEFAULT_PUBLIC_SAFE_LIST_LIMIT = 4
 LOCAL_PATH_SURFACE_PATTERN = re.compile(
     r"(?<![:/A-Za-z0-9])(?:"
-    r"/(?:Users|home|Volumes|private|tmp|var|etc|opt|srv|mnt|root|workspace|workspaces)/"
+    r"/(?:Users|home|Volumes|private|tmp|var|etc|opt|srv|mnt|root|data|workspace|workspaces)/"
     r"[^\s`'\"<>]+|"
-    r"[A-Za-z]:[\\/](?:Users|Documents and Settings)[\\/][^\s`'\"<>]+"
+    r"[A-Za-z]:[\\/][^\s`'\"<>]+|"
+    r"\\\\[A-Za-z0-9_.-]+\\[^\s`'\"<>]+"
     r")",
     re.IGNORECASE,
 )
 SECRET_LIKE_SURFACE_PATTERN = re.compile(
     r"(?i)(?:\bbearer\s+[a-z0-9._~+/=-]{16,}|"
-    r"\b(?:access|secret)[_-]?key\s*[=:]\s*[^\s`'\"<>]+|"
-    r"\b(?:ak|sk)\s*[=:]\s*[^\s`'\"<>]+|"
+    r"\b(?:access|secret)[_-]?key[\"']?\s*[=:]\s*[\"']?[^\s`'\"<>]+|"
+    r"\b(?:ak|sk)[\"']?\s*[=:]\s*[\"']?[^\s`'\"<>]+|"
     r"(?<![a-z0-9_])(?:ak|sk)[-_=:][a-z0-9_=-]{10,}|"
     r"\bgh[pousr]_[a-z0-9]{20,}\b|"
     r"\beyj[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\b|"
-    r"\btoken\s*[=:]\s*[^\s`'\"<>]{12,})"
+    r"\btoken[\"']?\s*[=:]\s*[\"']?[^\s`'\"<>]{12,})"
 )
 _CREDENTIAL_FIELD_FAMILIES = frozenset(
     {

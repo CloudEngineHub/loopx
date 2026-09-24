@@ -49,6 +49,19 @@ from .authority_e2e_rows_stage2c import (
     row_every_writer_family_captures,
     row_migration_seeds_new_lineage,
 )
+from .authority_e2e_rows_stage2c2 import (
+    row_archive_after_leased_completion_parity,
+    row_drain_idempotent,
+    row_event_only_todo_source_holds,
+    row_growth_measurement_gate,
+    row_migration_seeds_and_drains,
+    row_outbox_prepared_then_committed_entries,
+    row_parity_divergent_detects_foreign_edit,
+    row_parity_equal,
+    row_rollback_with_pending_entries,
+    row_sigkill_between_primary_write_and_drain,
+    row_sigkill_mid_drain,
+)
 from .authority_e2e_fixtures import (
     REPO_ROOT,
     CliOutputError,
@@ -127,8 +140,14 @@ NOKV_QUALIFICATION_SCRIPT = Path("examples") / "nokv-authority-store" / "live-qu
 NOKV_HELPER = Path("loopx") / "control_plane" / "coordination" / "nokv_jsonl_helper.py"
 NOKV_QUALIFICATION_REPORT_SCHEMA = "loopx_nokv_authority_live_qualification_v0"
 NOKV_QUALIFICATION_SCOPE = "stage_2a_single_node_store_conformance"
-QUALIFIED_NOKV_SDK_VERSION = "0.11.0"
+QUALIFIED_NOKV_SDK_VERSION = "0.11.1"
 QUALIFIED_NOKV_API_VERSION = 1
+# NoKV 0.11.1 refuses a publication fenced on a stale workbench incarnation
+# before any durable row or object exists; the live probe must prove it.
+NOKV_INCARNATION_FENCE_CHECKS: tuple[str, ...] = (
+    "stale_incarnation_fence_rejected",
+    "stale_incarnation_fence_left_generation_unchanged",
+)
 PROBE_SOURCES: tuple[Path, ...] = (
     LIVE_E2E_SCRIPT,
     TS_READBACK_PROBE,
@@ -139,6 +158,7 @@ PROBE_SOURCES: tuple[Path, ...] = (
     Path("loopx") / "control_plane" / "testing" / "authority_e2e_fixtures.py",
     Path("loopx") / "control_plane" / "testing" / "authority_e2e_row_support.py",
     Path("loopx") / "control_plane" / "testing" / "authority_e2e_rows_stage2c.py",
+    Path("loopx") / "control_plane" / "testing" / "authority_e2e_rows_stage2c2.py",
 )
 FILE_MATRIX_ROWS: tuple[str, ...] = (
     "same_todo_one_winner",
@@ -232,7 +252,7 @@ def _run_live_matrix_script(environ: Mapping[str, str], *, live: bool) -> JsonOb
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         timeout=900,
         check=False,
     )
@@ -423,7 +443,7 @@ def _row_nokv_live_qualification(context: RowContext) -> RowOutcome:
         cwd=REPO_ROOT,
         env=dict(context.environ),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         timeout=600,
         check=False,
     )
@@ -457,6 +477,10 @@ def _row_nokv_live_qualification(context: RowContext) -> RowOutcome:
         "every qualification check must have passed",
     )
     expect(
+        all(check_id in check_ids for check_id in NOKV_INCARNATION_FENCE_CHECKS),
+        "qualification must prove the stale-incarnation publication fence",
+    )
+    expect(
         report.get("nokv_sdk_version") == QUALIFIED_NOKV_SDK_VERSION
         and report.get("nokv_api_version") == QUALIFIED_NOKV_API_VERSION,
         "qualification must name the qualified NoKV SDK and API versions",
@@ -470,6 +494,7 @@ def _row_nokv_live_qualification(context: RowContext) -> RowOutcome:
         qualification_scope=NOKV_QUALIFICATION_SCOPE,
         check_count=len(check_ids),
         check_ids=check_ids,
+        incarnation_fence_checks=list(NOKV_INCARNATION_FENCE_CHECKS),
         final_generation=report.get("final_generation"),
         final_cursor=report.get("final_cursor"),
         nokv_sdk_version=report.get("nokv_sdk_version"),
@@ -647,18 +672,114 @@ LADDER_ROWS: tuple[LadderRow, ...] = (
         posix_only=False,
         run=row_migration_seeds_new_lineage,
     ),
+    LadderRow(
+        id="s2c2.outbox_prepared_then_committed_entries",
+        stage="2c2",
+        title="Python and TypeScript writers leave prepared records with committed markers that one drain delivers once",
+        product_path="real_cli",
+        gate="deterministic",
+        posix_only=False,
+        run=row_outbox_prepared_then_committed_entries,
+    ),
+    LadderRow(
+        id="s2c2.drain_idempotent",
+        stage="2c2",
+        title="Bounded drains are cumulative, an idle drain changes nothing, and a writer replay mints no entry",
+        product_path="real_cli",
+        gate="deterministic",
+        posix_only=False,
+        run=row_drain_idempotent,
+    ),
+    LadderRow(
+        id="s2c2.sigkill_between_primary_write_and_drain",
+        stage="2c2",
+        title="A SIGKILL around the primary replace leaves a prepared-only entry that drain settles from the primary bytes",
+        product_path="real_cli",
+        gate="deterministic",
+        posix_only=True,
+        run=row_sigkill_between_primary_write_and_drain,
+    ),
+    LadderRow(
+        id="s2c2.sigkill_mid_drain",
+        stage="2c2",
+        title="A SIGKILL inside the inline drain is recovered from exact receipts without a second delivery",
+        product_path="real_cli",
+        gate="deterministic",
+        posix_only=True,
+        run=row_sigkill_mid_drain,
+    ),
+    LadderRow(
+        id="s2c2.rollback_with_pending_entries",
+        stage="2c2",
+        title="Rollback archives pending entries, holds capture until rebootstrap, and replays its historical result",
+        product_path="real_cli",
+        gate="deterministic",
+        posix_only=True,
+        run=row_rollback_with_pending_entries,
+    ),
+    LadderRow(
+        id="s2c2.parity_equal",
+        stage="2c2",
+        title="Sustained interleaving of Python and TypeScript writers keeps every bounded qualification matched",
+        product_path="real_cli",
+        gate="deterministic",
+        posix_only=False,
+        run=row_parity_equal,
+    ),
+    LadderRow(
+        id="s2c2.parity_divergent_detects_foreign_edit",
+        stage="2c2",
+        title="A direct primary edit is reported as drift, holds later captures, and recovers only by rollback and rebootstrap",
+        product_path="real_cli",
+        gate="deterministic",
+        posix_only=False,
+        run=row_parity_divergent_detects_foreign_edit,
+    ),
+    LadderRow(
+        id="s2c2.event_only_todo_source_holds",
+        stage="2c2",
+        title="An event-only Todo source holds qualification and candidate reads fail-closed until rollback and rebootstrap",
+        product_path="real_cli",
+        gate="deterministic",
+        posix_only=False,
+        run=row_event_only_todo_source_holds,
+    ),
+    LadderRow(
+        id="s2c2.migration_seeds_and_drains",
+        stage="2c2",
+        title="migrate-state refuses an active capture source; after rollback the migrated goal bootstraps a fresh lineage that drains",
+        product_path="real_cli",
+        gate="deterministic",
+        posix_only=False,
+        run=row_migration_seeds_and_drains,
+    ),
+    LadderRow(
+        id="s2c2.growth_measurement_gate",
+        stage="2c2",
+        title="file-v0 history growth is measured per transaction and gated on retention integrity, claiming no capacity horizon",
+        product_path="real_cli",
+        gate="deterministic",
+        posix_only=False,
+        run=row_growth_measurement_gate,
+    ),
+    LadderRow(
+        id="s2c2.archive_after_leased_completion_parity",
+        stage="2c2",
+        title="archiving a Todo whose released lease stays on disk keeps the candidate head matched and qualifiable",
+        product_path="real_cli",
+        gate="deterministic",
+        posix_only=False,
+        run=row_archive_after_leased_completion_parity,
+    ),
 )
 
 PENDING_ROWS: tuple[PendingRow, ...] = (
-    PendingRow("s2c2.outbox_prepared_then_committed_entries", "2c2", "Stage 2C parity PRs"),
-    PendingRow("s2c2.drain_idempotent", "2c2", "Stage 2C parity PRs"),
-    PendingRow("s2c2.sigkill_between_primary_write_and_drain", "2c2", "Stage 2C parity PRs"),
-    PendingRow("s2c2.sigkill_mid_drain", "2c2", "Stage 2C parity PRs"),
-    PendingRow("s2c2.rollback_with_pending_entries", "2c2", "Stage 2C parity PRs"),
-    PendingRow("s2c2.parity_equal", "2c2", "Stage 2C parity PRs"),
-    PendingRow("s2c2.parity_divergent_detects_foreign_edit", "2c2", "Stage 2C parity PRs"),
-    PendingRow("s2c2.migration_seeds_and_drains", "2c2", "Stage 2C parity PRs"),
-    PendingRow("s2c2.growth_measurement_gate", "2c2", "Stage 2C parity PRs"),
+    PendingRow(
+        "s2c2.sustained_parity_soak",
+        "2c2",
+        "a >=10-day synthetic-goal soak of the selected local profile (RFC section 7.2, lane L); "
+        "bounded qualification reports sustained_parity_verdict=not_evaluated",
+    ),
 )
 
 
@@ -806,7 +927,7 @@ def _git_output(*arguments: str) -> str | None:
             ["git", *arguments],
             cwd=REPO_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=30,
             check=False,
         )

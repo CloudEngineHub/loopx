@@ -16,6 +16,8 @@ import type {
 import { FileAuthorityStore } from "../../loopx/control_plane/coordination/file_authority_store.ts";
 import {
   LOCAL_AUTHORITY_SHADOW_EVIDENCE_SCHEMA,
+  localAuthorityShadowHeadDigest,
+  localAuthorityShadowPartitionDigest,
   recordLocalAuthorityShadow,
 } from "../../loopx/control_plane/coordination/local_authority_shadow.ts";
 
@@ -37,6 +39,56 @@ function request(directory: string, operationId = "local-operation-a") {
     },
   };
 }
+
+test("runtime shadow parity ignores only the resume evaluation observation clock", () => {
+  const head = {
+    handoff_mode: "hard_lease",
+    todos: [{
+      todo_id: "todo-a",
+      resume_ready: false,
+      resume_condition: {
+        evaluated_at: "2026-09-20T00:00:00Z",
+        satisfied: false,
+        availability_reason: "resume_condition_pending",
+      },
+    }],
+    leases: [],
+  };
+  const laterObservation = structuredClone(head);
+  laterObservation.todos[0]!.resume_condition.evaluated_at = "2026-09-21T00:00:00Z";
+
+  assert.equal(
+    localAuthorityShadowHeadDigest(head),
+    localAuthorityShadowHeadDigest(laterObservation),
+  );
+  assert.equal(
+    localAuthorityShadowPartitionDigest("todos", {
+      handoff_mode: head.handoff_mode,
+      todos: head.todos,
+    }),
+    localAuthorityShadowPartitionDigest("todos", {
+      handoff_mode: laterObservation.handoff_mode,
+      todos: laterObservation.todos,
+    }),
+  );
+
+  const changedDecision = structuredClone(laterObservation);
+  changedDecision.todos[0]!.resume_condition.satisfied = true;
+  assert.notEqual(
+    localAuthorityShadowHeadDigest(head),
+    localAuthorityShadowHeadDigest(changedDecision),
+  );
+  assert.notEqual(
+    localAuthorityShadowPartitionDigest("todos", {
+      handoff_mode: head.handoff_mode,
+      todos: head.todos,
+    }),
+    localAuthorityShadowPartitionDigest("todos", {
+      handoff_mode: changedDecision.handoff_mode,
+      todos: changedDecision.todos,
+    }),
+  );
+});
 
 test("one-way file shadow captures a post-commit observation without claiming parity", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "loopx-local-authority-shadow-"));

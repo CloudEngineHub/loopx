@@ -1,10 +1,10 @@
 """Typed LoopX Turn transaction planning and receipt validation."""
 
 from __future__ import annotations
+from .turn_contract_generated import LoopXTurnResultKind  # compatibility re-export
 
 import json
 from collections.abc import Mapping
-from enum import Enum
 from hashlib import sha256
 from typing import Any
 
@@ -25,19 +25,6 @@ LOOPX_TURN_EXECUTION_SCHEMA_VERSION = "loopx_turn_execution_v0"
 TRANSACTION_PHASES = TURN_TRANSACTION_PHASES
 
 
-class LoopXTurnResultKind(str, Enum):
-    VALIDATED_PROGRESS = "validated_progress"
-    VALIDATED_COMPLETION = "validated_completion"
-    REPAIR_REQUIRED = "repair_required"
-    REPLAN_REQUIRED = "replan_required"
-    USER_ACTION_REQUIRED = "user_action_required"
-    WAIT = "wait"
-    HOST_FAILURE = "host_failure"
-    VALIDATION_FAILED = "validation_failed"
-    WRITEBACK_FAILED = "writeback_failed"
-    QUOTA_SPEND_FAILED = "quota_spend_failed"
-    TERMINAL_CLOSEOUT_FAILED = "terminal_closeout_failed"
-
 
 MATERIAL_RESULT_KINDS = {
     LoopXTurnResultKind.VALIDATED_PROGRESS,
@@ -48,6 +35,7 @@ MATERIAL_RESULT_KINDS = {
 NO_SPEND_RESULT_KINDS = {
     LoopXTurnResultKind.USER_ACTION_REQUIRED,
     LoopXTurnResultKind.WAIT,
+    LoopXTurnResultKind.ITERATION_FAILED,
     LoopXTurnResultKind.HOST_FAILURE,
     LoopXTurnResultKind.VALIDATION_FAILED,
     LoopXTurnResultKind.WRITEBACK_FAILED,
@@ -56,6 +44,7 @@ NO_SPEND_RESULT_KINDS = {
 STOP_RESULT_KINDS = {
     LoopXTurnResultKind.USER_ACTION_REQUIRED,
     LoopXTurnResultKind.WAIT,
+    LoopXTurnResultKind.ITERATION_FAILED,
 }
 FAILURE_PHASES = {
     LoopXTurnResultKind.HOST_FAILURE: "host_execute",

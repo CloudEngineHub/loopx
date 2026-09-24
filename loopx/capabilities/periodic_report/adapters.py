@@ -24,6 +24,7 @@ _SINK_STATUSES = {"pending", "sent", "failed", "skipped", "unknown"}
 _SINK_ROLES = {"archive", "delivery"}
 _ITEM_CONTENT_KINDS = {
     "capability_change",
+    "coverage",
     "decision",
     "delivery_receipt",
     "next_action",
@@ -33,7 +34,7 @@ _ITEM_CONTENT_KINDS = {
     "runtime",
 }
 _ITEM_VISIBILITIES = {"primary", "supporting"}
-_SUPPORTING_CONTENT_KINDS = {"delivery_receipt", "runtime"}
+_SUPPORTING_CONTENT_KINDS = {"coverage", "delivery_receipt", "runtime"}
 _HIGHLIGHT_TONES = {"attention", "neutral", "positive"}
 _LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$")
 SourceCollector = Callable[[Mapping[str, Any]], Mapping[str, Any]]

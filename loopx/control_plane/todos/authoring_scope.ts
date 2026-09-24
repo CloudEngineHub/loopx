@@ -4,15 +4,39 @@ import type { JsonObject } from "../effect_program.ts";
 import { EffectRuntimeRequestError } from "../effect_runtime_errors.ts";
 import { requireJsonObject } from "../runtime_decode.ts";
 import { normalizeRegisteredTodoAgents, normalizeTodoAgent, stripPythonWhitespace } from "../coordination/todo_agents.ts";
-import { normalizeTodoResumeWhen, TODO_RESUME_NORMALIZE_REQUEST_SCHEMA_VERSION } from "./resume_condition.ts";
+import {
+  normalizeTodoResumeWhen,
+  TODO_RESUME_NORMALIZE_REQUEST_SCHEMA_VERSION,
+  UNSUPPORTED_TODO_RESUME_CONDITION_MESSAGE,
+} from "./resume_condition.ts";
 
 export const TODO_AUTHORING_SCOPE_REQUEST_SCHEMA = "todo_authoring_scope_request_v0";
 export const TODO_AUTHORING_SCOPE_RESULT_SCHEMA = "todo_authoring_scope_result_v0";
 export const USER_TODO_TASK_CLASSES: ReadonlySet<string> = new Set(["user_action", "user_gate"]);
+export const AGENT_TODO_TASK_CLASSES: ReadonlySet<string> = new Set(["advancement_task", "continuous_monitor", "blocker"]);
+export const TODO_OWNERSHIP_INTENT_FIELDS = ["claimed_by", "clear_claim", "excluded_agents"] as const;
+
+/** Normalize explicit execution-owner intent before binding its replay identity.
+ * This does not authorize the actor or manufacture a new execution lease. */
+export function normalizeTodoOwnershipIntent(raw: JsonObject): JsonObject {
+  const intent: JsonObject = {};
+  if (raw.claimed_by != null) {
+    if (typeof raw.claimed_by !== "string") fail("claimed_by must be a string");
+    if (stripPythonWhitespace(raw.claimed_by)) intent.claimed_by = normalizeTodoAgent(raw.claimed_by, "claimed_by");
+  }
+  if (raw.clear_claim != null && typeof raw.clear_claim !== "boolean") fail("clear_claim must be boolean");
+  if (raw.clear_claim === true) intent.clear_claim = true;
+  if (intent.claimed_by && intent.clear_claim) fail("todo update accepts either claimed_by or clear_claim, not both");
+  if (raw.excluded_agents != null) {
+    if (!Array.isArray(raw.excluded_agents)) fail("excluded_agents must be an array");
+    intent.excluded_agents = [...new Set(raw.excluded_agents.map(value => normalizeTodoAgent(value, "excluded_agents")))];
+  }
+  return intent;
+}
 function fail(message: string): never { throw new EffectRuntimeRequestError(message); }
 const INTENT_FIELDS = new Set(["task_class", "status", "actor_agent_id", "claimed_by", "bound_agent",
   "goal_bound", "blocks_agent", "global_gate", "clear_global_gate", "clear_blocks_agent", "excluded_agents",
-  "task_repository", "task_domain", "capability_binding_ref", "resume_when", "clear_resume_when"]);
+  "task_repository", "task_domain", "capability_binding_ref", "resume_when", "clear_resume_when", "clear_claim"]);
 
 function string(value: unknown, field: string): string | null {
   if (value === null || value === undefined) return null;
@@ -84,6 +108,10 @@ function planScope(command: string, role: string, taskClass: string | null, todo
   };
   const requestedBound = registered("bound_agent");
   const requestedBlocks = registered("blocks_agent");
+  registered("claimed_by");
+  for (const excluded of (intent.excluded_agents ?? []) as string[]) {
+    if (!agents.includes(excluded)) fail(`excluded_agents='${excluded}' is not registered for goal '${goalId}'`);
+  }
   const actor = registered("actor_agent_id");
   if (requestedBound && intent.goal_bound) fail("todo update accepts either bound_agent or goal_bound, not both");
   if (requestedBlocks && intent.clear_blocks_agent) fail("todo update accepts either blocks_agent or clear_blocks_agent, not both");
@@ -98,7 +126,11 @@ function planScope(command: string, role: string, taskClass: string | null, todo
   }
   const creating = command === "create";
   let blocks = intent.clear_blocks_agent ? null : requestedBlocks || string(todo.blocks_agent, "blocks_agent");
-  const global = intent.clear_global_gate ? null : intent.global_gate ? true : todo.global_gate as boolean | null ?? null;
+  const global = intent.clear_global_gate
+    ? null
+    : Object.hasOwn(intent, "global_gate")
+      ? intent.global_gate === true
+      : todo.global_gate as boolean | null ?? null;
   let bound = requestedBound || (intent.goal_bound ? null : string(todo.bound_agent, "bound_agent"));
   let goal = intent.goal_bound ? true : requestedBound ? false : todo.goal_bound as boolean | null ?? null;
   // Gate scope can determine continuation scope, but never overwrite a
@@ -127,7 +159,8 @@ export function planTodoAuthoringScope(value: unknown): JsonObject {
   if (!["class", "create", "update"].includes(command ?? "")) fail("unsupported Todo authoring scope command");
   const role = string(request.role, "role");
   if (role !== "agent" && role !== "user") fail("todo role must be one of: user, agent");
-  const intent = requireJsonObject(request.intent, "Todo authoring intent");
+  const rawIntent = requireJsonObject(request.intent, "Todo authoring intent");
+  const intent = {...rawIntent, ...normalizeTodoOwnershipIntent(rawIntent)};
   for (const key of Object.keys(intent)) if (!INTENT_FIELDS.has(key)) fail(`Todo authoring scope does not own ${key}`);
   const todo = requireJsonObject(request.todo, "Todo authoring source");
   for (const object of [intent, todo]) for (const field of ["goal_bound", "global_gate", "clear_global_gate", "clear_blocks_agent", "clear_resume_when"]) {
@@ -148,6 +181,12 @@ export function planTodoAuthoringScope(value: unknown): JsonObject {
     "(CLI: `loopx todo complete`) so completion policy, successor, and no-follow-up contracts are enforced");
   const scope = planScope(command ?? "", role, taskClass, todo, intent, agents, string(request.goal_id, "goal_id") ?? "");
   const exclusions = intent.excluded_agents ?? todo.excluded_agents;
+  if (TODO_OWNERSHIP_INTENT_FIELDS.some(field => intent[field] != null && intent[field] !== false)) {
+    const claim = intent.clear_claim ? null : intent.claimed_by || todo.claimed_by;
+    if (claim && Array.isArray(exclusions) && exclusions.includes(claim)) {
+      fail("claimed_by cannot also appear in excluded_agents; clear or transfer the claim in the same update");
+    }
+  }
   if (role !== "agent" && Array.isArray(exclusions) && exclusions.length) fail("excluded_agents is only valid for agent todos; clear exclusions before moving this todo to a user role");
   // Completed history remains repairable; it does not create an active gate.
   if (status !== "done") {
@@ -156,7 +195,7 @@ export function planTodoAuthoringScope(value: unknown): JsonObject {
   }
   const resume = intent.resume_when ? normalizeTodoResumeWhen({schema_version: TODO_RESUME_NORMALIZE_REQUEST_SCHEMA_VERSION,
     resume_when: intent.resume_when}) : null;
-  if (intent.resume_when && !resume) fail("unsupported Todo resume condition");
+  if (intent.resume_when && !resume) fail(UNSUPPORTED_TODO_RESUME_CONDITION_MESSAGE);
   if (resume && intent.clear_resume_when) fail("todo update accepts either resume_when or clear_resume_when, not both");
   const existingResume = todo.resume_when ? normalizeTodoResumeWhen({schema_version: TODO_RESUME_NORMALIZE_REQUEST_SCHEMA_VERSION,
     resume_when: todo.resume_when}) : null;

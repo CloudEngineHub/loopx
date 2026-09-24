@@ -23,6 +23,7 @@ from .skill_install_readback import (
     SKILL_VERSION_MARKER_FILENAME,
     hash_skill_tree,
     inspect_skill_install_readback,
+    retire_duplicate_managed_skills,
     write_skill_install_readback,
 )
 from .slash_command_install import materialize_loopx_entry_skill
@@ -337,6 +338,9 @@ def workflow_skill_install(
             "install_required": (
                 not before.get("ready")
                 or entry_preview.get("status") != "unchanged"
+                or entry_preview.get("metadata_status") in {
+                    "would_create", "updated", "upgraded_legacy_managed",
+                }
             ),
             "install_command": shlex.join(install_command),
         }
@@ -390,6 +394,7 @@ def workflow_skill_install(
             loopx_version=__version__,
         )
 
+    reconciliation = retire_duplicate_managed_skills(target_root, execute=True)
     after = inspect_skill_install_readback(
         skills_dir=target_root,
         required_skill_ids=ARK_MANAGED_AGENT_REQUIRED_SKILL_IDS,
@@ -407,6 +412,7 @@ def workflow_skill_install(
         "installed": installed,
         "entry": entry,
         "after": after,
+        "skill_reconciliation": reconciliation,
         "rollback_command": shlex.join(
             [
                 "loopx",

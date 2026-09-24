@@ -169,12 +169,20 @@ LoopX services are already running separately. Vite proxies the default
 The full-stack launcher needs a Python 3.11+ interpreter for the status and
 Chat services. It honors `LOOPX_PYTHON` first, then the Python recorded by the
 LoopX installer in `.loopx-python`, then the repository `.venv`,
-`python3.13`/`python3.12`/`python3.11` on `PATH`, and common Homebrew locations.
-If your default `python3` is older, point it at an existing interpreter:
+versioned interpreters discovered on `PATH` in descending numeric order, the
+unversioned `python3`, and common Homebrew locations. Every discovered executable
+must pass the Python compatibility probe; there is no fixed minor-version list.
+Prepare the project environment and launch from the repository root:
 
 ```bash
-LOOPX_PYTHON=/path/to/python3.12 npm run dev
+uv sync --extra test
+uv run --extra test bash scripts/dashboard-dev.sh
 ```
+
+An explicit `LOOPX_PYTHON` or a valid installer-recorded interpreter still takes
+precedence. To select the project environment explicitly after `uv sync`, set
+`LOOPX_PYTHON` to the absolute path of `.venv/bin/python`. The launcher continues
+to support existing compatible Python installations without requiring uv.
 
 Both the root dashboard and the packaged `/chat/` route expose the same
 installable PWA manifest and icons. The default `loopx dashboard` command opens
@@ -221,8 +229,8 @@ It provides a unified, coherent experience for managing long-running agent Goals
 
   ```bash
   loopx goal-lifecycle --goal-id <goal-id> --operation stop
-  loopx goal-lifecycle --goal-id <goal-id> --operation stop --execute
-  loopx goal-lifecycle --goal-id <goal-id> --operation resume --execute
+  loopx goal-lifecycle --goal-id <goal-id> --operation stop --actor-kind owner --execute
+  loopx goal-lifecycle --goal-id <goal-id> --operation resume --actor-kind owner --execute
   loopx quota status --goal-id <goal-id>
   ```
 
@@ -297,11 +305,13 @@ Wildcard hosts, negated patterns, `IdentityFile`, `ProxyCommand`, hostnames,
 credentials, and config paths are never projected to the browser. The manual
 loopback-URL path remains available for custom forwarding setups.
 
-The browser catalog stores only the selected alias label and loopback URL;
-LoopX does not store SSH credentials or open the tunnel. The active source
-reports its connection health. Local stays interactive, while every custom
-SSH-tunnel source is explicitly read-only even though its forwarded URL is
-loopback.
+The browser catalog stores the selected alias, label, and loopback URL; LoopX
+does not store SSH credentials or open the tunnel. The active source reports
+its connection health. Local stays interactive. A source bound to an exact
+configured alias may stop or resume a Goal through the same typed
+`goal-lifecycle` contract on that remote host. Manual URLs and all other
+remote controls stay read-only; remote lifecycle never falls back to a local
+Goal with the same id.
 
 The switcher intentionally has no synthetic **All** source. Independent status
 feeds do not yet share authority, identity, or deduplication semantics, so
@@ -462,3 +472,7 @@ The throttled smoke protects the "quiet scheduling state" first screen. The
 operator-gate smoke protects planned high-complexity goals: they should appear
 as controller/user actions, not Codex-ready work. Those older browser smokes
 still use the local Playwright CLI wrapper.
+
+## Packaged frontend delivery
+
+Generated Chat assets are not committed. See [frontend delivery](../../../docs/development/frontend-delivery.md) for source rebuilds, SHA-bound CI artifacts, package validation and the one-delivery upgrade window.

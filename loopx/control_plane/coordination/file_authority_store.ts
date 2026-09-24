@@ -8,38 +8,57 @@ import { withFileMutationLock } from "../effect_runtime_io.ts";
 import type {
   AuthorityStore,
   AuthorityStoreCommit,
-  AuthorityStoreCommittedTransaction,
   AuthorityStoreCommitResult,
   AuthorityStoreIdentityResult,
   AuthorityStoreLoadResult,
+  AuthorityStoreHead,
   AuthorityStoreReadFailure,
   AuthorityStoreReceiptResult,
   AuthorityStoreScanResult,
 } from "./authority_store.ts";
 import {
   AuthorityStoreProtocolError,
-  authorityUnicodeCompare,
-  canonicalAuthorityBytes,
-  canonicalAuthorityObject,
-  canonicalAuthorityObjectList,
-  hasExactAuthorityKeys,
   isAuthorityJsonObject,
+  hasExactAuthorityKeys,
+  canonicalAuthorityBytes,
   normalizeAuthorityStoreCommit,
-  parseAuthorityCursor,
   requireAuthorityStoreId,
 } from "./authority_store_codec.ts";
+import {appendRetainedAuthorityJournal, decodeRetainedAuthorityJournal,
+  type RetainedAuthorityJournal, transactionForRevision} from "./authority_store_transactions.ts";
+import {AuthorityJournalScan} from "./authority_journal_scan.ts";
 
 const FILE_AUTHORITY_STORE_SCHEMA = "loopx_file_authority_store_v0";
 const STORE_IDENTITY_PATTERN = /^file:[0-9a-f]{32}$/;
+// File-v0 retains every projection in one envelope. A managed Effect server
+// opens a new store handle for each request, so revalidating an unchanged
+// journal on every read makes one Goal's history dominate the RPC budget.
+// Keep only one verified document process-wide; bytes and store identity must
+// both match before a later handle may reuse that validation.
+const MAX_CACHED_DOCUMENT_BYTES = 128 * 1024 * 1024;
+let verifiedDocument: {
+  path: string;
+  identity: string;
+  digest: string;
+  document: FileAuthorityStoreDocument;
+} | null = null;
 
-interface FileAuthorityStoreDocument extends JsonObject {
+function documentDigest(raw: Uint8Array): string {
+  return createHash("sha256").update(raw).digest("hex");
+}
+
+function rememberVerifiedDocument(path: string, identity: string, raw: Uint8Array,
+  digest: string, document: FileAuthorityStoreDocument): void {
+  verifiedDocument = raw.byteLength <= MAX_CACHED_DOCUMENT_BYTES
+    ? {path, identity, digest, document}
+    : null;
+}
+
+interface FileAuthorityStoreDocument extends JsonObject, RetainedAuthorityJournal {
   schema_version: typeof FILE_AUTHORITY_STORE_SCHEMA;
   goal_id: string;
-  provider_revision: string;
-  cursor: string;
   store_identity: string;
-  head: JsonObject;
-  committed: AuthorityStoreCommittedTransaction[];
+
 }
 
 class FileStoreUnavailableError extends Error {}
@@ -77,37 +96,8 @@ export type FileAuthorityArchiveResult =
     reason: string;
   };
 
-function cloneTransaction(
-  value: AuthorityStoreCommittedTransaction,
-): AuthorityStoreCommittedTransaction {
-  return structuredClone(value);
-}
-
-function transactionWithoutRevision(value: AuthorityStoreCommittedTransaction) {
-  return {
-    cursor: value.cursor,
-    operation_id: value.operation_id,
-    events: value.events,
-    projection: value.projection,
-    receipts: value.receipts,
-  };
-}
-
-function providerRevision(
-  goalId: string,
-  storeIdentity: string,
-  previousRevision: string | null,
-  transaction: ReturnType<typeof transactionWithoutRevision>,
-): string {
-  const digest = createHash("sha256")
-    .update(canonicalAuthorityBytes({
-      goal_id: goalId,
-      store_identity: storeIdentity,
-      previous_provider_revision: previousRevision,
-      transaction,
-    }))
-    .digest("hex")
-    .slice(0, 24);
+function providerRevision(goalId: string, storeIdentity: string, previousRevision: string | null, transaction: ReturnType<typeof transactionForRevision>): string {
+  const digest = createHash("sha256").update(canonicalAuthorityBytes({ goal_id: goalId, store_identity: storeIdentity, previous_provider_revision: previousRevision, transaction })).digest("hex").slice(0, 24);
   return `file:${transaction.cursor}:${digest}`;
 }
 
@@ -140,23 +130,6 @@ async function durableReplace(path: string, payload: Uint8Array): Promise<void> 
   }
 }
 
-function decodeTransaction(value: unknown): AuthorityStoreCommittedTransaction {
-  if (!isAuthorityJsonObject(value) || !hasExactAuthorityKeys(value, [
-    "cursor", "provider_revision", "operation_id", "events", "projection", "receipts",
-  ])) throw new AuthorityStoreProtocolError("committed transaction is invalid");
-  return {
-    cursor: requireAuthorityStoreId(value.cursor, "transaction cursor"),
-    provider_revision: requireAuthorityStoreId(
-      value.provider_revision,
-      "transaction provider revision",
-    ),
-    operation_id: requireAuthorityStoreId(value.operation_id, "operation id"),
-    events: canonicalAuthorityObjectList(value.events, "transaction events"),
-    projection: canonicalAuthorityObject(value.projection, "transaction projection"),
-    receipts: canonicalAuthorityObjectList(value.receipts, "transaction receipts"),
-  };
-}
-
 function decodeDocument(
   value: unknown,
   goalId: string,
@@ -172,51 +145,9 @@ function decodeDocument(
   if (value.store_identity !== storeIdentity) {
     throw new AuthorityStoreProtocolError("file authority store lineage mismatch");
   }
-  const revision = requireAuthorityStoreId(value.provider_revision, "provider revision");
-  const cursor = requireAuthorityStoreId(value.cursor, "provider cursor");
-  const head = canonicalAuthorityObject(value.head, "file authority store head");
-  if (!Array.isArray(value.committed)) {
-    throw new AuthorityStoreProtocolError("file authority store history is invalid");
-  }
-  const committed = value.committed.map(decodeTransaction);
-  if (committed.length === 0 || parseAuthorityCursor(cursor) !== BigInt(committed.length)) {
-    throw new AuthorityStoreProtocolError("file authority store lineage is invalid");
-  }
-  let previousRevision: string | null = null;
-  const operationIds = new Set<string>();
-  for (const [index, entry] of committed.entries()) {
-    if (parseAuthorityCursor(entry.cursor) !== BigInt(index + 1)) {
-      throw new AuthorityStoreProtocolError("file authority store cursor lineage is invalid");
-    }
-    if (operationIds.has(entry.operation_id)) {
-      throw new AuthorityStoreProtocolError("file authority store operation identity is duplicated");
-    }
-    operationIds.add(entry.operation_id);
-    const expectedRevision = providerRevision(
-      goalId,
-      storeIdentity,
-      previousRevision,
-      transactionWithoutRevision(entry),
-    );
-    if (entry.provider_revision !== expectedRevision) {
-      throw new AuthorityStoreProtocolError("file authority store revision lineage is invalid");
-    }
-    previousRevision = entry.provider_revision;
-  }
-  const last = committed.at(-1)!;
-  if (
-    last.cursor !== cursor || last.provider_revision !== revision ||
-    !canonicalAuthorityBytes(last.projection).equals(canonicalAuthorityBytes(head))
-  ) throw new AuthorityStoreProtocolError("file authority store head lineage is invalid");
-  return {
-    schema_version: FILE_AUTHORITY_STORE_SCHEMA,
-    goal_id: goalId,
-    store_identity: storeIdentity,
-    provider_revision: revision,
-    cursor,
-    head,
-    committed,
-  };
+  return {schema_version: FILE_AUTHORITY_STORE_SCHEMA, goal_id: goalId, store_identity: storeIdentity,
+    ...decodeRetainedAuthorityJournal(value, "file authority store", (previous, transaction) =>
+      providerRevision(goalId, storeIdentity, previous, transaction))};
 }
 
 function readFailure(error: unknown): AuthorityStoreReadFailure {
@@ -232,6 +163,7 @@ function readFailure(error: unknown): AuthorityStoreReadFailure {
 
 /** File-backed Stage 1 conformance provider; LoopX owns all domain decisions. */
 export class FileAuthorityStore implements AuthorityStore {
+  readonly providerKind = "file" as const;
   readonly goalId: string;
   readonly directory: string;
   readonly path: string;
@@ -257,6 +189,11 @@ export class FileAuthorityStore implements AuthorityStore {
 
   /** Filesystem-only crash seam; the archive owner must still fsync both parents. */
   protected async archiveRenamed(): Promise<void> {}
+
+  /** Full-history verification seam; unchanged byte-identical reads may reuse it. */
+  protected decodeStoredDocument(value: unknown, identity: string): FileAuthorityStoreDocument {
+    return decodeDocument(value, this.goalId, identity);
+  }
 
   private async readStoreIdentity(createIfMissing = !this.existingOnly): Promise<string> {
     try {
@@ -304,19 +241,26 @@ export class FileAuthorityStore implements AuthorityStore {
     }
   }
 
-  private async readDocument(): Promise<FileAuthorityStoreDocument | null> {
-    let raw: string;
+  private async readDocument(knownIdentity?: string): Promise<FileAuthorityStoreDocument | null> {
+    let raw: Buffer;
     try {
-      raw = await readFile(this.path, "utf8");
+      raw = await readFile(this.path);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw new FileStoreUnavailableError(
         error instanceof Error ? error.message : "authority document unavailable",
       );
     }
-    const identity = await this.readStoreIdentity();
+    const identity = knownIdentity ?? await this.readStoreIdentity();
     try {
-      return decodeDocument(JSON.parse(raw), this.goalId, identity);
+      const digest = documentDigest(raw);
+      if (verifiedDocument?.path === this.path &&
+          verifiedDocument.identity === identity && verifiedDocument.digest === digest) {
+        return verifiedDocument.document;
+      }
+      const document = this.decodeStoredDocument(JSON.parse(raw.toString("utf8")), identity);
+      rememberVerifiedDocument(this.path, identity, raw, digest, document);
+      return document;
     } catch (error) {
       if (error instanceof SyntaxError) {
         throw new AuthorityStoreProtocolError(`file authority store JSON is invalid: ${error.message}`);
@@ -341,6 +285,20 @@ export class FileAuthorityStore implements AuthorityStore {
     }
   }
 
+  /** Checkpoint-only external append: retain the real writer lock through the
+   * synchronous callback. This neither commits nor advances authority revision. */
+  async withCheckpointHead(save: (head: AuthorityStoreHead, identity: string) => JsonObject): Promise<JsonObject> {
+    return await withFileMutationLock(this.path, async () => {
+      const identity = await this.readStoreIdentity(false);
+      const current = await this.readDocument();
+      if (!current) throw new FileStoreUnavailableError("checkpoint authority is missing");
+      const result = save({head: structuredClone(current.head),
+        provider_revision: current.provider_revision, cursor: current.cursor}, identity);
+      if (result instanceof Promise) throw new Error("checkpoint save must be synchronous");
+      return result;
+    });
+  }
+
   async commitAuthority(commit: AuthorityStoreCommit): Promise<AuthorityStoreCommitResult> {
     let normalized: AuthorityStoreCommit;
     try {
@@ -361,7 +319,7 @@ export class FileAuthorityStore implements AuthorityStore {
           // A restored directory must not race a missing-head bootstrap and
           // bind new authority bytes to an identity observed before the lock.
           identity = await this.readStoreIdentity();
-          current = await this.readDocument();
+          current = await this.readDocument(identity);
         } catch (error) {
           return {
             status: "failed",
@@ -390,36 +348,20 @@ export class FileAuthorityStore implements AuthorityStore {
             current_cursor: current.cursor,
           };
         }
-        const cursor = (parseAuthorityCursor(current?.cursor ?? null) + 1n).toString();
-        const base = {
-          cursor,
-          operation_id: normalized.operation_id,
-          events: normalized.events,
-          projection: normalized.next_projection,
-          receipts: normalized.receipts,
-        };
-        const revision = providerRevision(
-          this.goalId,
-          identity,
-          current?.provider_revision ?? null,
-          base,
-        );
-        const transaction: AuthorityStoreCommittedTransaction = {
-          ...base,
-          provider_revision: revision,
-        };
-        const document: FileAuthorityStoreDocument = {
-          schema_version: FILE_AUTHORITY_STORE_SCHEMA,
-          goal_id: this.goalId,
-          store_identity: identity,
-          provider_revision: revision,
-          cursor,
-          head: normalized.next_projection,
-          committed: [...(current?.committed ?? []), transaction],
-        };
+        const journal = appendRetainedAuthorityJournal(current, normalized, (previous, transaction) =>
+          providerRevision(this.goalId, identity, previous, transaction));
+        const {cursor, provider_revision: revision} = journal;
+        const document: FileAuthorityStoreDocument = {schema_version: FILE_AUTHORITY_STORE_SCHEMA,
+          goal_id: this.goalId, store_identity: identity, ...journal};
         try {
-          await this.replaceDurably(this.path, canonicalAuthorityBytes(document));
+          const bytes = canonicalAuthorityBytes(document);
+          await this.replaceDurably(this.path, bytes);
+          rememberVerifiedDocument(this.path, identity, bytes, documentDigest(bytes), document);
         } catch (error) {
+          // A failure after rename may already have published the new bytes.
+          // The next read must prove the actual file rather than reuse either
+          // the previous or attempted document.
+          verifiedDocument = null;
           return {
             status: "ambiguous",
             reason_code: "commit_outcome_unknown",
@@ -468,43 +410,16 @@ export class FileAuthorityStore implements AuthorityStore {
   }
 
   async scanCommitted(afterCursor: string | null, limit: number): Promise<AuthorityStoreScanResult> {
-    let offset: bigint;
-    try {
-      offset = parseAuthorityCursor(afterCursor);
-      if (!Number.isSafeInteger(limit) || limit < 1) {
-        throw new AuthorityStoreProtocolError("scan limit must be a positive safe integer");
-      }
-    } catch (error) {
-      return {
-        status: "failed",
-        reason_code: "invalid_scan_request",
-        reason: error instanceof Error ? error.message : "invalid scan request",
-      };
-    }
+    const scan = AuthorityJournalScan.prepare(afterCursor, limit);
+    if (!(scan instanceof AuthorityJournalScan)) return scan;
     try {
       const document = await this.readDocument();
-      if (!document) {
-        return { status: "page", transactions: [], next_cursor: afterCursor, has_more: false };
-      }
-      const headCursor = parseAuthorityCursor(document.cursor);
-      if (offset > headCursor || offset > BigInt(Number.MAX_SAFE_INTEGER)) {
-        return {
-          status: "failed",
-          reason_code: "scan_cursor_out_of_range",
-          reason: "scan cursor is ahead of the provider head",
-        };
-      }
-      const start = Number(offset);
-      const transactions = document.committed.slice(start, start + limit).map(cloneTransaction);
-      return {
-        status: "page",
-        transactions,
-        next_cursor: transactions.at(-1)?.cursor ?? afterCursor,
-        has_more: start + transactions.length < document.committed.length,
-      };
-    } catch (error) {
-      return readFailure(error);
-    }
+      if (!document) return scan.page([], null);
+      const range = scan.rangeFailure(document.cursor);
+      if (range) return range;
+      const start = Number(scan.offset);
+      return scan.page(document.committed.slice(start, start + limit + 1), document);
+    } catch (error) { return readFailure(error); }
   }
 
   /**

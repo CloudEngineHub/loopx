@@ -89,7 +89,7 @@ def _run_traex_exec(
         cwd=cwd,
         check=False,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         timeout=timeout_seconds,
     )
     if result.returncode != 0:
@@ -282,7 +282,7 @@ class GitWorkspaceObserver:
             cwd=cwd,
             check=False,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
         )
         if probe.returncode != 0 or probe.stdout.strip() != "true":
             raise TraexPlannerWorkerError("planner-worker workspace must be a git worktree")

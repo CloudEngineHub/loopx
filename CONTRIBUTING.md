@@ -79,26 +79,20 @@ Before adding or consolidating a public smoke, use the bilingual
 [good smoke guide](docs/development/good-smokes.md) to define its durable
 invariant, independent oracle, cadence, and public-safe fixture boundary.
 
-Install and verify the checkout:
+For source development, run commands from the repository or dedicated worktree
+root with `uv`. It manages a compatible Python and installs the current checkout
+in the project environment, keeping checks separate from a globally installed
+LoopX release. See the [local validation commands](docs/development/testing-and-quality.md#local-validation-environment--本地验证环境)
+for environment, lockfile, and CI boundaries.
 
 ```bash
-git clone https://github.com/huangruiteng/loopx ~/loopx
-~/loopx/scripts/install-local.sh
-export PATH="$HOME/.local/bin:$PATH"
-loopx doctor
-loopx demo
-```
-
-Common focused checks:
-
-```bash
-python -m pip install -e ".[test]"
-python -m ruff check tests loopx/canary loopx/control_plane loopx/domain_packs loopx/presentation
-python -m mypy
-python examples/control_plane/cli-output-budget-regression-smoke.py
-python -m pytest -q
-loopx canary premerge --from-git-diff
-loopx check --scan-path loopx/ --scan-path tests/ --scan-path examples/ --scan-path docs/
+uv sync --extra test
+uv run --extra test python -m ruff check tests loopx/canary loopx/control_plane loopx/domain_packs loopx/presentation
+uv run --extra test python -m mypy
+uv run --extra test python examples/control_plane/cli-output-budget-regression-smoke.py
+uv run --extra test python -m pytest -q
+uv run --extra test loopx canary premerge --from-git-diff
+uv run --extra test loopx check --scan-path loopx/ --scan-path tests/ --scan-path examples/ --scan-path docs/
 git diff --check
 ```
 
@@ -236,12 +230,26 @@ npm run smoke:demo-readiness
 Before opening a pull request:
 
 - link the issue or task ID when one exists;
-- describe the behavior change and the validation you ran;
+- state the requested outcome, current gap and observable before/after result;
+- distinguish completion of the scoped task from a justified increment; for an
+  increment, name the remaining gap, next owner/dependency and why the boundary
+  is independently testable and reversible;
+- link decisive validation to that outcome, including relevant user-entrypoint
+  readback and failure/recovery cases;
 - keep unrelated formatting or refactors out of the PR;
 - include docs or tests when changing user-visible behavior;
 - confirm that no private/local runtime state was committed.
 
-Maintainers may ask for a smaller PR if the change mixes unrelated concerns.
+Use the [overall roadmap](docs/architecture/rfcs/loopx-overall-roadmap-v0.md) for
+cross-cutting work, without inventing roadmap ids for ordinary fixes. Existing
+issues and canonical Todos own execution; update them instead of duplicating
+follow-up work. A completed task needs no invented successor. Prerequisites,
+research, docs and maintenance can be useful delivered outcomes. A schema,
+message, mock or passing suite alone does not complete a promised user journey.
+
+Maintainers may request consolidation when a useful outcome was unnecessarily
+split, or a smaller PR when unrelated concerns were mixed. Review evaluates the
+verified goal delta and evidence, not minimum size, model identity or PR count.
 
 ### Validation disclosure
 

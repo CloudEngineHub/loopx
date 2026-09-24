@@ -18,7 +18,8 @@ export const AUTHORITY_STORE_REQUIRED_GUARANTEES = [
 export type AuthorityStoreRequiredGuarantee =
   (typeof AUTHORITY_STORE_REQUIRED_GUARANTEES)[number];
 
-export type AuthorityStoreProviderKind = "file" | "nokv" | "postgresql";
+export type AuthorityStoreProviderKind = "file" | "nokv" | "postgresql" | "sqlite";
+export type AuthorityStoreSourceAuthority = `${AuthorityStoreProviderKind}_v0`;
 export type AuthorityStoreProviderStage =
   | "stage1_implemented"
   | "stage2a_candidate"
@@ -39,6 +40,15 @@ export interface AuthorityStoreProviderProfile {
  * failure or transaction models into a fictional universal database.
  */
 export const AUTHORITY_STORE_PROVIDER_PROFILES = {
+  sqlite: {
+    stage: "stage2b_candidate",
+    revision_primitive: "database_incarnation_and_locked_sequence",
+    atomic_commit_mapping: "sqlite_transaction_over_head_and_commit_outbox",
+    receipt_and_cursor_mapping: "unique_operation_index_and_integer_cursor",
+    store_lineage_mapping: "persistent_database_incarnation",
+    trust_boundary: "trusted_local_process_and_private_directory",
+    qualification_holds: ["ten_day_soak", "retention_and_compaction", "authority_source_promotion"],
+  },
   file: {
     stage: "stage1_implemented",
     revision_primitive: "locked_document_revision_chain",
@@ -157,9 +167,21 @@ export type AuthorityStoreScanResult =
 
 /** Storage-only seam. Legal transitions and receipt meaning stay in LoopX. */
 export interface AuthorityStore {
+  /**
+   * Provider identity is observability metadata, not a semantic authority.
+   * Optional keeps third-party/test stores source-compatible while built-in
+   * providers expose an unambiguous runtime label.
+   */
+  readonly providerKind?: AuthorityStoreProviderKind;
   storeIdentity(): Promise<AuthorityStoreIdentityResult>;
   loadAuthority(): Promise<AuthorityStoreLoadResult>;
   commitAuthority(commit: AuthorityStoreCommit): Promise<AuthorityStoreCommitResult>;
   readReceipt(operationId: string): Promise<AuthorityStoreReceiptResult>;
   scanCommitted(afterCursor: string | null, limit: number): Promise<AuthorityStoreScanResult>;
+}
+
+/** Map a storage implementation to the public source label used by adapters. */
+export function authorityStoreSourceAuthority(store: AuthorityStore): AuthorityStoreSourceAuthority {
+  const kind = store.providerKind ?? "file";
+  return `${kind}_v0`;
 }

@@ -54,6 +54,7 @@ def _receipt_row(
     measurement: dict,
     text: str,
     variant_id: str | None = None,
+    output_contract_version: str | None = None,
 ) -> dict:
     payload = measurement.get("payload")
     return {
@@ -63,6 +64,7 @@ def _receipt_row(
         "scenario": scenario,
         "format": output_format,
         "qualification_policy": qualification_policy,
+        "output_contract_version": output_contract_version,
         "chars": measurement["chars"],
         "utf8_bytes": measurement["utf8_bytes"],
         "lines": measurement["lines"],
@@ -102,18 +104,56 @@ def _receipt_row(
         "runtime_root_command_route_count": (
             semantics.runtime_root_command_route_count(text)
         ),
+        "host_prompt_static_safety_revision": semantics.host_prompt_static_safety_revision(text),
+        "reward_memory_outcome_prompt_revision": (
+            semantics.reward_memory_outcome_prompt_revision(text)
+        ),
+        "managed_executor_binding_revision": (
+            semantics.managed_executor_binding_revision(text)
+        ),
         "guided_todo_delta_schema_versions": (
             semantics.guided_todo_delta_schema_versions(payload)
+            if isinstance(payload, dict)
+            else []
+        ),
+        "todo_work_counts_schema_versions": (
+            semantics.todo_work_counts_schema_versions(payload)
             if isinstance(payload, dict)
             else []
         ),
     }
 
 
+def _assert_output_contract(
+    *,
+    output_format: str,
+    text: str,
+    measurement: dict,
+    semantic_json_keys: tuple[str, ...],
+    markdown_anchor: str | None,
+) -> None:
+    """Validate shape while allowing a red base to remain measurable."""
+
+    if output_format == "markdown":
+        if markdown_anchor and markdown_anchor not in text:
+            raise AssertionError(
+                f"markdown output lost semantic anchor {markdown_anchor!r}"
+            )
+        return
+    payload = measurement.get("payload")
+    if not isinstance(payload, dict):
+        raise AssertionError("JSON output did not emit an object")
+    missing = [key for key in semantic_json_keys if key not in payload]
+    if missing:
+        raise AssertionError(f"JSON output lost semantic key(s): {', '.join(missing)}")
+
+
 def _default_rows(
     probe: ModuleType,
     semantics: ModuleType,
     fixture_root: Path,
+    *,
+    enforce_budget: bool = True,
 ) -> list[dict]:
     rows: list[dict] = []
     for scenario in probe.SCENARIOS:
@@ -137,13 +177,22 @@ def _default_rows(
                     text, output_format=output_format
                 )
                 surface = probe.CLI_OUTPUT_BUDGET_BY_ID[surface_id]
-                probe.assert_cli_output_baseline(
-                    surface,
-                    scenario=scenario.name,
-                    output_format=output_format,
-                    text=text,
-                    measurement=measurement,
-                )
+                if enforce_budget:
+                    probe.assert_cli_output_baseline(
+                        surface,
+                        scenario=scenario.name,
+                        output_format=output_format,
+                        text=text,
+                        measurement=measurement,
+                    )
+                else:
+                    _assert_output_contract(
+                        output_format=output_format,
+                        text=text,
+                        measurement=measurement,
+                        semantic_json_keys=surface.semantic_json_keys,
+                        markdown_anchor=surface.markdown_anchor,
+                    )
                 rows.append(
                     _receipt_row(
                         semantics=semantics,
@@ -156,6 +205,11 @@ def _default_rows(
                         markdown_anchor=surface.markdown_anchor,
                         measurement=measurement,
                         text=text,
+                        output_contract_version=(
+                            getattr(surface, "output_contract_version", None)
+                            if output_format == "json"
+                            else None
+                        ),
                     )
                 )
     return rows
@@ -165,6 +219,8 @@ def _variant_rows(
     probe: ModuleType,
     semantics: ModuleType,
     fixture_root: Path,
+    *,
+    enforce_budget: bool = True,
 ) -> list[dict]:
     project, runtime, registry_path, state_file = probe._write_fixture(
         fixture_root / "mode_variants",
@@ -191,12 +247,21 @@ def _variant_rows(
             if exit_code != 0:
                 raise AssertionError(f"{variant_id}/{output_format} failed")
             measurement = probe.measure_cli_output(text, output_format=output_format)
-            probe.assert_cli_output_mode_variant(
-                variant,
-                output_format=output_format,
-                text=text,
-                measurement=measurement,
-            )
+            if enforce_budget:
+                probe.assert_cli_output_mode_variant(
+                    variant,
+                    output_format=output_format,
+                    text=text,
+                    measurement=measurement,
+                )
+            else:
+                _assert_output_contract(
+                    output_format=output_format,
+                    text=text,
+                    measurement=measurement,
+                    semantic_json_keys=variant.semantic_json_keys,
+                    markdown_anchor=variant.markdown_anchor,
+                )
             rows.append(
                 _receipt_row(
                     semantics=semantics,
@@ -219,6 +284,8 @@ def _blocking_gate_rows(
     probe: ModuleType,
     semantics: ModuleType,
     fixture_root: Path,
+    *,
+    enforce_budget: bool = True,
 ) -> list[dict]:
     project, runtime, registry_path, state_file = probe._write_fixture(
         fixture_root / "blocking_user_gate",
@@ -247,12 +314,21 @@ def _blocking_gate_rows(
     variant = probe.CLI_OUTPUT_MODE_VARIANT_BY_ID[
         "quota_should_run_turn_envelope"
     ]
-    probe.assert_cli_output_mode_variant(
-        variant,
-        output_format="json",
-        text=output,
-        measurement=measurement,
-    )
+    if enforce_budget:
+        probe.assert_cli_output_mode_variant(
+            variant,
+            output_format="json",
+            text=output,
+            measurement=measurement,
+        )
+    else:
+        _assert_output_contract(
+            output_format="json",
+            text=output,
+            measurement=measurement,
+            semantic_json_keys=variant.semantic_json_keys,
+            markdown_anchor=variant.markdown_anchor,
+        )
     return [
         _receipt_row(
             semantics=semantics,
@@ -273,12 +349,60 @@ def _blocking_gate_rows(
     ]
 
 
+
+def _multi_subagent_rows(probe, semantics, fixture_root, *, enforce_budget=True):
+    """Run the same enabled public fixture on base and head, not default-off only."""
+    project, runtime, registry_path, state_file = probe._write_fixture(
+        fixture_root / "multi_subagent_enabled", probe.SCENARIOS[0]
+    )
+    registry = json.loads(registry_path.read_text())
+    registry["goals"][0]["spawn_policy"] = {
+        "mode": "multi_subagent", "spawn_allowed": True, "max_children": 4,
+        "model_config": {"model": "example-small", "reasoning_effort": "max"},
+    }
+    registry_path.write_text(json.dumps(registry))
+    variant_id = "quota_should_run_turn_envelope"
+    command = probe._mode_variant_commands(
+        project=project, runtime=runtime, registry_path=registry_path,
+        state_file=state_file, output_format="json",
+    )[variant_id]
+    exit_code, output = probe._invoke_cli(command)
+    if exit_code != 0:
+        raise AssertionError("enabled multi_subagent turn envelope failed")
+    measurement = probe.measure_cli_output(output, output_format="json")
+    variant = probe.CLI_OUTPUT_MODE_VARIANT_BY_ID[variant_id]
+    if enforce_budget:
+        probe.assert_cli_output_mode_variant(
+            variant, output_format="json", text=output, measurement=measurement,
+        )
+    else:
+        _assert_output_contract(
+            output_format="json", text=output, measurement=measurement,
+            semantic_json_keys=variant.semantic_json_keys,
+            markdown_anchor=variant.markdown_anchor,
+        )
+    return [_receipt_row(
+        semantics=semantics,
+        row_id="variant/quota_should_run_turn_envelope_multi_subagent/small/json",
+        surface_id=variant.parent_surface_id,
+        variant_id="quota_should_run_turn_envelope_multi_subagent", scenario="small",
+        output_format="json", qualification_policy="explicit_opt_in_cold_path",
+        semantic_json_keys=variant.semantic_json_keys, markdown_anchor=variant.markdown_anchor,
+        measurement=measurement, text=output,
+    )]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--test-source", type=Path, required=True)
     parser.add_argument("--semantics-source", type=Path, required=True)
     parser.add_argument("--fixture-root", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
+    parser.add_argument(
+        "--measurement-only",
+        action="store_true",
+        help="measure a historical base without requiring its retired ceilings to pass",
+    )
     args = parser.parse_args()
     _install_pytest_import_stub()
     probe = _load_module("loopx_cli_output_probe_fixture", args.test_source)
@@ -288,9 +412,22 @@ def main() -> int:
     args.fixture_root.mkdir(parents=True)
     with probe._stable_budget_fixture_root(args.fixture_root) as stable_root:
         rows = [
-            *_default_rows(probe, semantics, stable_root),
-            *_variant_rows(probe, semantics, stable_root),
-            *_blocking_gate_rows(probe, semantics, stable_root),
+            *_default_rows(
+                probe, semantics, stable_root,
+                enforce_budget=not args.measurement_only,
+            ),
+            *_variant_rows(
+                probe, semantics, stable_root,
+                enforce_budget=not args.measurement_only,
+            ),
+            *_blocking_gate_rows(
+                probe, semantics, stable_root,
+                enforce_budget=not args.measurement_only,
+            ),
+            *_multi_subagent_rows(
+                probe, semantics, stable_root,
+                enforce_budget=not args.measurement_only,
+            ),
         ]
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     args.receipt.write_text(

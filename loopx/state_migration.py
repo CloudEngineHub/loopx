@@ -9,9 +9,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .registry import atomic_write_json as write_json, find_registry_goal
+from .registry import find_registry_goal
 from .file_lock import exclusive_cross_runtime_file_lock
 from .paths import resolve_runtime_root
+from .control_plane.projects.registry_codec import (
+    ProjectRegistryTransaction,
+    load_project_registry,
+    project_registry_transaction,
+    require_runtime_compatible_project_registry,
+)
 from .control_plane.todos.active_state_editing import atomic_write_state_text
 from .control_plane.coordination.legacy_writer_fence import legacy_coordination_todo_lock_path, require_legacy_state_replacement_allowed
 from .control_plane.work_items.task_lease import task_lease_lock_path
@@ -345,10 +351,30 @@ def migrate_legacy_state(
         raise FileNotFoundError(f"legacy registry does not exist: {legacy_registry_path}")
 
     with ExitStack() as locks:
+        target_transaction: ProjectRegistryTransaction | None = None
         if execute:
             for path in sorted({legacy_registry_path.resolve(), target_registry_path.resolve()}, key=str):
-                locks.enter_context(exclusive_cross_runtime_file_lock(path, operation="state_migration_registry"))
-        source_registry = read_json_object(legacy_registry_path)
+                if path == target_registry_path.resolve():
+                    target_transaction = locks.enter_context(
+                        project_registry_transaction(
+                            path,
+                            operation="state_migration_registry",
+                            create=dict,
+                        )
+                    )
+                else:
+                    locks.enter_context(
+                        exclusive_cross_runtime_file_lock(
+                            path,
+                            operation="state_migration_registry",
+                        )
+                    )
+        source_registry = (
+            target_transaction.payload_copy()
+            if target_transaction is not None
+            and legacy_registry_path.resolve() == target_registry_path.resolve()
+            else read_json_object(legacy_registry_path)
+        )
         source_by_id = {str(goal.get("id")): goal for goal in registry_goals(source_registry)}
         missing = [goal_id for goal_id in goal_ids if goal_id not in source_by_id]
         if missing:
@@ -363,7 +389,29 @@ def migrate_legacy_state(
             migrated["id"] = goal_id_map.get(old_goal_id, str(migrated.get("id") or old_goal_id))
             selected_pairs.append((source_goal, project_local_goal(migrated)))
 
-        existing_registry = read_json_object(target_registry_path) if target_registry_path.exists() else {}
+        source_by_target_id: dict[str, str] = {}
+        for source_goal, target_goal in selected_pairs:
+            source_id = str(source_goal["id"])
+            target_id = str(target_goal["id"])
+            prior_source_id = source_by_target_id.get(target_id)
+            if prior_source_id is not None:
+                raise ValueError(
+                    f"{prior_source_id} and {source_id} map to the same target "
+                    f"goal id: {target_id}"
+                )
+            source_by_target_id[target_id] = source_id
+
+        existing_registry = (
+            target_transaction.payload_copy()
+            if target_transaction is not None
+            else load_project_registry(target_registry_path)
+            if target_registry_path.exists()
+            else {}
+        )
+        require_runtime_compatible_project_registry(
+            existing_registry,
+            operation="state migration",
+        )
         existing_goals = existing_registry.get("goals")
         if not isinstance(existing_goals, list):
             existing_goals = []
@@ -424,7 +472,11 @@ def migrate_legacy_state(
         )
 
         if execute:
-            write_json(target_registry_path, target_payload)
+            if target_transaction is None:
+                raise RuntimeError(
+                    "state migration target requires a registry transaction"
+                )
+            target_transaction.commit(target_payload)
 
         authority_shadow_seeds = seed_migrated_authority_shadows(
             goals=incoming_goals,

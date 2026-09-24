@@ -34,7 +34,9 @@ from .control_plane.quota.policy_constants import (
 from .control_plane.quota.monitor_poll import (
     QUOTA_MONITOR_POLL_CLASSIFICATION as QUOTA_MONITOR_POLL_CLASSIFICATION,
     build_quota_monitor_poll_event as build_quota_monitor_poll_event,
+    find_quota_monitor_poll_turn,
     record_quota_monitor_poll_for_decision,
+    resolve_due_monitor_candidate,
 )
 from .control_plane.quota.recent_runs import (
     goal_latest_run as _goal_latest_run,
@@ -61,7 +63,8 @@ from .control_plane.quota.slot_accounting import (
     QUOTA_SLOT_VOIDED_CLASSIFICATION,
     build_quota_slot_preview_for_decision,
     build_quota_slot_spend_event as _build_quota_slot_spend_event,
-    load_quota_event_from_run,
+    net_quota_slot_spend,
+    quota_slot_contribution,
     record_quota_slot_spend_from_preview,
 )
 from .control_plane.quota.spend_commit import replay_quota_spend_by_effect_ref
@@ -95,10 +98,12 @@ from .control_plane.scheduler.state import (
     CODEX_APP_SURFACE,
 )
 from .control_plane.todos.contract import (
+    TODO_TASK_CLASS_ADVANCEMENT,
+    TODO_TASK_CLASS_MONITOR,
     normalize_todo_claimed_by,
     normalize_todo_id,
 )
-from .control_plane.todos.projection import (
+from .control_plane.todos.todo_semantics import (
     todo_index_rank as projection_todo_index_rank,
     todo_item_expires_at as projection_todo_item_expires_at,
     todo_item_is_due_monitor as projection_todo_item_is_due_monitor,
@@ -352,10 +357,6 @@ def goal_quota_config(goal: dict[str, Any] | None) -> dict[str, Any]:
     return payload
 
 
-def _quota_event_run_key(run: dict[str, Any], event: dict[str, Any]) -> str:
-    return str(event.get("run_generated_at") or run.get("generated_at") or "")
-
-
 def goal_quota_with_spend_ledger(
     goal: dict[str, Any] | None,
     runs: list[dict[str, Any]],
@@ -368,8 +369,7 @@ def goal_quota_with_spend_ledger(
     if current_time.tzinfo is None:
         current_time = current_time.replace(tzinfo=timezone.utc)
     window_start = current_time - timedelta(hours=int(payload["window_hours"]))
-    spent_by_run: dict[str, int] = {}
-    voided_by_run: dict[str, int] = {}
+    contributions: list[tuple[str, str, int]] = []
     spend_event_count = 0
     void_event_count = 0
 
@@ -385,32 +385,17 @@ def goal_quota_with_spend_ledger(
             or generated_at > current_time
         ):
             continue
-        event = load_quota_event_from_run(run)
-        if not event:
+        contribution = quota_slot_contribution(run)
+        if contribution is None:
             continue
-        event_type = str(event.get("event_type") or "")
-        slots = max(0, _int_number(event.get("slots"), default=0))
-        if slots <= 0:
-            continue
-        if event_type == QUOTA_SLOT_SPENT_CLASSIFICATION:
-            run_key = _quota_event_run_key(run, event)
-            if not run_key:
-                continue
-            spent_by_run[run_key] = spent_by_run.get(run_key, 0) + slots
+        kind, run_key, slots = contribution
+        contributions.append((run_key, kind, slots))
+        if kind == "spent":
             spend_event_count += 1
-        elif event_type == QUOTA_SLOT_VOIDED_CLASSIFICATION:
-            voided_run_generated_at = str(event.get("voided_run_generated_at") or "")
-            if not voided_run_generated_at:
-                continue
-            voided_by_run[voided_run_generated_at] = (
-                voided_by_run.get(voided_run_generated_at, 0) + slots
-            )
+        else:
             void_event_count += 1
 
-    spent_slots = 0
-    for run_key, slots in spent_by_run.items():
-        spent_slots += max(0, slots - voided_by_run.get(run_key, 0))
-    payload["spent_slots"] = spent_slots
+    payload["spent_slots"] = sum(net_quota_slot_spend(contributions).values())
     payload["spend_source"] = "runtime_events"
     payload["spend_event_count"] = spend_event_count
     if void_event_count:
@@ -911,6 +896,29 @@ def build_quota_should_run(
     )
 
 
+def _quota_spend_index_basis(
+    status_payload: Mapping[str, Any],
+    *,
+    goal_id: str,
+) -> tuple[bool, str | None]:
+    run_history = status_payload.get("run_history")
+    if not isinstance(run_history, Mapping):
+        return False, None
+    goals = run_history.get("goals")
+    if not isinstance(goals, list):
+        return False, None
+    for goal in goals:
+        if not isinstance(goal, Mapping) or str(goal.get("id") or "") != goal_id:
+            continue
+        if "index_digest" not in goal:
+            return False, None
+        digest = goal.get("index_digest")
+        if digest is not None and not isinstance(digest, str):
+            raise ValueError("quota status index digest must be a string or null")
+        return True, digest
+    return False, None
+
+
 def build_quota_slot_preview(
     status_payload: dict[str, Any],
     *,
@@ -929,7 +937,11 @@ def build_quota_slot_preview(
     effect_ref: str | None = None,
     source: str = DEFAULT_SLOT_SPEND_SOURCE,
 ) -> dict[str, Any]:
-    safe_goal_id = str(goal_id or "").strip()
+    safe_goal_id = _validate_goal_id_path_segment(str(goal_id or ""))
+    basis_available, expected_index_digest = _quota_spend_index_basis(
+        status_payload,
+        goal_id=safe_goal_id,
+    )
     before = build_quota_should_run(
         status_payload,
         goal_id=safe_goal_id,
@@ -960,6 +972,8 @@ def build_quota_slot_preview(
         turn_instance_id=turn_instance_id,
         source=source,
     )
+    if preview.get("ok") and basis_available:
+        preview["expected_index_digest"] = expected_index_digest
     if not effect_ref:
         return preview
     return {**preview, "effect_ref": str(effect_ref).strip()}
@@ -1061,6 +1075,8 @@ def record_quota_monitor_poll(
     next_user_todo: str | None = None,
     next_user_task_class: str | None = None,
     next_claimed_by: str | None = None,
+    task_lease_idempotency_key: str | None = None,
+    task_lease_expected_version: int | None = None,
     turn_instance_id: str | None = None,
     receipt_bound_todo_id: str | None = None,
     scheduler_execution_context: Mapping[str, Any]
@@ -1077,17 +1093,22 @@ def record_quota_monitor_poll(
     normalized_receipt_todo_id = (
         normalize_todo_id(receipt_bound_todo_id) if receipt_bound_todo_id else None
     )
-    if (
-        normalized_receipt_todo_id
-        and normalized_requested_todo_id
-        and normalized_requested_todo_id != normalized_receipt_todo_id
-    ):
-        raise HeartbeatReceiptIdentityConflictError(
-            "turn-scoped monitor-poll Todo conflicts with the committed "
-            "heartbeat receipt: expected "
-            f"{normalized_receipt_todo_id}, requested {normalized_requested_todo_id}"
-        )
-    effective_todo_id = normalized_requested_todo_id or normalized_receipt_todo_id
+    raw_runtime_root = status_payload.get("runtime_root")
+    runtime_root = (
+        Path(str(raw_runtime_root)).expanduser() if raw_runtime_root else None
+    )
+    resolved_monitor = resolve_due_monitor_candidate(
+        registry_path=registry_path,
+        runtime_root=runtime_root,
+        goal_id=safe_goal_id,
+        todo_id=normalized_requested_todo_id,
+        target_key=target_key,
+    )
+    normalized_observation_todo_id = normalized_requested_todo_id or (
+        normalize_todo_id(resolved_monitor.get("todo_id"))
+        if resolved_monitor
+        else None
+    )
 
     def should_run(current_status: dict[str, Any]) -> dict[str, Any]:
         decision_status = current_status
@@ -1116,6 +1137,86 @@ def record_quota_monitor_poll(
         )
 
     before = should_run(status_payload)
+    if (
+        normalized_receipt_todo_id
+        and normalized_observation_todo_id
+        and normalized_observation_todo_id != normalized_receipt_todo_id
+    ):
+        selected = (
+            before.get("selected_todo")
+            if isinstance(before.get("selected_todo"), Mapping)
+            else {}
+        )
+        lane = (
+            before.get("work_lane_contract")
+            if isinstance(before.get("work_lane_contract"), Mapping)
+            else {}
+        )
+        summary = (
+            before.get("agent_todo_summary")
+            if isinstance(before.get("agent_todo_summary"), Mapping)
+            else {}
+        )
+        candidate_values = [
+            *(lane.get("monitor_due_items") or []),
+            *(summary.get("monitor_due_items") or []),
+        ]
+        normalized_agent_id = normalize_todo_claimed_by(agent_id)
+        auxiliary_due_monitor = any(
+            isinstance(candidate, Mapping)
+            and normalize_todo_id(candidate.get("todo_id"))
+            == normalized_observation_todo_id
+            and candidate.get("task_class") == TODO_TASK_CLASS_MONITOR
+            and normalize_todo_claimed_by(candidate.get("claimed_by"))
+            in {None, normalized_agent_id}
+            for candidate in candidate_values
+        )
+        auxiliary_registry_due = bool(
+            resolved_monitor
+            and normalize_todo_claimed_by(resolved_monitor.get("claimed_by"))
+            in {None, normalized_agent_id}
+        )
+        existing_observation = (
+            find_quota_monitor_poll_turn(
+                Path(str(raw_runtime_root)).expanduser(),
+                goal_id=safe_goal_id,
+                agent_id=normalized_agent_id or "",
+                turn_instance_id=str(turn_instance_id or ""),
+                todo_id=normalized_observation_todo_id,
+            )
+            if raw_runtime_root and agent_id and turn_instance_id
+            else None
+        )
+        auxiliary_replay = bool(
+            isinstance(existing_observation, Mapping)
+            and normalize_todo_id(existing_observation.get("todo_id"))
+            == normalized_observation_todo_id
+            and normalize_todo_id(
+                existing_observation.get("settlement_todo_id")
+            )
+            == normalized_receipt_todo_id
+        )
+        auxiliary_observation_allowed = bool(
+            normalize_todo_id(selected.get("todo_id"))
+            == normalized_receipt_todo_id
+            and selected.get("task_class") == TODO_TASK_CLASS_ADVANCEMENT
+            and selected.get("selection_binding") == "heartbeat_receipt"
+            and (
+                auxiliary_due_monitor
+                or auxiliary_registry_due
+                or auxiliary_replay
+            )
+        )
+        if not auxiliary_observation_allowed:
+            raise HeartbeatReceiptIdentityConflictError(
+                "turn-scoped monitor-poll Todo conflicts with the committed "
+                "heartbeat receipt: expected settlement Todo "
+                f"{normalized_receipt_todo_id}, requested observation Todo "
+                f"{normalized_observation_todo_id}"
+            )
+    effective_todo_id = normalized_observation_todo_id or (
+        normalized_receipt_todo_id if not target_key else None
+    )
     return record_quota_monitor_poll_for_decision(
         before,
         status_payload,
@@ -1127,6 +1228,7 @@ def record_quota_monitor_poll(
         source=source,
         reason_summary=reason_summary,
         agent_id=agent_id,
+        settlement_todo_id=normalized_receipt_todo_id,
         todo_id=effective_todo_id,
         target_key=target_key,
         result_hash=result_hash,
@@ -1142,6 +1244,8 @@ def record_quota_monitor_poll(
         next_user_todo=next_user_todo,
         next_user_task_class=next_user_task_class,
         next_claimed_by=next_claimed_by,
+        task_lease_idempotency_key=task_lease_idempotency_key,
+        task_lease_expected_version=task_lease_expected_version,
         turn_instance_id=turn_instance_id,
         status_reloader=status_reloader,
     )

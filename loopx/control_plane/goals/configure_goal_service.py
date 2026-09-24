@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from ...configuration_transaction import goal_capability_configuration_revision
+from ...agent_registry import registered_agent_ids_for_goal
+from ...configuration_transaction import (
+    configuration_payload_revision,
+    goal_capability_configuration_revision,
+)
 from ...configure_goal import configure_goal
-from ...file_lock import exclusive_file_lock
 from ...global_registry import (
     sanitize_goal_for_global,
     sync_project_registry_to_global,
@@ -16,8 +20,13 @@ from ...history import load_registry
 from ...paths import global_registry_path, resolve_runtime_root
 from ...registry import registry_goals
 from ...registry_writability import probe_registry_write_path
+from ..projects.registry_codec import (
+    ProjectRegistryTransaction,
+    project_registry_transaction,
+)
 from ..runtime.runtime_projection_route import (
     compact_runtime_projection_route,
+    resolve_goal_source_runtime_route,
     resolve_runtime_projection_route,
 )
 
@@ -44,6 +53,107 @@ def _goal(payload: dict[str, Any], goal_id: str) -> dict[str, Any] | None:
         ),
         None,
     )
+
+
+def _resolve_authoritative_source_registry(
+    *, registry_path: Path, goal_id: str
+) -> Path:
+    """Resolve a goal write to its project registry.
+
+    The shared registry is a read model. A caller may still provide its path
+    when a Dashboard or CLI process is configured against the shared runtime,
+    so route that request before previewing, locking, or applying the Goal.
+    ``runtime_root_override`` is deliberately absent here: that option chooses
+    the projection target and must not change source authority.
+    """
+
+    invoked_registry = registry_path.expanduser().resolve()
+    route = resolve_goal_source_runtime_route(
+        registry_path=invoked_registry,
+        goal_id=goal_id,
+    )
+    source_text = str(route.get("source_registry") or "").strip()
+    if not source_text:
+        raise ValueError(
+            f"goal {goal_id!r} source registry route did not resolve; refusing to configure"
+        )
+    return Path(source_text).expanduser().resolve()
+
+
+def read_goal_configuration_with_source_route(
+    *, registry_path: Path, goal_id: str, execute: bool = False
+) -> dict[str, Any]:
+    """Read Goal configuration from the canonical source registry.
+
+    ``execute`` is accepted to preserve the shared reader callable shape; a
+    read route never performs a write.
+    """
+
+    if execute:
+        raise ValueError("Goal configuration reads cannot execute a write")
+    source_registry_path = _resolve_authoritative_source_registry(
+        registry_path=registry_path,
+        goal_id=goal_id,
+    )
+    return configure_goal(
+        registry_path=source_registry_path,
+        goal_id=goal_id,
+        execute=False,
+    )
+
+
+def _goal_agent_binding_revision(
+    *,
+    goal_id: str,
+    source_registry: Path,
+    registered_agents: list[str],
+) -> str:
+    return configuration_payload_revision(
+        {
+            "goal_id": goal_id,
+            "source_registry": str(source_registry.expanduser().resolve()),
+            "registered_agents": registered_agents,
+        }
+    )
+
+
+def goal_agent_binding_revision(
+    goal_id: str,
+    goal: dict[str, Any],
+    *,
+    source_registry: Path,
+) -> str:
+    """Revision the canonical source identity and its Agent peer set."""
+
+    return _goal_agent_binding_revision(
+        goal_id=goal_id,
+        source_registry=source_registry,
+        registered_agents=registered_agent_ids_for_goal(goal),
+    )
+
+
+def read_goal_agent_binding_with_source_route(
+    *, registry_path: Path, goal_id: str
+) -> dict[str, Any]:
+    """Read the Agent binding state from the canonical source registry."""
+
+    source_registry_path = _resolve_authoritative_source_registry(
+        registry_path=registry_path,
+        goal_id=goal_id,
+    )
+    source_goal = _goal(load_registry(source_registry_path), goal_id)
+    if source_goal is None:
+        raise ValueError(f"goal id not found in source registry: {goal_id}")
+    return {
+        "ok": True,
+        "goal_id": goal_id,
+        "registered_agents": registered_agent_ids_for_goal(source_goal),
+        "revision": goal_agent_binding_revision(
+            goal_id,
+            source_goal,
+            source_registry=source_registry_path,
+        ),
+    }
 
 
 def _digest(value: Any) -> str:
@@ -233,6 +343,8 @@ def _configure_goal_with_global_sync_unlocked(
     goal_id: str,
     runtime_root_override: str | None,
     execute: bool,
+    registry_transaction: ProjectRegistryTransaction | None = None,
+    sync_if_unchanged: bool = False,
     **configure_options: Any,
 ) -> dict[str, Any]:
     """Configure one source goal and keep its authoritative shared read model current."""
@@ -241,31 +353,34 @@ def _configure_goal_with_global_sync_unlocked(
         registry_path=registry_path,
         goal_id=goal_id,
         execute=False,
+        _registry_transaction=registry_transaction,
         **configure_options,
     )
     changed = bool(preview.get("changed"))
+    sync_required = changed or sync_if_unchanged
     target_resolution = (
         resolve_configure_goal_sync_target(
             registry_path=registry_path,
             goal_id=goal_id,
             runtime_root_override=runtime_root_override,
         )
-        if changed
+        if sync_required
         else None
     )
     preview["global_sync"] = _sync_plan(
-        changed=changed,
+        changed=sync_required,
         target_resolution=target_resolution,
         execute=execute,
     )
     if not execute:
         return preview
 
-    if not changed:
+    if not sync_required:
         applied = configure_goal(
             registry_path=registry_path,
             goal_id=goal_id,
             execute=True,
+            _registry_transaction=registry_transaction,
             **configure_options,
         )
         applied["global_sync"] = preview["global_sync"]
@@ -302,9 +417,10 @@ def _configure_goal_with_global_sync_unlocked(
         registry_path=registry_path,
         goal_id=goal_id,
         execute=True,
+        _registry_transaction=registry_transaction,
         **configure_options,
     )
-    if not applied.get("written"):
+    if not applied.get("written") and not sync_if_unchanged:
         applied["global_sync"] = _sync_plan(
             changed=False,
             target_resolution=target_resolution,
@@ -363,6 +479,10 @@ def configure_goal_with_global_sync(
     runtime_root_override: str | None,
     execute: bool,
     expected_goal_configuration_revision: str | None = None,
+    align_codex_subagent_capacity: bool = False,
+    codex_home_override: Path | None = None,
+    codex_host_capacity_planner: Callable[..., dict[str, Any]] | None = None,
+    codex_host_capacity_applier: Callable[..., dict[str, Any]] | None = None,
     **configure_options: Any,
 ) -> dict[str, Any]:
     """Configure one Goal under the shared registry mutation lock.
@@ -372,23 +492,136 @@ def configure_goal_with_global_sync(
     section across concurrent Dashboard and CLI configuration requests.
     """
 
+    source_registry_path = _resolve_authoritative_source_registry(
+        registry_path=registry_path,
+        goal_id=goal_id,
+    )
+    def add_host_capacity(
+        payload: dict[str, Any],
+        *,
+        receipt: dict[str, Any] | None = None,
+        plan_before_apply: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        orchestration = (payload.get("after") or {}).get("orchestration") or {}
+        required_children = (
+            int(orchestration.get("max_children") or 0)
+            if orchestration.get("mode") == "multi_subagent"
+            and orchestration.get("spawn_allowed") is True
+            else 0
+        )
+        if align_codex_subagent_capacity and codex_host_capacity_planner is None:
+            raise ValueError(
+                "Codex host-capacity alignment requires a host adapter"
+            )
+        if required_children == 0:
+            plan = {
+                "schema_version": "codex_subagent_host_capacity_v0",
+                "host": "codex",
+                "status": "not_required",
+                "action": "none",
+                "required_children": 0,
+                "configured_children": None,
+                "configured_source_key": None,
+                "canonical_config_key": (
+                    "agents.max_concurrent_threads_per_session"
+                ),
+                "legacy_alias_present": False,
+                "counts_main_thread": False,
+                "write_required": False,
+                "never_lower": True,
+                "config_path": None,
+                "source_sha256": None,
+                "new_session_required_after_write": False,
+                "reason": "Goal sub-agents are disabled",
+            }
+        elif align_codex_subagent_capacity:
+            plan = codex_host_capacity_planner(
+                required_children,
+                home=codex_home_override,
+            )
+        else:
+            plan = {
+                "schema_version": "codex_subagent_host_capacity_v0",
+                "host": "codex",
+                "status": "not_requested",
+                "action": "preview_with_explicit_alignment_request",
+                "required_children": required_children,
+                "configured_children": None,
+                "configured_source_key": None,
+                "canonical_config_key": (
+                    "agents.max_concurrent_threads_per_session"
+                ),
+                "legacy_alias_present": False,
+                "counts_main_thread": False,
+                "write_required": False,
+                "never_lower": True,
+                "config_path": None,
+                "source_sha256": None,
+                "new_session_required_after_write": False,
+                "reason": (
+                    "Codex host capacity was not inspected because alignment was not requested"
+                ),
+            }
+        goal_changed = bool(payload.get("changed"))
+        host_change = bool(
+            (align_codex_subagent_capacity and plan["write_required"])
+            or (receipt or {}).get("written")
+        )
+        payload["goal_configuration_changed"] = goal_changed
+        payload["codex_host_capacity"] = {
+            **plan,
+            "alignment_requested": bool(align_codex_subagent_capacity),
+            "receipt": receipt,
+        }
+        if host_change:
+            payload["changed"] = True
+            changed_fields = list(payload.get("changed_fields") or [])
+            if "codex_host_capacity" not in changed_fields:
+                changed_fields.append("codex_host_capacity")
+            payload["changed_fields"] = changed_fields
+        if receipt is not None:
+            payload["codex_host_capacity"]["plan_before_apply"] = (
+                plan_before_apply or plan
+            )
+            payload["codex_host_capacity"].update(
+                {
+                    key: value
+                    for key, value in receipt.items()
+                    if key
+                    not in {
+                        "schema_version",
+                        "config_path",
+                        "source_sha256",
+                    }
+                }
+            )
+            payload["written"] = bool(
+                payload.get("written") or receipt.get("written")
+            )
+            payload["ok"] = bool(
+                payload.get("ok") and receipt.get("readback_verified")
+            )
+        return payload
+
     if not execute:
-        return _configure_goal_with_global_sync_unlocked(
-            registry_path=registry_path,
+        preview = _configure_goal_with_global_sync_unlocked(
+            registry_path=source_registry_path,
             goal_id=goal_id,
             runtime_root_override=runtime_root_override,
             execute=False,
             **configure_options,
         )
-    with exclusive_file_lock(
-        registry_path,
+        return add_host_capacity(preview)
+    with project_registry_transaction(
+        source_registry_path,
         operation="configure_goal_with_global_sync",
-    ):
+    ) as registry_transaction:
         if expected_goal_configuration_revision is not None:
             current = configure_goal(
-                registry_path=registry_path,
+                registry_path=source_registry_path,
                 goal_id=goal_id,
                 execute=False,
+                _registry_transaction=registry_transaction,
             )
             catalog = current.get("configuration_catalog")
             capability_catalog = (
@@ -404,10 +637,178 @@ def configure_goal_with_global_sync(
             )
             if actual_revision != expected_goal_configuration_revision:
                 raise ValueError("Goal configuration changed; preview again")
-        return _configure_goal_with_global_sync_unlocked(
-            registry_path=registry_path,
+        preview = _configure_goal_with_global_sync_unlocked(
+            registry_path=source_registry_path,
+            goal_id=goal_id,
+            runtime_root_override=runtime_root_override,
+            execute=False,
+            registry_transaction=registry_transaction,
+            **configure_options,
+        )
+        preview = add_host_capacity(preview)
+        capacity_plan = preview["codex_host_capacity"]
+        applied = _configure_goal_with_global_sync_unlocked(
+            registry_path=source_registry_path,
             goal_id=goal_id,
             runtime_root_override=runtime_root_override,
             execute=True,
+            registry_transaction=registry_transaction,
             **configure_options,
         )
+        if not applied.get("ok"):
+            return add_host_capacity(
+                applied,
+                plan_before_apply=capacity_plan,
+            )
+        capacity_receipt = None
+        if align_codex_subagent_capacity and capacity_plan["write_required"]:
+            if codex_host_capacity_applier is None:
+                raise ValueError(
+                    "Codex host-capacity apply requires a host adapter"
+                )
+            try:
+                capacity_receipt = codex_host_capacity_applier(
+                    int(capacity_plan["required_children"]),
+                    expected_source_sha256=str(capacity_plan["source_sha256"]),
+                    home=codex_home_override,
+                )
+            except (OSError, ValueError) as exc:
+                partial = add_host_capacity(
+                    applied,
+                    plan_before_apply=capacity_plan,
+                )
+                partial["ok"] = False
+                partial["partial_write"] = bool(applied.get("written"))
+                partial["error"] = (
+                    "Goal configuration applied, but Codex host-capacity alignment failed: "
+                    f"{exc}"
+                )
+                partial["recommended_action"] = (
+                    "repair or refresh the Codex host configuration, then preview the "
+                    "same Goal capacity alignment again"
+                )
+                partial["codex_host_capacity"].update(
+                    {
+                        "status": "apply_failed",
+                        "readback_verified": False,
+                        "written": False,
+                    }
+                )
+                return partial
+        return add_host_capacity(
+            applied,
+            receipt=capacity_receipt,
+            plan_before_apply=capacity_plan,
+        )
+
+
+def bind_goal_agent_with_global_sync(
+    *,
+    registry_path: Path,
+    goal_id: str,
+    agent_id: str,
+    runtime_root_override: str | None = None,
+    execute: bool,
+    expected_revision: str | None = None,
+) -> dict[str, Any]:
+    """Bind one Agent through source authority and verify its shared projection."""
+
+    source_registry_path = _resolve_authoritative_source_registry(
+        registry_path=registry_path,
+        goal_id=goal_id,
+    )
+    if not execute:
+        state = read_goal_agent_binding_with_source_route(
+            registry_path=source_registry_path,
+            goal_id=goal_id,
+        )
+        return {
+            **state,
+            "changed": agent_id not in state["registered_agents"],
+            "written": False,
+            "projection_verified": False,
+        }
+
+    with project_registry_transaction(
+        source_registry_path,
+        operation="bind_goal_agent_with_global_sync",
+    ) as registry_transaction:
+        source_goal = _goal(registry_transaction.payload_copy(), goal_id)
+        if source_goal is None:
+            raise ValueError(f"goal id not found in source registry: {goal_id}")
+        registered_agents = registered_agent_ids_for_goal(source_goal)
+        actual_revision = goal_agent_binding_revision(
+            goal_id,
+            source_goal,
+            source_registry=source_registry_path,
+        )
+        already_bound = agent_id in registered_agents
+        if expected_revision is not None and actual_revision != expected_revision:
+            retry_revision = _goal_agent_binding_revision(
+                goal_id=goal_id,
+                source_registry=source_registry_path,
+                registered_agents=[
+                    registered_agent
+                    for registered_agent in registered_agents
+                    if registered_agent != agent_id
+                ],
+            )
+            if not already_bound or retry_revision != expected_revision:
+                return {
+                    "ok": False,
+                    "status": "stale",
+                    "goal_id": goal_id,
+                    "agent_id": agent_id,
+                    "expected_revision": expected_revision,
+                    "actual_revision": actual_revision,
+                    "registered_agents": registered_agents,
+                    "changed": False,
+                    "written": False,
+                    "projection_verified": False,
+                }
+
+        if already_bound:
+            applied: dict[str, Any] = _configure_goal_with_global_sync_unlocked(
+                registry_path=source_registry_path,
+                goal_id=goal_id,
+                runtime_root_override=runtime_root_override,
+                execute=True,
+                registry_transaction=registry_transaction,
+                sync_if_unchanged=True,
+                registered_agents=registered_agents,
+            )
+        else:
+            applied = _configure_goal_with_global_sync_unlocked(
+                registry_path=source_registry_path,
+                goal_id=goal_id,
+                runtime_root_override=runtime_root_override,
+                execute=True,
+                registry_transaction=registry_transaction,
+                registered_agents=sorted({*registered_agents, agent_id}),
+            )
+
+        source_after = _goal(load_registry(source_registry_path), goal_id)
+        source_registered_agents = registered_agent_ids_for_goal(source_after)
+        readback = (applied.get("global_sync") or {}).get("readback") or {}
+        projection_verified = bool(
+            agent_id in source_registered_agents and readback.get("verified")
+        )
+        return {
+            **applied,
+            "ok": bool(applied.get("ok") and projection_verified),
+            "status": "already_bound" if already_bound else "bound",
+            "goal_id": goal_id,
+            "agent_id": agent_id,
+            "source_revision_before": actual_revision,
+            "source_revision_after": (
+                goal_agent_binding_revision(
+                    goal_id,
+                    source_after,
+                    source_registry=source_registry_path,
+                )
+                if source_after is not None
+                else None
+            ),
+            "source_registered_agents": source_registered_agents,
+            "projection_verified": projection_verified,
+        }

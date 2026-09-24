@@ -26,8 +26,11 @@ def register_quota_monitor_poll_request_arguments(
         "--todo-id",
         help=(
             "For Codex App `quota should-run`, select one currently projected "
-            "eligible action through typed same-turn qualification; otherwise "
-            "name the accountable Todo settlement target."
+            "eligible action through typed same-turn qualification. For "
+            "`quota monitor-poll`, name the observed monitor Todo; a committed "
+            "advancement settlement Todo remains separate under the auxiliary "
+            "no-spend observation contract. Otherwise name the accountable "
+            "Todo settlement target."
         ),
     )
     quota_parser.add_argument("--target-key", help="Stable monitor target key for `quota monitor-poll` metadata writeback.")
@@ -87,11 +90,24 @@ def register_quota_monitor_poll_request_arguments(
             "that must not block the bound agent lane."
         ),
     )
+    quota_parser.add_argument("--task-lease-idempotency-key",
+        help="Current Monitor execution key for canonical quota monitor-poll; requires --task-lease-expected-version.")
+    quota_parser.add_argument("--task-lease-expected-version", type=int,
+        help="Current Monitor lease version, checked atomically with observation and successors; never renews the lease.")
     quota_parser.add_argument("--next-claimed-by", help="Registered agent id to claim the `--next-agent-todo` follow-up.")
 
 
 def validate_quota_command_request(args: argparse.Namespace) -> None:
     command = args.quota_command
+    lease_key = getattr(args, "task_lease_idempotency_key", None)
+    lease_version = getattr(args, "task_lease_expected_version", None)
+    if lease_key is not None or lease_version is not None:
+        if command != "monitor-poll":
+            raise QuotaCommandValidationError("task lease proof is only valid with quota monitor-poll")
+        if not lease_key or lease_version is None or lease_version < 1 or lease_version > 9007199254740991:
+            raise QuotaCommandValidationError("Monitor lease proof requires an execution key and positive safe-integer version")
+        if not (args.todo_id or args.target_key):
+            raise QuotaCommandValidationError("Monitor lease proof requires --todo-id or --target-key")
     begin_turn = bool(getattr(args, "begin_turn", False))
     if command not in {"status", "plan"} and not args.goal_id:
         raise QuotaCommandValidationError(

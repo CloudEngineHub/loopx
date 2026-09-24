@@ -24,6 +24,46 @@ from loopx.todos import list_goal_todos
 GOAL_ID = "goal-e2e"
 
 
+def test_shadow_parity_ignores_only_resume_evaluation_observation_clock() -> None:
+    head = {
+        "handoff_mode": "hard_lease",
+        "todos": [{
+            "todo_id": "todo-a",
+            "resume_ready": False,
+            "resume_condition": {
+                "evaluated_at": "2026-09-20T00:00:00Z",
+                "satisfied": False,
+                "availability_reason": "resume_condition_pending",
+            },
+        }],
+        "leases": [],
+    }
+    later_observation = json.loads(json.dumps(head))
+    later_observation["todos"][0]["resume_condition"]["evaluated_at"] = (
+        "2026-09-21T00:00:00Z"
+    )
+
+    assert head_digest(head) == head_digest(later_observation)
+    assert partition_digest({
+        "handoff_mode": head["handoff_mode"],
+        "todos": head["todos"],
+    }) == partition_digest({
+        "handoff_mode": later_observation["handoff_mode"],
+        "todos": later_observation["todos"],
+    })
+
+    changed_decision = json.loads(json.dumps(later_observation))
+    changed_decision["todos"][0]["resume_condition"]["satisfied"] = True
+    assert head_digest(head) != head_digest(changed_decision)
+    assert partition_digest({
+        "handoff_mode": head["handoff_mode"],
+        "todos": head["todos"],
+    }) != partition_digest({
+        "handoff_mode": changed_decision["handoff_mode"],
+        "todos": changed_decision["todos"],
+    })
+
+
 def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     real = workspace(tmp_path / "repo")
     return real.registry, real.state, real.runtime

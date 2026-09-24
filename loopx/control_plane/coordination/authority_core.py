@@ -177,18 +177,6 @@ class LeaseModeGateCommand:
 
 
 @dataclass(frozen=True)
-class TerminalFenceCommand:
-    """Verify the lease side of an already-authorized terminal mutation."""
-
-    actor_agent_id: str | None
-    lease_idempotency_key: str | None = None
-    lease_expected_version: int | None = None
-    delegated_authority: bool = False
-    allow_user_gate_auto_acquire: bool = False
-    require_active_when_fence_supplied: bool = True
-
-
-@dataclass(frozen=True)
 class HandoffModeTransitionCommand:
     requested_mode: HandoffMode
 
@@ -201,7 +189,6 @@ CoordinationCommand = (
     | LeaseReleaseCommand
     | LeaseOwnerEligibilityCommand
     | LeaseModeGateCommand
-    | TerminalFenceCommand
     | HandoffModeTransitionCommand
 )
 
@@ -245,38 +232,6 @@ def _invalid_lease_snapshot(lease: LeaseSnapshot | None) -> bool:
         lease is not None
         and lease.active
         and (not lease.present or lease.status == "released")
-    )
-
-
-def _lease_owner_rejection(
-    snapshot: CoordinationSnapshot,
-    owner: str | None,
-) -> str | None:
-    todo = snapshot.todo
-    if todo is None:
-        return "todo_not_found"
-    if todo.status != "open":
-        return "todo_not_open"
-    if not owner:
-        return "invalid_owner"
-    if owner not in snapshot.registered_agents:
-        return "owner_not_registered"
-    if owner in todo.excluded_agents:
-        return "owner_excluded_from_todo"
-    if todo.claimed_by and todo.claimed_by != owner:
-        return "owner_conflicts_with_claim"
-    return None
-
-
-def _lease_is_effective(
-    snapshot: CoordinationSnapshot,
-    lease: LeaseSnapshot | None,
-) -> bool:
-    return bool(
-        lease is not None
-        and lease.present
-        and lease.active
-        and _lease_owner_rejection(snapshot, lease.owner) is None
     )
 
 
@@ -489,51 +444,6 @@ def ownership_gate_requirement(
     return OwnershipGate(payload["ownership_gate"])
 
 
-def _typescript_terminal_fence(
-    snapshot: CoordinationSnapshot,
-    command: TerminalFenceCommand,
-) -> TransitionPlan:
-    if snapshot.todo is None:
-        return _result(DecisionOutcome.REJECTED, "todo_not_found")
-    payload = effect_runtime_result(
-        "task_lease.terminal_fence.decide",
-        {
-            "schema_version": "loopx_coordination_terminal_fence_request_v0",
-            "todo": _todo_fact_payload(snapshot.todo),
-            "lease": _lease_fact_payload(snapshot.lease),
-            "registered_agents": list(snapshot.registered_agents),
-            "handoff_mode": snapshot.handoff_mode.value,
-            "actor_agent_id": command.actor_agent_id,
-            "lease_idempotency_key": command.lease_idempotency_key,
-            "lease_expected_version": command.lease_expected_version,
-            "delegated_authority": command.delegated_authority,
-            "allow_user_gate_auto_acquire": command.allow_user_gate_auto_acquire,
-            "require_active_when_fence_supplied": command.require_active_when_fence_supplied,
-        },
-    )
-    if not isinstance(payload, dict) or payload.get("schema_version") != (
-        "loopx_coordination_terminal_fence_result_v0"
-    ):
-        raise RuntimeError("TypeScript terminal fence result shape mismatch")
-    outcome = DecisionOutcome(payload["outcome"])
-    next_snapshot = None
-    if outcome is DecisionOutcome.APPLY:
-        next_snapshot = replace(
-            snapshot,
-            lease=(
-                snapshot.lease
-                if payload["next_lease"] is None
-                else _lease_fact_from_payload(payload["next_lease"])
-            ),
-        )
-    return TransitionPlan(
-        outcome=outcome,
-        code=payload["code"],
-        next_snapshot=next_snapshot,
-        lease_fence=LeaseFence(payload["lease_fence"]),
-    )
-
-
 def _lease_handoff_rejection(snapshot: CoordinationSnapshot) -> str | None:
     if snapshot.handoff_mode is HandoffMode.SOFT_CLAIM:
         return "handoff_mode_forbids_lease"
@@ -560,9 +470,20 @@ def _decide_lease_owner_eligibility(
     snapshot: CoordinationSnapshot,
     command: LeaseOwnerEligibilityCommand,
 ) -> TransitionPlan:
-    rejection = _lease_owner_rejection(snapshot, command.owner)
-    if rejection is not None:
-        return _result(DecisionOutcome.REJECTED, rejection)
+    payload = effect_runtime_result(
+        "task_lease.owner_eligibility",
+        {
+            "todo": _todo_fact_payload(snapshot.todo) if snapshot.todo else None,
+            "owner": command.owner,
+            "registered_agents": list(snapshot.registered_agents),
+        },
+    )
+    if not isinstance(payload, dict) or payload.get("schema_version") != "task_lease_owner_eligibility_v0":
+        raise RuntimeError("TypeScript lease owner eligibility result shape mismatch")
+    if payload.get("outcome") == "rejected":
+        return _result(DecisionOutcome.REJECTED, str(payload["code"]))
+    if payload.get("outcome") != "apply" or payload.get("code") != "lease_owner_allowed":
+        raise RuntimeError("TypeScript lease owner eligibility verdict mismatch")
     return _result(
         DecisionOutcome.APPLY,
         "lease_owner_allowed",
@@ -595,7 +516,6 @@ def _decide_acquire(
                 {
                     "present": lease.present,
                     "active": lease.active,
-                    "effective": _lease_is_effective(snapshot, lease),
                     "status": lease.status,
                     "owner": lease.owner,
                     "idempotency_key": lease.idempotency_key,
@@ -864,20 +784,20 @@ def _decide_handoff_transition(
     snapshot: CoordinationSnapshot,
     command: HandoffModeTransitionCommand,
 ) -> TransitionPlan:
-    if snapshot.handoff_mode is command.requested_mode:
-        return _result(
-            DecisionOutcome.NO_CHANGE,
-            "handoff_mode_unchanged",
-            next_snapshot=snapshot,
-            idempotent=True,
-        )
-    if snapshot.active_claimed_todo_ids or snapshot.active_lease_todo_ids:
-        return _result(DecisionOutcome.REJECTED, "handoff_mode_not_quiescent")
-    return _result(
-        DecisionOutcome.APPLY,
-        "handoff_mode_transition",
-        next_snapshot=replace(snapshot, handoff_mode=command.requested_mode),
-    )
+    result = effect_runtime_result("coordination.handoff_mode.plan", {
+        "schema_version": "loopx_handoff_mode_plan_request_v0",
+        "previous_mode": snapshot.handoff_mode.value,
+        "requested_mode": command.requested_mode.value,
+        "active_claimed_todo_ids": list(snapshot.active_claimed_todo_ids),
+        "active_lease_todo_ids": list(snapshot.active_lease_todo_ids),
+    })
+    if not isinstance(result, dict) or result.get("schema_version") != "loopx_handoff_mode_plan_result_v0":
+        raise RuntimeError("TypeScript handoff mode plan shape mismatch")
+    outcome = DecisionOutcome(result["outcome"])
+    return _result(outcome, str(result["code"]),
+        next_snapshot=(None if outcome is DecisionOutcome.REJECTED else
+                       replace(snapshot, handoff_mode=command.requested_mode)),
+        idempotent=result["idempotent"])
 
 
 def decide(
@@ -902,8 +822,6 @@ def decide(
         return _decide_lease_owner_eligibility(snapshot, command)
     if isinstance(command, LeaseModeGateCommand):
         return _decide_lease_mode_gate(snapshot, command)
-    if isinstance(command, TerminalFenceCommand):
-        return _typescript_terminal_fence(snapshot, command)
     if isinstance(command, HandoffModeTransitionCommand):
         return _decide_handoff_transition(snapshot, command)
     raise TypeError(f"unsupported coordination command: {type(command).__name__}")
