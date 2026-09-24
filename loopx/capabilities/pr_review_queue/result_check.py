@@ -5,6 +5,7 @@ from typing import Any
 
 from .review_contract import (
     COMPATIBILITY_ASSESSMENT,
+    OUTCOME_IMPACT_ASSESSMENT,
     SCOPE_COVERAGE_ASSESSMENT,
     SEMANTIC_CANDIDATE_DECISIONS,
     build_review_execution_contract,
@@ -118,6 +119,37 @@ def _check_compatibility_assessment(blockers: list[str], value: object) -> None:
         blockers.append(f"{key}:unknown_boundary_cannot_justify_decision")
 
 
+def _check_outcome_impact(blockers: list[str], value: object) -> None:
+    key = "problem_context:outcome_impact"
+    contract = OUTCOME_IMPACT_ASSESSMENT
+    if not isinstance(value, Mapping):
+        blockers.append(f"{key}:missing_assessment")
+        return
+    for dimension in contract["dimensions"]:
+        row = value.get(dimension)
+        row_key = f"{key}:{dimension}"
+        _require_fields(blockers, evidence_id=row_key, value=row, fields=contract["fields"])
+        if not isinstance(row, Mapping):
+            continue
+        decision = row.get("decision")
+        if decision not in contract["decision_values"]:
+            blockers.append(f"{row_key}:invalid_decision")
+        if decision == "not_applicable":
+            continue
+        _require_fields(blockers, evidence_id=row_key, value=row, fields=contract["applicable_fields"])
+        refs = row.get("evidence_refs")
+        if not isinstance(refs, list) or not refs or any(
+            not isinstance(ref, str) or not ref.strip() for ref in refs
+        ):
+            blockers.append(f"{row_key}:missing_evidence_refs")
+        if decision in contract["blocking_decisions"]:
+            blockers.append(f"{row_key}:blocking_decision")
+            _require_fields(blockers, evidence_id=row_key, value=row, fields=["minimum_repair"])
+        if decision == "accepted_tradeoff":
+            _require_fields(blockers, evidence_id=row_key, value=row,
+                            fields=["acceptance_basis", "bounded_cost_and_recovery"])
+
+
 def _check_scope_coverage(blockers: list[str], value: object) -> None:
     key = "observable_semantics:scope_coverage"
     contract = SCOPE_COVERAGE_ASSESSMENT
@@ -212,6 +244,8 @@ def check_review_result(
             blockers.append(f"{key}:missing_evidence_detail")
         if status == "verified":
             requirement = requirements[key]
+            if key == "problem_context":
+                _check_outcome_impact(blockers, row.get("outcome_impact"))
             if key == "code_volume":
                 _check_compatibility_assessment(blockers, row.get("compatibility_assessment"))
             if key == "observable_semantics":

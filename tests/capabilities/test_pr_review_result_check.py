@@ -39,6 +39,13 @@ def _review(*, area="product_runtime"):
         )
         if "verdict_values" in requirement:
             row["verdict"] = requirement["verdict_values"][0]
+        if key == "problem_context":
+            row["outcome_impact"] = {
+                dimension: {"decision": "not_applicable",
+                            "reason": "Synthetic internal formatter fixture has no durable work or user journey.",
+                            "inspected_path": "Synthetic formatter and its sole internal caller."}
+                for dimension in ("long_horizon", "user_experience")
+            }
         if key == "observable_semantics":
             row["scope_coverage"] = {"decision": "not_applicable",
                 "reason": "Synthetic local formatter has no eligibility gate or covered subjects."}
@@ -92,6 +99,56 @@ def test_result_check_is_not_semantic_or_merge_authority():
     assert not checked["evidence_truth_verified"]
     assert not checked["remote_head_verified"]
     assert not checked["external_writes_performed"]
+
+
+def _outcome_review(dimension):
+    packet, result = _review()
+    impact = result["evidence"]["problem_context"]["outcome_impact"][dimension]
+    impact.update(
+        decision="preserved",
+        reason="The accepted journey remains available across the changed boundary.",
+        inspected_path="Public command -> persisted checkpoint -> next invocation and user readback.",
+        before_after="A repeat invocation keeps completed work and offers the next authorized action.",
+        evidence_refs=["walkthroughs.positive", "validation_matrix:synthetic-continuation"],
+    )
+    return packet, result, impact
+
+
+@pytest.mark.parametrize("dimension", ["long_horizon", "user_experience"])
+@pytest.mark.parametrize("decision", ["regression", "not_yet_proven"])
+def test_local_goal_achievement_cannot_hide_material_outcome_impact(dimension, decision):
+    packet, result, impact = _outcome_review(dimension)
+    assert result["evidence"]["problem_context"]["verdict"] == "goal_achieved"
+    impact.update(decision=decision, minimum_repair="Prove the next authorized action through the affected entrypoint.")
+    checked = check_review_result(packet, result)
+    assert f"problem_context:outcome_impact:{dimension}:blocking_decision" in checked["approval_blockers"]
+    result["verdict"] = "REQUEST_CHANGES"
+    result["review_body"] = result["review_body"].replace("English verdict: APPROVE", "English verdict: REQUEST_CHANGES")
+    assert check_review_result(packet, result)["ok"]
+
+
+def test_legitimate_wait_needs_acceptance_basis_and_bounded_recovery():
+    packet, result, impact = _outcome_review("long_horizon")
+    impact["decision"] = "accepted_tradeoff"
+    assert not check_review_result(packet, result)["ok"]
+    impact.update(
+        acceptance_basis="Existing owner policy requires confirmation before this destructive effect.",
+        bounded_cost_and_recovery="Only that effect waits; explicit confirmation resumes once or cancellation closes it safely.",
+    )
+    assert check_review_result(packet, result)["ok"]
+
+
+def test_preserved_experience_needs_evidence_not_just_a_delivery_label():
+    packet, result, impact = _outcome_review("user_experience")
+    assert check_review_result(packet, result)["ok"]
+    impact["evidence_refs"] = []
+    assert not check_review_result(packet, result)["ok"]
+
+
+def test_docs_inapplicability_still_names_the_inspected_path():
+    packet, result = _review(area="public_docs")
+    del result["evidence"]["problem_context"]["outcome_impact"]["user_experience"]["inspected_path"]
+    assert not check_review_result(packet, result)["ok"]
 
 
 def _scoped_review():

@@ -7,7 +7,35 @@ from typing import Any
 from .review_body import REQUIRED_FINAL_SECTIONS, review_body_requirements
 
 # Increment when review requirements change without changing the packet shape.
-REVIEW_POLICY_REVISION = 9
+REVIEW_POLICY_REVISION = 10
+
+OUTCOME_IMPACT_ASSESSMENT = {
+    "dimensions": ["long_horizon", "user_experience"],
+    "decision_values": ["preserved", "improved", "accepted_tradeoff", "regression", "not_yet_proven", "not_applicable"],
+    "fields": ["decision", "reason", "inspected_path"],
+    "applicable_fields": ["before_after", "evidence_refs"],
+    "blocking_decisions": ["regression", "not_yet_proven"],
+    "rule": (
+        "Judge whether the whole PR preserves sustained useful work and the user's ability to reach "
+        "the intended outcome, even when its local feature works. For long_horizon, follow the "
+        "affected entrypoint through action, durable result and later continuation: repeated turns, "
+        "retry/restart, accumulated state, scheduling fairness or dependency return as applicable. "
+        "Look for starvation, endless replan/retry, lost commitments, duplicated effects and growing "
+        "cost without progress. A successful single call or blocker receipt is insufficient. "
+        "For user_experience, compare the real affected CLI, UI or messaging journey: setup and "
+        "repeated intervention, truthful state/readback, actionable failure, correction/cancel and "
+        "recovery. Inspect existing companion surfaces; a backend success is not a usable journey. "
+        "Reuse concrete walkthrough and validation references; select bounded cases by changed "
+        "risk rather than requiring a long soak or every surface for every PR. Derive expected "
+        "outcomes from the accepted product contract, not from the patch. A deliberate safety, "
+        "budget or external-dependency wait is valid when its owner, release condition and resume "
+        "or terminal route are explicit; do not remove safeguards merely to keep running. "
+        "accepted_tradeoff requires an independent acceptance_basis and bounded_cost_and_recovery; "
+        "author intent alone cannot justify hidden friction or waive authority. For regression or "
+        "not_yet_proven name minimum_repair. For not_applicable identify the inspected path and "
+        "why it cannot materially affect this dimension. These declarations do not prove truth."
+    ),
+}
 
 # One bounded replacement for the former free-text compatibility justification.
 COMPATIBILITY_ASSESSMENT = {
@@ -138,7 +166,7 @@ def build_review_template(item: Mapping[str, Any]) -> dict[str, Any]:
             _section(
                 "动机",
                 floors["动机"],
-                "Use `problem_context`: verified goal basis, old behavior, before/after outcome and delivery verdict. Distinguish completing the scoped goal from a justified increment; explain why this is a complete useful slice, not just why the code works.",
+                "Use `problem_context`: verified goal basis, old behavior, before/after outcome and delivery verdict. Explain outcome_impact on sustained progress and the user journey, including accepted tradeoffs or scoped inapplicability. Distinguish completing the scoped goal from a justified increment; explain why this is a complete useful slice, not just why the code works.",
             ),
             _section(
                 "改动思路",
@@ -158,7 +186,7 @@ def build_review_template(item: Mapping[str, Any]) -> dict[str, Any]:
             _section(
                 "我的整体评价",
                 floors["我的整体评价"],
-                "Use `observable_semantics` to report baseline/head comparisons and remaining compatibility gaps; equal decision codes are insufficient. Use `code_volume` (including its compatibility assessment and bounded simplification decision), `change_proportionality`, `default_off_isolation`, `authority_semantics`, validation results, residual risk, and exact-head freshness to state the verdict and the evidence needed for re-review. For semantic or constraint-related changes, state whether the PR reuses an existing vocabulary, extends one, creates one, stays local, or remains unknown, and link any required registry/RFC/CI repair.",
+                "State the `problem_context.outcome_impact` decisions for long_horizon and user_experience, including material tradeoffs and unresolved evidence. Use `observable_semantics` to report baseline/head comparisons and remaining compatibility gaps; equal decision codes are insufficient. Use `code_volume` (including its compatibility assessment and bounded simplification decision), `change_proportionality`, `default_off_isolation`, `authority_semantics`, validation results, residual risk, and exact-head freshness to state the verdict and the evidence needed for re-review. For semantic or constraint-related changes, state whether the PR reuses an existing vocabulary, extends one, creates one, stays local, or remains unknown, and link any required registry/RFC/CI repair.",
             ),
         ],
         "review_order": _review_order(key_files),
@@ -198,7 +226,10 @@ def build_review_execution_contract(*, wait_for_ci: bool = True) -> dict[str, An
             "challenge_design": (
                 "Before explaining how the patch works, make the strongest evidence-backed "
                 "case for not shipping it. Compare doing nothing, a smaller fix in the existing "
-                "owner, and the proposed design. Read the target repository's architecture "
+                "owner, and the proposed design against sustained useful work and the user journey. "
+                "A locally correct feature can still strand later work or impose unjustified user "
+                "intervention; assess both dimensions in problem_context.outcome_impact against the "
+                "accepted product contract. Read the target repository's architecture "
                 "and contribution rules: identify canonical state, decision/effect owner, "
                 "and capability/provider placement. A new CLI calling a new helper proves "
                 "reachability, not demand or correct ownership. Prefer derived state over "
@@ -228,7 +259,8 @@ def build_review_execution_contract(*, wait_for_ci: bool = True) -> dict[str, An
             ),
             "reconcile_verdict": (
                 "Approve only when positive value, architecture fit, and applicable "
-                "evidence are established. No reproduced bug is not proof of a good design. "
+                "evidence are established. A long_horizon or user_experience regression blocks approval "
+                "even when the requested local feature is delivered and CI passes. No reproduced bug is not proof of a good design. "
                 "Unresolved material evidence means hold/request changes with the exact "
                 "missing observation, not an invented defect. Reject a mechanism when a "
                 "smaller boundary solves the demonstrated problem; do not keep adding "
@@ -240,6 +272,7 @@ def build_review_execution_contract(*, wait_for_ci: bool = True) -> dict[str, An
         "evidence_requirements": [
             {
                 "evidence_id": "problem_context",
+                "outcome_impact": OUTCOME_IMPACT_ASSESSMENT,
                 "required_when": "always",
                 "verdict_values": [
                     "goal_achieved",
@@ -257,6 +290,7 @@ def build_review_execution_contract(*, wait_for_ci: bool = True) -> dict[str, An
                     "before_after_scenario",
                     "smaller_fix_analysis",
                     "observable_outcome",
+                    "outcome_impact",
                     "non_goals",
                 ],
                 "fields_by_verdict": {

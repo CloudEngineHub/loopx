@@ -50,10 +50,26 @@ or `not_applicable`. A required simplification or material unknown cannot suppor
 APPROVE; an evidenced non-blocking follow-up can. Unrelated changes need only a
 scoped not-applicable reason. The checker enforces these declarations, not their
 truth: real caller inspection and old-data/mixed-version readback still belong
-to the reviewer. Policy revision 9 requires fresh evidence rather than relabeling
+to the reviewer. Policy revision 10 requires fresh evidence rather than relabeling
 an older result. It does not add a new wire schema or a new review authority.
 
-Policy revision 9 also requires `observable_semantics.scope_coverage` for
+The primary product judgment lives in `problem_context.outcome_impact`: can
+useful work continue over later invocations, and can users still reach their
+intended outcome through the affected surface? Assess `long_horizon` and
+`user_experience` before implementation narration. Local feature acceptance or
+green CI cannot override a regression or a material unproven claim in either
+dimension. Follow bounded real journeys appropriate to the diff: durable
+continuation, retry/restart, competing work, truthful status, intervention cost
+and correction/recovery. Reuse walkthroughs and validation references rather
+than producing a second report or requiring a soak for every change.
+
+Legitimate safety, budget and dependency waits can be an `accepted_tradeoff`
+with an independent acceptance basis and bounded cost/recovery. Do not weaken
+authority to manufacture progress. A scoped `not_applicable` still names the
+inspected path. These assessments also apply to user-facing instructions and
+defaults; they are not limited to state-machine code or visible UI diffs.
+
+The narrower `observable_semantics.scope_coverage` assessment is required for
 behavior-bearing reviews. First establish whether the touched path owns or
 retains a gate; a scoped `not_applicable` reason is sufficient otherwise. For a
 gate, distinguish activation authority, covered subjects and binding readiness.
@@ -375,7 +391,7 @@ progress toward approval by themselves; the reviewer should request the
 smallest viable fix, deletion, split, or hold when the benefit does not justify
 the accumulated mechanism.
 
-### Goal-oriented delivery judgment (policy revision 6)
+### Goal-oriented delivery and product impact
 
 Every actionable review now extends the existing `problem_context` evidence
 with `goal_basis` and a typed `verdict`. This applies to code, docs, maintenance
@@ -386,7 +402,7 @@ require another repository to use LoopX's S/G/R identifiers.
 
 | Delivery verdict | Meaning and additional evidence | Approval effect |
 | --- | --- | --- |
-| `goal_achieved` | Existing before/after, observable outcome and non-goals prove the named task's acceptance; no invented successor required | May approve within that scope, without claiming the parent program complete |
+| `goal_achieved` | Existing before/after, observable outcome and non-goals prove the named task's acceptance; no invented successor required | May approve when sustained progress and user experience also qualify, without claiming the parent program complete |
 | `justified_increment` | Useful delivered delta, plus `remaining_gap`, `next_step` (owner/dependency) and `boundary_reason` for independent review, verification and rollback | May approve a prerequisite, research, docs or maintenance increment without shipping the entire feature |
 | `off_goal` / `fragmented` / `not_yet_proven` | `reason` and `minimum_repair` explain the mismatch, avoidable premature stop or missing evidence | Blocks APPROVE even when other evidence and checks pass |
 
@@ -400,12 +416,12 @@ and real successor are justified. Do not reward larger diffs or fabricated
 follow-ups. The checker validates declared evidence consistency, not whether a
 reviewer's semantic judgment is true, and it never settles a Goal.
 
-Revision 6 changes review requirements, not queue selection, scheduler, runtime
-permissions or the wire schema. Revision-5 results must be regenerated and
-reviewed under the new policy before current approval. The five public review
-sections remain, but `word_hint` no longer suggests fixed lengths: scale prose
-to the change, reuse evidence, and do not pad simple reviews. This capability
-is not behind a new feature flag; invoking review uses the installed policy.
+The current policy adds the two `outcome_impact` judgments to this existing
+delivery assessment. A local success cannot excuse a material regression in
+either dimension. Rebuild older results from the current packet; do not relabel
+them. Queue selection, scheduler and runtime permissions are unchanged. The
+five public sections retain the bounded prose floors documented above; reuse
+evidence and do not pad. Invoking review uses the installed capability policy.
 
 ### Semantic alignment and CI constraint recovery
 
