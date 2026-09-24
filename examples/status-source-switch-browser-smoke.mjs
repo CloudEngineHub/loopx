@@ -13,6 +13,7 @@ import {
   startViteDashboardServer,
   waitForHttp,
 } from "./dashboard-browser-smoke-support.mjs";
+import { resolveTestPython } from "../scripts/test-python.mjs";
 
 const require = createRequire(import.meta.url);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -23,7 +24,7 @@ const packaged = process.env.LOOPX_STATUS_SOURCE_SWITCH_PACKAGED === "1";
 
 function startServer() {
   if (packaged) {
-    return spawn(process.env.LOOPX_PYTHON_BIN || "python3", [
+    return spawn(resolveTestPython(), [
       "-m", "http.server", String(port), "--bind", "127.0.0.1", "--directory", resolve(repoRoot, "loopx/web"),
     ], {
       cwd: repoRoot,

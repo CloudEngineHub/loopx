@@ -555,6 +555,9 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install --disable-pip-version-check -e ".[test]"
 
+      - name: Verify native Windows test Python discovery
+        run: node --no-warnings --experimental-strip-types --test tests/control_plane_ts/test_python_runtime.test.ts
+
       - name: Run native Windows lifecycle tests
         run: >-
           python -m pytest -q

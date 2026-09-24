@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startViteDashboardServer } from "../dashboard-browser-smoke-support.mjs";
+import { resolveTestPython } from "../../scripts/test-python.mjs";
 
 const require = createRequire(import.meta.url);
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -273,7 +274,7 @@ export function startServer() {
   if (packaged) {
     // An explicit installed interpreter must resolve its own package, not the checkout.
     const isolation = process.env.LOOPX_PYTHON_BIN ? ["-I"] : [];
-    return spawn(process.env.LOOPX_PYTHON_BIN || "python3", [...isolation, "-c", `
+    return spawn(resolveTestPython(), [...isolation, "-c", `
 from loopx.chat_server import ChatHTTPServer, ChatRequestHandler, default_chat_assets_dir
 from loopx.presentation.chat_bundle import validate_bundle
 assets = default_chat_assets_dir()

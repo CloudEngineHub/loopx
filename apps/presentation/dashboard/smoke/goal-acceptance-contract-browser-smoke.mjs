@@ -7,10 +7,11 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cleanupBrowserSmoke, launchBrowser, startViteDashboardServer, waitForHttp } from "../../../../examples/dashboard-browser-smoke-support.mjs";
 import { acceptance, contract, snapshot, verifiedContract } from "./goal-acceptance-contract-fixture.mjs";
+import { resolveTestPython } from "../../../../scripts/test-python.mjs";
 
 const dashboardDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const root = resolve(dashboardDir, "../../..");
-const python = process.env.LOOPX_PYTHON ?? "python3";
+const python = resolveTestPython();
 const port = Number(process.env.LOOPX_ACCEPTANCE_CONTRACT_PORT ?? 5297);
 const packaged = process.env.LOOPX_ACCEPTANCE_CONTRACT_PACKAGED === "1";
 const payload = JSON.parse(execFileSync(python, ["-c", `
