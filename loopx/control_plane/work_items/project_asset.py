@@ -9,6 +9,7 @@ from ..runtime.public_safety import (
     compact_text as _compact_text,
     public_safe_compact_text as _runtime_public_safe_compact_text,
 )
+from ..todos.todo_semantics import todo_blocker_reason
 from .autonomous_replan_obligation import run_history_agent_id
 
 
@@ -560,6 +561,9 @@ def _project_asset_display_todo_item(item: dict[str, Any]) -> dict[str, Any]:
     title = _compact_text(str(item.get("title") or ""), limit=220)
     if title:
         display["title"] = title
+    reason = todo_blocker_reason(item)
+    if reason:
+        display["reason"] = reason
     return display
 
 

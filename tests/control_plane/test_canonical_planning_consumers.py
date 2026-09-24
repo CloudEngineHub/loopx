@@ -437,16 +437,16 @@ def test_todo_replan_guard_closes_later_utc_ack_across_offsets(
 
 
 @pytest.mark.parametrize("promoted", [False, True])
-def test_public_refresh_retains_legacy_parity_and_uses_one_provider_read(
+def test_preview_refresh_retains_legacy_parity_and_uses_one_provider_read(
     tmp_path: Path, monkeypatch, promoted: bool
 ) -> None:
-    from loopx.control_plane.coordination import local_authority
+    from loopx.control_plane.work_items import refresh_recommendation
 
     registry, path, goal = _fixture(tmp_path)
     if promoted:
         _promote(registry, path, goal)
         path.write_text(_state(done=True, text="Stale work"))
-    original = local_authority.read_canonical_todos_if_promoted
+    original = refresh_recommendation.read_canonical_todos_if_promoted
     reads = []
 
     def read(**kwargs):
@@ -454,7 +454,7 @@ def test_public_refresh_retains_legacy_parity_and_uses_one_provider_read(
         reads.append(result)
         return result
 
-    monkeypatch.setattr(local_authority, "read_canonical_todos_if_promoted", read)
+    monkeypatch.setattr(refresh_recommendation, "read_canonical_todos_if_promoted", read)
     result = _refresh(registry)
     assert "Canonical work" in json.dumps(result)
     assert len(reads) == 1
@@ -479,11 +479,15 @@ def test_refresh_todo_text_is_record_content_not_an_artifact_path(
     record = json.loads(Path(result["json_path"]).read_text())
     assert text in json.dumps(record)
     assert not list(tmp_path.rglob("escape.json"))
-    assert path.read_bytes() == before
+    if promoted:
+        assert result["projection_delivery"] == "delivered"
+        assert text in path.read_text()
+    else:
+        assert path.read_bytes() == before
 
 
 @pytest.mark.parametrize("promoted", [False, True])
-def test_public_refresh_missing_projection_is_readable_not_implicitly_rebuilt(
+def test_preview_refresh_missing_projection_is_readable_not_implicitly_rebuilt(
     tmp_path: Path, promoted: bool,
 ) -> None:
     registry, path, goal = _fixture(tmp_path)
@@ -502,18 +506,21 @@ def test_public_refresh_missing_projection_is_readable_not_implicitly_rebuilt(
     assert not path.exists()
 
 
-def test_committed_refresh_records_canonical_recommendation_without_rewriting_display(
+def test_committed_refresh_records_canonical_recommendation_and_repairs_display(
     tmp_path: Path,
 ) -> None:
     registry, path, goal = _fixture(tmp_path)
     _promote(registry, path, goal)
     path.write_text(_state(done=True, text="Stale display"))
     before = read_canonical_todos_if_promoted(runtime_root=tmp_path / "runtime", goal_id="goal-a")
-    display = path.read_bytes()
-    _refresh(registry, dry_run=False)
+    from loopx.control_plane.todos.projection_document import TodoProjectionDocument
+    narrative = TodoProjectionDocument.parse(path.read_text()).narrative
+    result = _refresh(registry, dry_run=False)
     runs = (tmp_path / "runtime/goals/goal-a/runs/index.jsonl").read_text()
     assert "Canonical work" in runs
-    assert path.read_bytes() == display
+    assert result["projection_delivery"] == "delivered"
+    assert "Canonical work" in path.read_text() and "Stale display" not in path.read_text()
+    assert TodoProjectionDocument.parse(path.read_text()).narrative == narrative
     assert (
         read_canonical_todos_if_promoted(runtime_root=tmp_path / "runtime", goal_id="goal-a")
         == before

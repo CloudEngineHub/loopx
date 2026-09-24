@@ -381,6 +381,7 @@ def build_state_refresh_record(
     progress_observation: dict[str, Any] | None = None,
     delivery_workspace: dict[str, Any] | None = None,
     settlement_identity: SettlementIdentity | None = None,
+    todo_fields: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     frontmatter = parse_frontmatter(state_text)
     next_action = active_state_next_action_entries(
@@ -422,7 +423,12 @@ def build_state_refresh_record(
     }
     if recommended_action_resolution:
         record["recommended_action_resolution"] = recommended_action_resolution
-    projection_gap = state_projection_gap_warning(state_text)
+    projection_gap = state_projection_gap_warning(
+        state_text,
+        # An authoritative empty group must not fall back to stale Markdown.
+        user_todos=(todo_fields.get("user_todos") or {}) if todo_fields is not None else None,
+        agent_todos=(todo_fields.get("agent_todos") or {}) if todo_fields is not None else None,
+    )
     if projection_gap:
         record["state_projection_gap"] = projection_gap
     if delivery_batch_scale:
@@ -578,9 +584,16 @@ def _build_state_refresh_output_projections(
 
 
 def render_state_refresh_markdown(payload: dict[str, Any]) -> str:
+    delivery = payload.get("projection_outbox")
+    delivery_lines = []
+    if isinstance(delivery, dict):
+        delivery_lines.append(f"- Todo display: `{delivery['status']}`")
+        if delivery.get("status") == "pending":
+            delivery_lines.append("- Canonical Todo state is committed; repair the display without repeating business work or quota spend.")
+            delivery_lines.append(str(delivery.get("recommended_action") or ""))
     recovery_markdown = render_refresh_recovery_markdown(payload)
     if recovery_markdown is not None:
-        return recovery_markdown
+        return "\n".join([recovery_markdown, *delivery_lines])
     state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
     frontmatter = state.get("frontmatter") if isinstance(state.get("frontmatter"), dict) else {}
     lines = [
@@ -603,6 +616,7 @@ def render_state_refresh_markdown(payload: dict[str, Any]) -> str:
         f"- state_updated_at: `{frontmatter.get('updated_at')}`",
         f"- health_check: `{payload.get('health_check')}`",
     ]
+    lines.extend(delivery_lines)
     lines.extend(render_settlement_progress_markdown(payload))
     if "external_sink_delivery_authorized" in payload:
         lines.append(
@@ -811,6 +825,8 @@ def refresh_state_run(
     sync_global: bool = True,
     external_delivery: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from .control_plane.todos.provider_projection import recover_refresh_todo_projection
+
     safe_goal_id = validate_goal_id_path_segment(goal_id)
     if checkpoint_read_context_id and not turn_instance_id:
         raise ValueError("--checkpoint-read-context requires the original Turn identity")
@@ -954,7 +970,10 @@ def refresh_state_run(
                 goal_id=safe_goal_id, dry_run=dry_run,
             )
             if recovery_payload is not None:
-                return recovery_payload
+                return recover_refresh_todo_projection(
+                    recovery_payload, registry_path=registry_path, runtime_root=runtime_root,
+                    goal_id=safe_goal_id, project=project, state_file=state_file,
+                )
             if checkpoint_read_context_id and not checkpoint_supplement:
                 raise ValueError("--checkpoint-read-context applies only to a missing-checkpoint supplement")
             settlement_workspace_requirement = resolve_settlement_workspace_requirement(
@@ -984,8 +1003,11 @@ def refresh_state_run(
             project_override=project,
             state_file_override=state_file,
         )
-        state_text, planning_events, todo_fields = load_refresh_planning_source(
+        planning_source = load_refresh_planning_source(
             runtime_root, safe_goal_id, resolved_state_file, require_display=bool(next_action)
+        )
+        state_text, planning_events, todo_fields = (
+            planning_source.state_text, planning_source.events, planning_source.todo_fields,
         )
         expected_write_state_text = state_text
         normalized_next_action = normalize_next_action_text(next_action) if next_action else None
@@ -1288,6 +1310,7 @@ def refresh_state_run(
             progress_observation=normalized_progress_observation,
             delivery_workspace=delivery_workspace,
             settlement_identity=settlement_identity,
+            todo_fields=todo_fields,
         )
         if delivery_workspace_causality:
             record["delivery_workspace_causality"] = delivery_workspace_causality
@@ -1547,6 +1570,11 @@ def refresh_state_run(
             if committed_readback is None:
                 raise RuntimeError("committed refresh settlement readback missing")
             attach_settlement_progress(payload, committed_readback, registry_path=registry_path, runtime_root=runtime_root)
-        return finish_external_delivery_refresh(
-            payload, settlement_readback, runtime_root, dry_run=dry_run,
+        return recover_refresh_todo_projection(
+            finish_external_delivery_refresh(
+                payload, settlement_readback, runtime_root, dry_run=dry_run,
+            ),
+            registry_path=registry_path, runtime_root=runtime_root, goal_id=safe_goal_id,
+            project=resolved_project, state_file=resolved_state_file,
+            canonical_snapshot=planning_source.canonical_snapshot,
         )

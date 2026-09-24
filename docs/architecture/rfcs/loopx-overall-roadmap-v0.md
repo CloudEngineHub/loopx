@@ -378,6 +378,14 @@ These priorities do not change live Goal quota or authorize experiments/cloud re
 - **Exit:** independent readback proves retained commitments; distinguish all-gap/partial/stale/rejected/committed; recovery neither duplicates nor expands work, and the initiating surface displays the exact outcome. Add independent semantic counterexamples, not only row-existence assertions.
 - **Rollback:** stop new plan production, keep old previews/receipts readable and unfinished reconciliation available; do not delete materialized work.
 
+**Recovery checkpoint (2026-09-24):** Enabled acceptance now routes missing as
+well as stale associations through bounded agent-scoped replan. Exact hold
+checkpoints survive crowded vision projections; a replan decision does not
+simultaneously select a candidate monitor. Owner binding and fresh completion
+validation remain required. This repairs R1/S2/S3 continuity, not R4's general
+intent-preserving amendment or provider promotion. Real File/SQLite CLI
+regressions cover recovery admission and continued refusal of unbound completion.
+
 ### R2: Continuous Small-team Execution
 
 **Product responsibility.** The steward owns the owner's cross-project context,
@@ -457,6 +465,14 @@ including independent objection and useful synthesis, remains open.
 This qualifies a local execution-facts readback, not the full R2 ladder: assignment
 receipt integration, provisioning, remote probes, two-cycle continuation and Lark
 qualification remain open under their existing owners.
+For managed non-Chat work, [PR #4978](https://github.com/loopx-project/loopx/pull/4978)
+proposes an accepted, exact-version Goal result readback: canonical Todo
+completion binds local report bytes, the CLI verifies them, and packaged Goal
+Files reads a Goal-scoped loopback projection. The [Live Team Workspace RFC](live-team-workspace-v0.md)
+defines this producer-to-reader boundary. Focused local File/SQLite and
+desktop/mobile checks pass on the proposed head; maintainer review and CI
+remain open. Return to the original requester conversation, mixed-team
+continuation and stop/recovery remain separate unqualified outcomes.
 
 **Live team experience is a core S5 outcome.** The [Live Team Workspace
 RFC](live-team-workspace-v0.md) joins a precise command surface with a spatial
