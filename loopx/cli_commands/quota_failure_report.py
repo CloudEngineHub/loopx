@@ -150,6 +150,14 @@ def quota_failure_payload(
             )
         if error.unsettled_repair:
             selection_conflict["unsettled_repair"] = error.unsettled_repair
+        if (
+            error.admission_must_attempt is not None
+            or error.admission_delivery_allowed is not None
+        ):
+            selection_conflict["admission"] = {
+                "agent_must_attempt": error.admission_must_attempt,
+                "delivery_allowed": error.admission_delivery_allowed,
+            }
         payload.update(
             {
                 "reason": str(error),

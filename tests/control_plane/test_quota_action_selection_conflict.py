@@ -141,6 +141,8 @@ def test_requested_todo_that_is_the_projection_selection_is_not_a_conflict() -> 
     # cannot act on it.
     assert "neither the projection's current selection" not in str(error)
     assert "not admitted to settle" in str(error)
+    assert error.admission_must_attempt is True
+    assert error.admission_delivery_allowed is True
 
 
 def test_unsettled_prior_turn_is_named_instead_of_a_selection_conflict() -> None:
@@ -187,4 +189,44 @@ def test_unsettled_prior_turn_is_named_instead_of_a_selection_conflict() -> None
         "qualification_state": "qualified",
         "unsettled_prior_turn_instance_id": prior_turn_id,
         "unsettled_repair": "resume_prior_turn",
+        "admission": {"agent_must_attempt": True, "delivery_allowed": True},
+    }
+
+
+def test_refused_delivery_boundary_is_published_as_a_typed_admission_fact() -> None:
+    """A caller must be able to read which side of the boundary refused it."""
+
+    error = _raise(
+        _payload(
+            should_run=False,
+            selected_todo={"todo_id": REQUESTED_TODO_ID},
+            action_selection_qualification=_qualified_for(REQUESTED_TODO_ID),
+            interaction_contract={
+                "agent_channel": {"must_attempt": True, "delivery_allowed": False}
+            },
+        )
+    )
+
+    assert error.kind is QuotaActionSelectionConflictKind.NOT_ADMITTED
+    assert error.admission_must_attempt is True
+    assert error.admission_delivery_allowed is False
+    assert "delivery_allowed=False" in str(error)
+
+    args = argparse.Namespace(
+        quota_command="should-run",
+        goal_id="quota-conflict-fixture",
+        agent_id="agent-fixture",
+        runtime_root=None,
+        verbose=False,
+    )
+    payload = quota_failure_payload(
+        args,
+        registry_path=Path("/tmp/quota-conflict-registry.json"),
+        runtime_root_arg=None,
+        error=error,
+    )
+
+    assert payload["action_selection_conflict"]["admission"] == {
+        "agent_must_attempt": True,
+        "delivery_allowed": False,
     }

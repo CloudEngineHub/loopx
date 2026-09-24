@@ -87,6 +87,8 @@ class QuotaActionSelectionConflictError(RuntimeError):
         qualification_state: str | None = None,
         unsettled_prior_turn_instance_id: str | None = None,
         unsettled_repair: str | None = None,
+        admission_must_attempt: bool | None = None,
+        admission_delivery_allowed: bool | None = None,
     ) -> None:
         self.kind = kind
         self.requested_todo_id = requested_todo_id
@@ -94,6 +96,8 @@ class QuotaActionSelectionConflictError(RuntimeError):
         self.qualification_state = qualification_state
         self.unsettled_prior_turn_instance_id = unsettled_prior_turn_instance_id
         self.unsettled_repair = unsettled_repair
+        self.admission_must_attempt = admission_must_attempt
+        self.admission_delivery_allowed = admission_delivery_allowed
         if kind is QuotaActionSelectionConflictKind.UNQUALIFIED:
             reason = (
                 "the current projection carries no typed action-selection "
@@ -113,6 +117,14 @@ class QuotaActionSelectionConflictError(RuntimeError):
                 "a selection conflict; the Turn was not admitted to settle that "
                 f"Todo (qualification state: {qualification_state or 'absent'})"
             )
+            if admission_must_attempt is not None or (
+                admission_delivery_allowed is not None
+            ):
+                reason += (
+                    "; admission facts: agent must_attempt="
+                    f"{admission_must_attempt}, delivery_allowed="
+                    f"{admission_delivery_allowed}"
+                )
             if unsettled_prior_turn_instance_id:
                 reason += (
                     f"; the prior Turn {unsettled_prior_turn_instance_id} is still "
