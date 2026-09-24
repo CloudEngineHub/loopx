@@ -21,12 +21,19 @@ when deliberately carrying a prior local delivery; release and installation
 commands select their predecessor automatically.
 
 With frontend dependencies already installed, `npm run build:chat` inside
-`apps/presentation/dashboard` rebuilds the packaged UI. `loopx dashboard`'s source
-development launcher ensures the packaged backend assets exist before starting
-Vite. Run the build again after updating source. A packaged Chat launch rejects
-missing, corrupt or stale assets with an actionable rebuild message, including
-before reusing an existing service. Explicit development/test `--assets-dir`
-continues to support caller-owned assets.
+`apps/presentation/dashboard` rebuilds the packaged UI. That npm entry runs
+`scripts/chat_bundle_launcher.mjs`, which selects a Python 3.11+ interpreter the
+same way the rest of LoopX does (`LOOPX_PYTHON`, then the installer-recorded
+`.loopx-python`, the repository `.venv`, and `python3`/`python`, plus the `py`
+launcher on Windows) and then runs the shared `scripts/chat_bundle.py` builder.
+Supported Windows installations expose `python.exe` without a usable `python3`
+alias, so the entry never assumes the POSIX name; the Windows CI lane rebuilds
+the bundle under exactly that condition. `loopx dashboard`'s source development
+launcher ensures the packaged backend assets exist before starting Vite. Run the
+build again after updating source. A packaged Chat launch rejects missing,
+corrupt or stale assets with an actionable rebuild message, including before
+reusing an existing service. Explicit development/test `--assets-dir` continues
+to support caller-owned assets.
 
 The bundle manifest records the checkout revision, source fingerprints, current
 asset set and SHA-256 of every delivered file. Source fingerprints conservatively

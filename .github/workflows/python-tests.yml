@@ -530,7 +530,7 @@ jobs:
     needs: [changes, chat-bundle]
     if: needs.changes.outputs.python_tests == 'true'
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -552,6 +552,8 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/presentation/dashboard/package-lock.json
 
       - name: Install test dependencies
         run: python -m pip install --disable-pip-version-check -e ".[test]"
@@ -586,6 +588,27 @@ jobs:
           tests/control_plane_ts/sqlite_authority_store.test.ts
           tests/control_plane_ts/local_authority_provider.test.ts
           tests/control_plane_ts/sqlite_runtime_admission.test.ts
+
+      - name: Install the frontend dependencies for a source rebuild
+        working-directory: apps/presentation/dashboard
+        run: npm ci --ignore-scripts
+
+      - name: Rebuild the Chat bundle where only python.exe is usable
+        working-directory: apps/presentation/dashboard
+        shell: pwsh
+        run: |
+          $shadow = Join-Path $env:RUNNER_TEMP "python-exe-only"
+          New-Item -ItemType Directory -Force -Path $shadow | Out-Null
+          # Supported Windows installs may expose python.exe alone, and a
+          # python3.exe App Execution Alias stub is not runnable. The npm entry
+          # must resolve a real 3.11+ interpreter either way.
+          Set-Content -Path (Join-Path $shadow "python3.exe") `
+            -Value "unusable python3 stand-in" -Encoding ascii
+          $env:PATH = "$shadow;$env:PATH"
+          npm run build:chat
+
+      - name: Verify the Windows-built Chat bundle
+        run: python scripts/chat_bundle.py verify --source
 
   presentation:
     needs: [changes, chat-bundle]

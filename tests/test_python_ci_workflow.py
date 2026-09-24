@@ -217,6 +217,23 @@ def test_presentation_exemption_retains_real_frontend_checks_and_force_full() ->
     assert "matrix:\n        shard: [1, 2, 3, 4]" in WORKFLOW
 
 
+def test_windows_lane_rebuilds_the_frontend_without_a_usable_python3() -> None:
+    job = WORKFLOW.split("  windows-powershell:\n", 1)[1].split("  presentation:\n", 1)[0]
+    assert "timeout-minutes: 30" in job
+    assert "cache-dependency-path: apps/presentation/dashboard/package-lock.json" in job
+    assert "working-directory: apps/presentation/dashboard" in job
+    assert "npm ci --ignore-scripts" in job
+    assert "npm run build:chat" in job
+    assert "shell: pwsh" in job
+    # `python3` must be unusable, so a hardcoded POSIX name fails the lane.
+    assert 'Join-Path $shadow "python3.exe"' in job
+    assert "$env:PATH = \"$shadow;$env:PATH\"" in job
+    assert job.index("npm ci --ignore-scripts") < job.index("npm run build:chat")
+    assert job.index("npm run build:chat") < job.index(
+        "python scripts/chat_bundle.py verify --source"
+    )
+
+
 def test_four_shards_execute_each_test_once_and_merge_portable_coverage(
     tmp_path: Path,
 ) -> None:
