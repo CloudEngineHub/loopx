@@ -11,6 +11,8 @@ from canonical_authority_fixture import isolate_sqlite_runtime
 from test_native_monitor_poll import _canonical
 from test_monitor_followthrough_contract import GOAL_ID, AGENT_ID, _write_fixture, _add_monitor
 from loopx.control_plane.coordination.local_authority import read_canonical_todos_if_promoted
+from loopx.control_plane.quota.error_codes import QuotaCommandValidationError
+from loopx.control_plane.quota.monitor_poll_lease_transport import current_monitor_lease_proof
 from loopx.control_plane.scheduler.monitor_poll_writeback import write_monitor_poll_todo_state
 from loopx.control_plane.testing.canary_harness import run_json_cli, run_json_cli_result
 
@@ -127,6 +129,23 @@ def test_current_lease_cli_transport_rejects_expired_lease_without_pending(tmp_p
     assert failure["ok"] is False
     assert "current active task lease" in str(failure.get("reason"))
     assert read_canonical_todos_if_promoted(runtime_root=runtime, goal_id=GOAL_ID, include_leases=True) == before
+    pending = runtime / "goals" / GOAL_ID / "runs" / ".transactions" / "quota-monitor-poll"
+    assert not pending.exists() or not list(pending.glob("*.json"))
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_current_lease_cli_transport_rejects_foreign_owner_without_pending(tmp_path, monkeypatch, provider):
+    isolate_sqlite_runtime(tmp_path, monkeypatch)
+    registry, runtime, _state, monitor = _canonical(
+        tmp_path, provider=provider, lease={**LEASE, "owner": "another-agent"},
+    )
+    # The public command also requires a committed same-Turn receipt first;
+    # exercise the read-only transport directly to prove its owner fence.
+    with pytest.raises(QuotaCommandValidationError, match="owned by --agent-id"):
+        current_monitor_lease_proof(
+            runtime_root=runtime, goal_id=GOAL_ID, todo_id=monitor["todo_id"],
+            agent_id=AGENT_ID, effect_id="foreign-owner-monitor-poll",
+        )
     pending = runtime / "goals" / GOAL_ID / "runs" / ".transactions" / "quota-monitor-poll"
     assert not pending.exists() or not list(pending.glob("*.json"))
 
