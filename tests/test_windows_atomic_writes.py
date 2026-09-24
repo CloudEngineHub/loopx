@@ -10,7 +10,9 @@ from typing import Any
 import pytest
 
 from loopx.capabilities.decision_context import private_state
+from loopx.capabilities.benchmark_toolkit import native_codex_isolation
 from loopx.control_plane.heartbeat import automation_upgrade
+from loopx.control_plane.goals import botmux_runtime
 from loopx.extensions import presentation
 from loopx.extensions.lark import private_json
 
@@ -22,7 +24,10 @@ class _WindowsOs:
         self._directory = directory
 
     def __getattr__(self, name: str) -> Any:
-        if name == "O_DIRECTORY":
+        # Native Windows Python has neither directory fsync nor fchmod; an
+        # attribute that exists only on POSIX must stay missing here, or the
+        # POSIX lane stops covering the Windows surface.
+        if name in {"O_DIRECTORY", "fchmod"}:
             raise AttributeError(name)
         return getattr(os, name)
 
@@ -46,6 +51,14 @@ def _write_extension_projection(path: Path) -> None:
 
 def _write_heartbeat_automation(path: Path) -> None:
     automation_upgrade._atomic(path, 'prompt = "ready"\n')
+
+
+def _write_botmux_binding(path: Path) -> None:
+    botmux_runtime._write_private_json_atomic(path, {"status": "ready"})
+
+
+def _write_native_isolation(path: Path) -> None:
+    native_codex_isolation._atomic_write_text(path, "prompt = \"ready\"\n")
 
 
 @pytest.mark.parametrize(
@@ -74,6 +87,18 @@ def _write_heartbeat_automation(path: Path) -> None:
             _write_heartbeat_automation,
             'prompt = "ready"\n',
             id="heartbeat-automation",
+        ),
+        pytest.param(
+            botmux_runtime,
+            _write_botmux_binding,
+            {"status": "ready"},
+            id="botmux-binding",
+        ),
+        pytest.param(
+            native_codex_isolation,
+            _write_native_isolation,
+            'prompt = "ready"\n',
+            id="native-isolation",
         ),
     ],
 )
