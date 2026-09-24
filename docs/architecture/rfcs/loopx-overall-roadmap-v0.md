@@ -602,6 +602,16 @@ Progress means another independently reproducible user journey, not more fields 
 
 These are synthetic-fixture results at the exact baseline, without live user content. F1–F4 exercise existing `ChatActionService.preview/apply` with isolated Goals. F4 injects failure immediately before the second Todo write; the other writes use the actual local Todo writer. F5–F7 are source/contract findings.
 
+**R1 acceptance coverage checkpoint.** New owner acceptance configurations must
+explicitly select named work or all advancement work; bounded experiments no
+longer implicitly gate future independent tasks. Legacy contracts retain their
+scope until owner reconfiguration. Claim, lease, completion, verification and
+read-only delivery surfaces share the TS acceptance owner. A blocker ACK remains
+a wait checkpoint, not recovery completion; scope correction must prove restored
+independent admission without weakening task-level validation. See the
+[acceptance contract](../../reference/goal-acceptance-observations.md#owner-authorized-contract-v0).
+This narrows a local recovery gap, not the full R1/R2 coordination acceptance.
+
 **R1 transaction checkpoint.** Team-plan admission and whole-batch planning now live in `work_items/team_plan.ts`. Confirmation assigns all admitted lanes in one write with a durable operation receipt; identity is proposal + lane, never Todo text. File/SQLite authority uses the existing CAS and receipt owner; legacy Markdown writes the records and immutable receipt together under its existing fence and lock. Exact replay reads historical results even after a receiver changes, completes or deletes work. A precommit failure creates no lane prefix, and pending canonical display delivery requires recovery before Chat reports verified success. The card names partial assignments and gaps; quota/stop remain advisory and an explicit enforcement claim is rejected.
 
 This closes the local assignment/retry portion of F4, not R1's collaboration acceptance. Registered receivers are assigned without being impersonated as authors; agent-originated settlement cannot assign another peer without owner confirmation. Assignment does not attest receiver adoption, a lease, execution, dependency consumption or independent acceptance. Do not add a second confirmation to ordinary already-authorized work. Gap resolution requires new explicit intent; replay must not silently extend the confirmed subset. The fingerprint binds current local state and canonical revision, not a full shared Goal-intent transaction. R2/R3/R4 still own executor qualification, receiver adoption/result return and shared intent/authorization; the cross-host Turn lease is not a plan barrier.
