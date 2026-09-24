@@ -219,6 +219,76 @@ export const typedActionsScenario = {
       await operationUi.close();
     }
 
+    const storedWorkspaceGate = {
+      schema_version: "loopx_chat_action_proposal_v1",
+      proposal_id: "stored-goal-create-workspace-gate",
+      action_kind: "goal.create",
+      summary: "Create stored workspace Goal",
+      normalized_parameters: { goal_id: "product-release", title: "Stored workspace Goal", workspace_ref: "current" },
+      context: { kind: "goal_directory", goal_id: "product-release" },
+      expected_state_fingerprint: "fixture-workspace-gate-r1",
+      permission_classification: "durable_write",
+      validation_evidence: ["workspace selection required"],
+      available_transitions: ["regenerate", "reject", "defer"],
+      status: "gated",
+      receipt: null,
+      stale: null,
+      gate: {
+        kind: "workspace_selection_required",
+        summary: "Select one server-configured workspace before creating this Goal.",
+        next_action: "Select a workspace to regenerate the confirmation preview.",
+        candidates: [{ workspace_ref: "workspace-fixture", label: "Workspace 1" }],
+      },
+      created_at: "2026-09-14T01:00:00Z",
+      updated_at: "2026-09-14T01:00:01Z",
+    };
+    const workspaceGateUi = await openWorkspacePage(browser, url, {
+      apiOptions: { initialActionProposals: [storedWorkspaceGate] },
+    });
+    try {
+      const { api, page } = workspaceGateUi;
+      await page.reload({ waitUntil: "networkidle" });
+      await page.getByTestId("personal-goal-home").waitFor({ state: "visible" });
+      await page.locator(".personal-goal-link", { hasText: "Product Release" }).click();
+      await page.getByRole("navigation", { name: "Goal 视图" }).getByRole("button", { name: /^(Chat|对话)$/ }).click();
+      await page.locator(".personal-gated-summary summary").click();
+      const proposalRow = page.locator(".personal-proposal-row", { hasText: "Stored workspace Goal" });
+      try {
+        await proposalRow.waitFor({ state: "visible", timeout: 10_000 });
+      } catch (error) {
+        throw new Error(`${error.message}; proposals=${await page.locator(".personal-proposal-row").allInnerTexts()}; errors=${workspaceGateUi.errors.join(" | ")}; body=${(await page.locator("body").innerText()).slice(0, 2000)}`);
+      }
+      await proposalRow.click();
+      const drawer = page.locator('.personal-context-drawer[data-context-kind="proposal"]');
+      if ((await drawer.innerText()).includes("需要宿主确认")) {
+        throw new Error("Workspace selection gate was mislabeled as host-only confirmation");
+      }
+      const writesBeforeSelection = api.durableWriteCount;
+      await drawer.getByRole("button", { name: /Workspace 1/ }).click();
+      await page.getByRole("button", { name: "创建 Goal 并开始首轮", exact: true }).waitFor({ state: "visible" });
+      const regenerated = api.actionPreviews.at(-1);
+      if (regenerated?.normalized_parameters.workspace_ref !== "workspace-fixture") {
+        throw new Error(`Stored workspace selection did not regenerate the Goal preview: ${JSON.stringify(regenerated)}`);
+      }
+      if (api.durableWriteCount !== writesBeforeSelection) throw new Error("Selecting a workspace applied without confirmation");
+      await page.getByRole("button", { name: "创建 Goal 并开始首轮", exact: true }).click();
+      await page.getByText("已应用，LoopX 状态将刷新。", { exact: true }).waitFor({ state: "visible" });
+      if (!api.actionApplies.includes(regenerated.proposalId)) throw new Error("Confirmation did not apply the regenerated preview");
+      if (api.durableWriteCount !== writesBeforeSelection + 1) throw new Error("Confirmation did not write exactly one Goal");
+      await page.reload({ waitUntil: "networkidle" });
+      await page.getByTestId("personal-goal-home").waitFor({ state: "visible" });
+      const stored = await page.evaluate(async (proposalId) => {
+        const response = await fetch("/api/actions?goal_id=product-release");
+        const payload = await response.json();
+        return payload.proposals?.find((proposal) => proposal.proposal_id === proposalId);
+      }, regenerated.proposalId);
+      if (stored?.status !== "applied" || stored.receipt?.projection_verified !== true) {
+        throw new Error(`Confirmed workspace Goal did not survive readback: ${JSON.stringify(stored)}`);
+      }
+    } finally {
+      await workspaceGateUi.close();
+    }
+
     // Real Goal button -> typed preview -> compiler -> drawer/apply, with only
     // the service boundary controlled. No test computes the plan under review.
     for (const width of [1512, 390]) {
