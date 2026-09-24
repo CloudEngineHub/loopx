@@ -72,8 +72,8 @@ class QuotaActionSelectionConflictError(RuntimeError):
 
     A guard bound to a ``--todo-id`` has to agree with the current projection.
     When it cannot, this error names what was requested, what the projection
-    currently selects, and what the caller should do next, so the failure is not
-    reported as an opaque quota collection failure.
+    selects or the Turn retains, and what the caller should do next, so the
+    failure is not reported as an opaque quota collection failure.
     """
 
     error_code = "quota_action_selection_conflict"
@@ -90,7 +90,6 @@ class QuotaActionSelectionConflictError(RuntimeError):
         admission_must_attempt: bool | None = None,
         admission_delivery_allowed: bool | None = None,
         receipt_replan_obligation_id: str | None = None,
-        retained_selection: bool = False,
     ) -> None:
         self.kind = kind
         self.requested_todo_id = requested_todo_id
@@ -101,7 +100,11 @@ class QuotaActionSelectionConflictError(RuntimeError):
         self.admission_must_attempt = admission_must_attempt
         self.admission_delivery_allowed = admission_delivery_allowed
         self.receipt_replan_obligation_id = receipt_replan_obligation_id
-        self.retained_selection = retained_selection
+        self.retained_selection = bool(
+            kind is QuotaActionSelectionConflictKind.CONFLICT
+            and receipt_replan_obligation_id
+            and selected_todo_id
+        )
         if kind is QuotaActionSelectionConflictKind.UNQUALIFIED:
             reason = (
                 "the current projection carries no typed action-selection "
@@ -139,7 +142,7 @@ class QuotaActionSelectionConflictError(RuntimeError):
                         else ""
                     )
                 )
-        elif retained_selection:
+        elif self.retained_selection:
             # The Turn's receipt is bound to an autonomous replan obligation, so
             # the requested Todo cannot replace the selection that Turn already
             # retains.  The default conflict sentence calls that id "the
@@ -154,6 +157,13 @@ class QuotaActionSelectionConflictError(RuntimeError):
                 f"{receipt_replan_obligation_id or '(unnamed)'}, which owns its "
                 "settlement"
             )
+        elif receipt_replan_obligation_id:
+            reason = (
+                f"requested Todo {requested_todo_id or '(none)'} cannot replace "
+                "this Turn's settlement identity: it is bound to the autonomous "
+                f"replan obligation {receipt_replan_obligation_id}, and no pending "
+                "Todo selection is retained"
+            )
         else:
             reason = (
                 f"requested Todo {requested_todo_id or '(none)'} is neither the "
@@ -167,11 +177,17 @@ class QuotaActionSelectionConflictError(RuntimeError):
                 "the prior Turn named in the reason is the blocker, settle that "
                 "Turn first and then rerun this Turn"
             )
-        elif retained_selection:
+        elif self.retained_selection:
             self.recommended_action = (
                 "settle the autonomous replan obligation that owns this Turn, or "
                 "rerun `loopx quota should-run` without --todo-id to read the "
                 "selection the Turn retains; do not rebind the retained selection"
+            )
+        elif receipt_replan_obligation_id:
+            self.recommended_action = (
+                "settle the autonomous replan obligation that owns this Turn, "
+                "then start a fresh Turn and rerun `loopx quota should-run` to "
+                "select a Todo; do not rebind this Turn"
             )
         else:
             self.recommended_action = (
