@@ -1224,6 +1224,26 @@ def _build_interaction_response_plan(
     }
 
 
+def _auxiliary_monitor_receipt_binding_required(payload: Mapping[str, Any]) -> bool:
+    """Whether this Turn's own receipt is intentionally identity-less.
+
+    A guard whose portfolio requires an explicit turn binding commits a receipt
+    with no settlement identity, and the turn-scoped poll refuses to observe
+    through a receipt that binds nothing. Advertising `ready` for that Turn
+    would offer a command whose only possible outcome is an identity refusal, so
+    the projection has to say which binding is missing instead.
+    """
+
+    portfolio = payload.get("action_portfolio")
+    policy = (
+        portfolio.get("selection_policy") if isinstance(portfolio, Mapping) else None
+    )
+    return (
+        isinstance(policy, Mapping)
+        and policy.get("requires_explicit_turn_binding") is True
+    )
+
+
 def _build_interaction_cli_channel(
     payload: dict[str, Any],
     execution_obligation: dict[str, Any],
@@ -1325,7 +1345,20 @@ def _build_interaction_cli_channel(
                     },
                 },
             }
-            if not safe_turn_instance_id:
+            if _auxiliary_monitor_receipt_binding_required(payload):
+                auxiliary_projection.update(
+                    {
+                        "availability": "receipt_binding_required",
+                        "reason_code": "auxiliary_monitor_receipt_not_bound",
+                        "next_step": (
+                            "this Turn's own receipt binds no Todo, so a "
+                            "turn-scoped observation cannot be admitted for it; "
+                            "bind the Turn to a claimed Todo and observe from "
+                            "that Turn"
+                        ),
+                    }
+                )
+            elif not safe_turn_instance_id:
                 auxiliary_projection.update(
                     {
                         "availability": "turn_binding_required",
