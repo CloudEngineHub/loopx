@@ -15,6 +15,9 @@ import {computeContinuationTodoFacts} from "../../loopx/control_plane/coordinati
 import {prepareCoordinationProjectionCommit, indexCoordinationProjection} from "../../loopx/control_plane/coordination/coordination_projection.ts";
 import {engageLegacyCoordinationWriterFence, LEGACY_COORDINATION_WRITER_FENCE_ENGAGE_REQUEST_SCHEMA, LEGACY_COORDINATION_WRITER_FENCE_SCHEMA} from "../../loopx/control_plane/coordination/legacy_writer_fence.ts";
 import {selectLocalSqliteAuthority, openLocalAuthorityStore} from "../../loopx/control_plane/coordination/local_authority_provider.ts";
+import {resolveTestPython} from "../../scripts/test-python.mjs";
+
+const PYTHON = resolveTestPython();
 
 async function fixture(t: test.TestContext) {
   const root = await mkdtemp(join(tmpdir(), "loopx-continuation-"));
@@ -110,7 +113,7 @@ test("real Python CLI source/target processes use the file backend and do not au
   await writeFile(registry, JSON.stringify({common_runtime_root: f.root, goals: [{id: "goal-a", repo: f.root,
     state_file: "ACTIVE_GOAL_STATE.md", coordination: {agent_model: "peer_v1", registered_agents: ["agent-a", "agent-b"]}}]}));
   const cli = (action: string, session: string, args: string[] = []) => {
-    const run = spawnSync("python3", ["-m", "loopx.cli", "--registry", registry, "--runtime-root", f.root, "--format", "json",
+    const run = spawnSync(PYTHON, ["-m", "loopx.cli", "--registry", registry, "--runtime-root", f.root, "--format", "json",
       "handoff", action, "--goal-id", "goal-a", "--todo-id", "todo_a", "--agent-id", "agent-a",
       "--session-id", session, "--workspace", f.root, ...args], {encoding: "utf8", env: {...process.env, PYTHONPATH: process.cwd()}, timeout: 30000});
     assert.equal(run.error, undefined);
@@ -139,7 +142,7 @@ test("real Python CLI source/target processes use the file backend and do not au
 });
 
 function runCli(cliRoot: string, registry: string, action: string, session: string, args: string[] = []) {
-  const run = spawnSync("python3", ["-m", "loopx.cli", "--registry", registry, "--runtime-root", cliRoot, "--format", "json",
+  const run = spawnSync(PYTHON, ["-m", "loopx.cli", "--registry", registry, "--runtime-root", cliRoot, "--format", "json",
     "handoff", action, "--goal-id", "goal-a", "--todo-id", "todo_a", "--agent-id", "agent-a",
     "--session-id", session, "--workspace", cliRoot, ...args], {encoding: "utf8", env: {...process.env, PYTHONPATH: process.cwd()}, timeout: 30000});
   assert.equal(run.error, undefined, run.stderr);
@@ -288,7 +291,7 @@ test("CLI --format digest renders readable handoff summary", async t => {
   const cli = (action: string, session: string, args: string[] = [], format = "json", agentId = "agent-a") => {
     // The 'digest' format is a subcommand-specific flag; pass it after the action.
     const formatArgs = format === "digest" ? ["--format", "digest"] : [];
-    const run = spawnSync("python3", ["-m", "loopx.cli", "--registry", registry, "--runtime-root", f.root,
+    const run = spawnSync(PYTHON, ["-m", "loopx.cli", "--registry", registry, "--runtime-root", f.root,
       "--format", "json", "handoff", action, "--goal-id", "goal-a", "--todo-id", "todo_a",
       "--agent-id", agentId, "--session-id", session, "--workspace", f.root, ...formatArgs, ...args],
       {encoding: "utf8", env: {...process.env, PYTHONPATH: process.cwd()}, timeout: 30000});
