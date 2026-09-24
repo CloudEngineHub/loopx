@@ -10,6 +10,7 @@ import pytest
 
 from loopx.cli import main as cli_main
 from loopx.cli_commands import turn as turn_command
+from loopx.cli_commands import turn_decision
 from loopx.cli_commands import turn_rendering, turn_todo_writeback
 from loopx.control_plane.turn_driver import executor
 from loopx.control_plane.turn_driver import turn_journal_runtime
@@ -109,6 +110,18 @@ def test_existing_run_once_markdown_renderer_remains_intact() -> None:
             "result_kind": "validated_progress",
             "validation": {"status": "passed", "recovery_kind": None},
             "receipt": {"next_phase": None},
+            "reason": "dsh_output_budget_exhausted_no_final",
+            "host_failure": {
+                "kind": "output_budget_exhausted",
+                "retryable": False,
+            },
+            "managed_executor": {
+                "execution_profile": "deepseek-v4-flash@high",
+                "output_token_budget": {
+                    "max_tokens": 16_384,
+                    "scope": "per_model_request",
+                },
+            },
             "effects": {
                 "host_invoked": True,
                 "state_written": True,
@@ -120,6 +133,27 @@ def test_existing_run_once_markdown_renderer_remains_intact() -> None:
     assert rendered.startswith("# LoopX Turn Run Once\n")
     assert "- validation: passed" in rendered
     assert "- quota_spent: True" in rendered
+    assert "- execution_profile: deepseek-v4-flash@high" in rendered
+    assert "- output_token_limit: 16384" in rendered
+    assert "- output_token_limit_scope: per_model_request" in rendered
+    assert "- host_failure_kind: output_budget_exhausted" in rendered
+    assert "- host_failure_retryable: False" in rendered
+    assert "- failure_reason: dsh_output_budget_exhausted_no_final" in rendered
+
+
+def test_non_budget_failure_keeps_the_existing_compact_rendering() -> None:
+    from loopx.cli_commands.turn_rendering import render_loopx_turn_execution_markdown
+
+    rendered = render_loopx_turn_execution_markdown({
+        "status": "failed", "result_kind": "host_failure",
+        "reason": "provider_failed",
+        "host_failure": {"kind": "auth_failed", "retryable": False},
+    })
+    assert rendered == "\n".join([
+        "# LoopX Turn Run Once", "- status: failed", "- result_kind: host_failure",
+        "- validation: None", "- recovery_kind: None", "- next_phase: None",
+        "- host_invoked: None", "- state_written: None", "- quota_spent: None",
+    ])
 
 
 def test_inspection_markdown_distinguishes_current_plan_from_last_result() -> None:
@@ -293,17 +327,26 @@ def test_inspect_journal_cli_branches_before_live_or_write_paths(
         raise AssertionError("inspect-journal reached a live or write path")
 
     for name in (
-        "build_lark_operator_inbox_urgency_projector",
-        "collect_status",
-        "scheduler_execution_context_for_turn",
         "build_live_quota_should_run_decision",
         "build_loopx_turn_plan",
+        "build_turn_envelope",
         "run_codex_cli_host",
         "run_loopx_turn_once",
         "spend_quota_slot",
         "refresh_state_run",
     ):
         monkeypatch.setattr(turn_command, name, unexpected_call)
+    # The shared decision owner now performs the live reads this command used to
+    # resolve itself, so the guard has to patch them where they live. Patching
+    # the old ``turn_command`` names would fail loudly here instead of proving
+    # anything: `turn` no longer resolves its own status, scheduler context or
+    # operator-inbox projector.
+    for name in (
+        "build_lark_operator_inbox_urgency_projector",
+        "collect_status",
+        "scheduler_execution_context_for_turn",
+    ):
+        monkeypatch.setattr(turn_decision, name, unexpected_call)
     for name in ("complete_goal_todo", "update_goal_todo"):
         monkeypatch.setattr(turn_todo_writeback, name, unexpected_call)
     monkeypatch.setattr(executor, "execute_turn_driver_settlement", unexpected_call)
@@ -444,7 +487,7 @@ def test_inspection_has_no_python_fallback_when_typescript_runtime_is_missing(
     _write_journal(tmp_path, _journal())
 
     def missing_node(*_args: object, **_kwargs: object) -> object:
-        raise RuntimeError("Turn-journal inspection requires Node.js 22.6 or newer")
+        raise RuntimeError("Turn-journal inspection requires Node.js 22.22.3 or newer")
 
     monkeypatch.setattr(turn_journal_runtime, "effect_runtime_result", missing_node)
 
@@ -455,7 +498,7 @@ def test_inspection_has_no_python_fallback_when_typescript_runtime_is_missing(
     assert payload == {
         "ok": False,
         "schema_version": "loopx_turn_journal_inspection_v1",
-        "error": "Turn-journal inspection requires Node.js 22.6 or newer",
+        "error": "Turn-journal inspection requires Node.js 22.22.3 or newer",
         "effects": [],
     }
 

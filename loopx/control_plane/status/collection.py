@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from ..goals.acceptance_observation import attach_goal_acceptance_observations
+from ..goals.artifact_lifecycle import attach_goal_artifact_lifecycle_projections
 from ..goals.contract_health import project_contract_health_for_goal
 from ..goals.activation import (
     GoalActivationState,
@@ -17,7 +19,9 @@ from ..goals.activation import (
 from ..runtime.runtime_projection_route import (
     collect_runtime_projection_route_diagnostics,
 )
+from ..todos.todo_index import MAX_TODO_INDEX_ROLLOUT_EVENTS_PER_GOAL
 from ...registry import registry_goals
+from ...rollout_event_log import RolloutEventSnapshot
 
 
 StatusCallback = Callable[..., Any]
@@ -47,7 +51,7 @@ class StatusCollectionContext:
     load_registry: StatusCallback
     resolve_runtime_root: StatusCallback
     collect_global_registry_health: StatusCallback
-    collect_history: StatusCallback
+    collect_status_history: StatusCallback
     check_contract: StatusCallback
     build_attention_queue: StatusCallback
     build_runtime_summaries: StatusCallback
@@ -74,6 +78,7 @@ def collect_status(
     recent_run_limit: int | None = None,
     include_goal_subagent_configuration: bool = False,
     activation_state_filter: GoalActivationState | str | None = None,
+    agent_lane_id: str | None = None,
 ) -> dict[str, Any]:
     display_limit = max(0, limit)
     control_plane_limit = max(
@@ -93,20 +98,27 @@ def collect_status(
         runtime_root_override,
         registry_path=registry_path,
     )
+    rollout_events = RolloutEventSnapshot(
+        runtime_root,
+        limit=MAX_TODO_INDEX_ROLLOUT_EVENTS_PER_GOAL,
+    )
     global_registry = context.collect_global_registry_health(
         registry_path=registry_path,
         runtime_root=runtime_root,
         current_registry=registry,
     )
     include_runtime_goals = bool(global_registry.get("current_registry_is_global"))
-    history = context.collect_history(
+    history_collection = context.collect_status_history(
         registry_path=registry_path,
         runtime_root=runtime_root,
         goal_id=goal_filter,
         limit=control_plane_limit,
-        include_runtime_goals=include_runtime_goals,
+        status_include_runtime_goals=include_runtime_goals,
         activation_state_filter=activation_filter,
+        agent_lane_id=agent_lane_id,
+        registry=registry,
     )
+    history = history_collection.status_history
     contract = context.check_contract(
         registry_path=registry_path,
         runtime_root_override=str(runtime_root),
@@ -115,6 +127,8 @@ def collect_status(
         goal_id_filter=goal_filter,
         include_public_boundary_scan=include_public_boundary_scan,
         activation_state_filter=activation_filter,
+        history_audit=history_collection.contract_audit,
+        registry=registry,
     )
     contract = project_contract_health_for_goal(contract, goal_id=goal_filter)
     queue = context.build_attention_queue(
@@ -127,6 +141,7 @@ def collect_status(
         include_stopped_goal_context=(
             activation_filter is GoalActivationState.STOPPED
         ),
+        events_for_goal=rollout_events.events_for_goal,
     )
     runtime_summaries = context.build_runtime_summaries(
         history=history,
@@ -139,23 +154,28 @@ def collect_status(
         include_goal_subagent_configuration=(
             include_goal_subagent_configuration
         ),
+        events_for_goal=rollout_events.events_for_goal,
     )
     promotion_gate = context.build_promotion_gate(
         registry_path=registry_path,
         runtime_root_override=str(runtime_root),
+        registry=registry,
     )
     runtime_projection_routes = collect_runtime_projection_route_diagnostics(
         registry_path=registry_path,
         runtime_root=runtime_root,
         goal_id=goal_filter,
         activation_state_filter=activation_filter,
+        registry=registry,
     )
     runtime_projection_route_health = {
         "healthy": (
             bool(runtime_projection_routes.get("healthy"))
             if runtime_projection_routes.get("available")
             else None
-        )
+        ),
+        # Registry, Goal and activation scope already live in the status envelope.
+        "goal_count": int(runtime_projection_routes.get("goal_count") or 0),
     }
     contract_projection = {
         "ok": contract.get("ok"),
@@ -241,4 +261,6 @@ def collect_status(
         payload["goal_channel_notification_projection"] = (
             goal_channel_notification_projection
         )
+    attach_goal_acceptance_observations(payload, history=history)
+    attach_goal_artifact_lifecycle_projections(payload, history=history)
     return payload

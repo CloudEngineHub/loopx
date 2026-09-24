@@ -27,7 +27,69 @@ continue it; when it needs to fan out, split, supersede, or create successor
 work, it writes the new task through the LoopX todo lifecycle and lets the board
 sync catch up.
 
+## Priority intent
+
+Priority is an explicit scheduling field, with `P0` highest and `P4` lowest.
+Create or edit it independently of the task description:
+
+```bash
+loopx todo add --goal-id <goal-id> --role agent --priority P1 --text '<agent action>'
+loopx todo update --goal-id <goal-id> --todo-id <todo-id> --priority P3
+loopx todo update --goal-id <goal-id> --todo-id <todo-id> --clear-priority
+```
+
+Pass the registered `--agent-id` on updates when the Goal has multiple Agents.
+The existing authoring, ownership, lease and review requirements still apply.
+Chat `todo.create` accepts `priority`; reviewed `todo.update` edits accept
+`priority` or `clear_priority`. The task management panel uses that reviewed
+update path for its priority selector. Priority never grants eligibility,
+capabilities, a claim or quota; missing priority is allowed and sorts after P4.
+The generated agent authoring hint shows an explicit P1 example, not a global
+default or a prerequisite for same-turn binding.
+
+Omitting priority from an ordinary text edit preserves the current priority.
+Use `--clear-priority` to remove it. Legacy `--text '[P2] Task'` remains supported;
+a supplied prefix edits priority for old callers. An explicit parameter and a
+conflicting prefix are rejected before writing, as are simultaneous set/clear
+instructions. Words such as `P0` inside ordinary prose have no scheduling meaning.
+Historical decorated prefixes such as `[P2-review]` read as P2; an edit renders
+the normalized `[P2]` prefix. P3/P4 participate in ordering and repair suggestions
+without being silently promoted to P1. Existing repair-suggestion and historical
+event-replay defaults retain their own contracts; they do not impose a default
+on new unprioritized Todos.
+
+`todos/priority.ts` owns authoring intent and ordering. The generated coordination
+contract supplies its vocabulary and legacy grammar to Python read adapters.
+Markdown keeps the compatible `[Pn] description` display; native authority records
+also carry canonical priority/title. File, SQLite and PostgreSQL updates use the
+existing admitted head, CAS and operation receipt. A retry retains the original
+intent identity and returns its historical result; changing priority under the
+same operation ID is a conflict. No provider promotion or receipt rewrite occurs.
+
 ## Write Contract
+
+For a caller-owned runtime that already registered its Goal/Agent, generate the
+model planning checkpoint before writing executable task Todos:
+
+```bash
+loopx --format json todo plan --goal-id <goal-id> --agent-id <registered-agent> \
+  --text '<exact new task or follow-up input>'
+```
+
+This read-only command reuses `/loopx`'s planner and Todo-delta contract. It
+returns the current frontier, typed result schema and an explicit caller-owned
+execution handoff; it does not run a model, create a Goal, write a Todo, activate
+a host loop or spend quota. A model consumes the packet and uses the existing
+Todo CLI to plan actual task work. No planning/setup Todo is required. Read back
+the returned ids and current state before the caller activates its driver and
+enters the normal quota guard. A planning result does not authorize execution.
+Follow-up input preserves the Goal/Agent and existing waits; reconcile the plan
+instead of restarting the Goal. Unrelated peers and their claims remain intact.
+
+The installed `$loopx` skill recognizes this explicit packet as a bounded
+planning checkpoint. Without one, its existing startup/continuation behavior is
+unchanged. Omit `todo plan` to use that ordinary interactive entry; callers must
+not simulate a planning checkpoint by prewriting an advancement Todo.
 
 When read-only analysis, a review packet, a gate checklist, or P0/P1 steering
 finds a concrete user or owner action, write it immediately with the todo CLI.
@@ -87,6 +149,33 @@ loopx todo add \
   --action-kind monitor
 ```
 
+`watch_only=true` changes convergence and replan semantics, not schedulability.
+A scheduled watch-only monitor remains eligible at `next_due_at`, but it never
+creates autonomous replan pressure and never preempts runnable advancement.
+When both are present, `interaction_contract` keeps advancement primary and
+projects an optional, typed, no-spend `auxiliary_monitor_poll` route.
+That CLI route is available only when it is bound to the current Turn. It
+requires the caller to place the fresh observation digest in
+`LOOPX_MONITOR_RESULT_HASH` and exposes separate unchanged and material-change
+commands; omitting either the Turn binding or result digest fails closed before
+monitor writeback.
+The canonical watch-only/ordinary-due partition is produced inside the existing
+TypeScript Todo summary and quota-planning owners after Agent scope and
+capability admission; Python compatibility code only adapts legacy facts and
+renders the selected CLI/Lark route.
+
+`watch_only=true` 改变的是收敛与 replan 语义，而不是可调度性。带
+`next_due_at` 的 watch-only monitor 到期后仍可轮询，但不会制造 autonomous
+replan 压力，也不会抢占 runnable advancement；二者同时存在时，
+`interaction_contract` 保持 advancement 为主，并投影一条可选、typed、no-spend
+的 `auxiliary_monitor_poll` 路由。
+该 CLI 路由仅在绑定当前 Turn 时可用；调用方必须把本次新鲜 observation digest
+写入 `LOOPX_MONITOR_RESULT_HASH`，并在 unchanged 与 material-change 两条命令中
+明确选择。缺少 Turn 绑定或 result digest 时，monitor writeback 会在写入前失败关闭。
+watch-only／普通 due 的权威分区由既有 TypeScript Todo summary 与 quota-planning
+owner 在 Agent scope 和 capability admission 之后生成；Python 兼容层只适配旧事实并
+渲染已选中的 CLI／Lark 路由。
+
 `--action-kind` is a public-safe token. Known generic tokens such as
 `run_eval`, `validate`, `rebuild`, `writeback`, `monitor`, and `poll` help the
 CLI project the lane consistently, but explicit `--task-class` is the authority
@@ -101,6 +190,39 @@ For scheduled monitors, keep the contract minimal: `--next-due-at` is the first
 eligible time, `--cadence` is the retry interval, `--monitor-target-key` is the
 stable idempotency key, and optional `--expires-at` is the hard stop after
 which the monitor must not catch up.
+
+Public Todo updates validate the effective waiting state, not just newly supplied
+`resume_when`. Changing a Monitor-waiting Todo's status/task class or successor
+list must preserve the open advancement-task/independent-successor contract.
+To leave that contract, explicitly clear `resume_when` in the same update; this
+also clears its Monitor generation fence. Ordinary text/note corrections do not
+re-arm a wait, reset its baseline, or demand a new successor after its condition
+becomes satisfied. Explicitly re-submitting a satisfied Monitor condition still
+requires clearing it before re-arming. These checks are planning constraints,
+not permission to claim work, commit to a provider, or execute a successor.
+
+Monitor observations are reduced against the Todo under its existing writer lock.
+Callers report a result hash and material-change fact; they must not independently
+increment counters. A material observation with a different result hash increments
+`material_change_generation`; repeating the same hash does not. An unchanged
+same-hash poll increments `consecutive_no_change`; material change or a changed hash
+resets that count. Issue-fix grouped membership updates use this same path.
+New grouped monitors default to watch-only; subsequent observations preserve
+the existing expiration/watch policy rather than silently re-enabling watch-only.
+
+An exact `monitor_effect_id` replay keeps the committed counters. Reusing the ID
+with different observation fields fails. Older timestamps fail even without an
+effect ID; same-second unkeyed polls remain allowed, while distinct keyed effects
+retain strict ordering. Ordering preserves microseconds. Newly written
+`material_change_generation` and `consecutive_no_change` values must be
+non-negative safe integers. Use ISO timestamps
+(for example `2030-01-01T12:00:00.000001+00:00`); invalid calendar dates are
+rejected. Existing compact/week-date and timezone-offset-second spellings remain readable.
+Existing malformed historical timestamps do not prove an ordering fence.
+
+These rules do not make a Monitor executable delivery work, grant claim/lease
+authority, or make Monitor and successor writes atomic. A planning result is
+not a durable receipt; provider promotion remains explicitly gated.
 
 Terminology: a `goal_id` is the LoopX control-plane boundary: registry
 entry, active-state file, quota lane, status projection, and run-history stream.
@@ -219,6 +341,28 @@ loopx todo update \
 workspace isolation, not write authority; claim/lease, capabilities, the goal
 boundary, and repository policy continue to apply.
 
+Completion validation follows the same routing. If `task_repository` differs
+from the Goal repository, LoopX binds the caller-approved command to a
+turn-bound delivery-workspace receipt (an existing writeback receipt or the
+exact Turn's host-verified pre-completion snapshot) and executes it only from a
+clean linked worktree whose canonical origin matches that identity. A missing receipt,
+canonical checkout, dirty or deleted worktree, and repository mismatch all
+fail closed before command execution with a path-free
+`validation_blocked_completion` receipt. When no separate repository is
+declared, validation keeps the Goal repository as its default workspace. The
+CLI and managed Turn use this shared completion effect; frontend and Lark
+consume the same receipt projection and do not own a second cwd setting.
+
+完成校验遵循同一套路由规则。若 `task_repository` 与 Goal 仓库不同，LoopX
+会把调用方预先声明的校验命令绑定到当前 Turn 的 delivery-workspace receipt（已有
+writeback receipt，或同一 Turn 中 host 在完成前验证的 snapshot），且只在
+canonical origin 匹配、状态干净的 linked worktree 中执行。receipt 缺失、使用
+canonical checkout、worktree 脏或已删除、仓库身份不匹配时，系统都会在命令执行
+前 fail closed，并返回不泄露本地路径的 `validation_blocked_completion` receipt。
+未声明独立仓库时，仍以 Goal 仓库作为默认校验 workspace。CLI 与 managed Turn
+共享同一个 completion effect；前端与 Lark 只消费同源 receipt 投影，不新增 cwd
+配置源。
+
 `quota should-run --agent-id <agent-id>` is the preflight for every peer. When
 the selected task writes repository state and the peer is in a non-git,
 unrelated, or non-isolated workspace, it returns `workspace_guard` and blocks
@@ -288,6 +432,19 @@ Deferred todos may carry a machine-readable resume condition with
   material-change generation. The transition binds the monitor's current
   generation as a baseline, so unchanged polls, note edits, and replay of the
   same material result do not wake the todo.
+- `resume_when=resume_at:<timezone-aware-rfc3339-timestamp>`: the todo becomes
+  ready at or after one exact instant. A timezone is mandatory; authoring
+  normalizes equivalent offsets to UTC. Before that instant the todo remains a
+  typed wait. At and after it, the projection exposes generation `1` and the
+  same content-addressed `todo_resume_receipt_v0` across repeated reads and
+  process restarts.
+
+`resume_at` is a one-shot Todo condition, not a recurring scheduler. Natural
+language such as `tomorrow morning` is rejected instead of being interpreted
+relative to a host locale. CLI, heartbeat quota reads, and managed Turn consume
+the same Todo projection and runtime-clock snapshot. A due receipt makes the
+lifecycle replan observable, but it does not reopen the Todo or grant execution
+authority by itself.
 
 The monitor and the delivery it discovers are separate work items. A
 `continuous_monitor` is observe-only; it never becomes the runnable delivery.
@@ -411,11 +568,12 @@ the agent should do one of two things:
 This succession decision is durable Todo state. A later progress observation,
 vision ACK, coverage-exhausted result, or rewritten rationale cannot substitute
 for it. Every new completion therefore retains an opaque completion identity.
-A quota-bound completion still permits only the receipt-backed same-turn
-`todo complete` transition for agent advancement work. Complete the matching
-accountable `refresh-state` and `quota spend-slot` first; explicit
-`same_agent_non_delivery` work, monitors, user actions, and user gates keep
-their existing lifecycle paths. An ordinary unscoped completion gets a
+A quota-bound ordinary completion proves the exact admitted identity and Todo
+acceptance (including declared validation), not completion of Turn accounting.
+It may precede the same-turn writeback and spend. The existing typed replay
+phase remains `settlement_pending` until those receipts exist; Todo `done` alone
+does not mean the Turn settled. Terminal `--no-follow-up` still requires the
+complete matching writeback/spend chain. An ordinary unscoped completion gets a
 stable `local_completion_*` identity; if a later `refresh-state` discovers that
 the finished Goal has no real successor, its typed rejection may project
 `--completion-identity-key` for one direct lifecycle reentry. That command is
@@ -425,11 +583,14 @@ It cannot be supplied for an open Todo or used as a quota turn identity.
 Otherwise add/link a real successor. Do not create a user gate merely to
 silence a succession warning.
 
-Compatibility host adapters whose established transaction completes the Todo
-before writing the same-turn refresh and quota receipts must explicitly mark
-their non-repository work `same_agent_non_delivery`. Repository advancement
-through those adapters fails closed with a typed settlement blocker until the
-adapter adopts a writeback-and-spend-before-completion transaction.
+Host adapters own the internal sequence: validate/complete, write back, spend,
+then terminal closeout if requested. A failed internal step is not a request to
+redo accepted task work: retry the same identity and recover the missing receipt.
+MCP returns success only after the whole requested sequence succeeds. Task
+acceptance must not prescribe LoopX bookkeeping, and delivery work must not be
+relabeled `same_agent_non_delivery` to escape a contradictory internal ordering.
+This intentionally removes the old task-class-dependent CLI prerequisite while
+retaining declared validation, claim/lease checks, identity and terminal fences.
 
 This keeps the active checklist honest without making LoopX a heavyweight
 project-management state machine.
@@ -886,3 +1047,174 @@ The fourth verifies concurrent todo writers wait on the active-state lock and
 preserve both claim metadata and unrelated updates.
 The fifth verifies per-todo `required_capabilities`, including multiple P0/P1
 candidate selection, bridge repair, and owner-gated capability misses.
+
+### Lease-fenced canonical text/note updates
+
+After explicit canonical-authority promotion, the active lease holder can edit
+`text` and `note` using the existing execution key and current lease version:
+
+```bash
+loopx todo update --goal-id <goal> --todo-id <todo> --agent-id <agent> \
+  --text 'Correct task description' --note 'Correction context' \
+  --task-lease-idempotency-key <execution-key> --task-lease-expected-version <version> \
+  --update-operation-id <stable-update-id>
+```
+
+Reuse the update id, execution proof and edit intent after a lost response.
+The original receipt can be replayed after lease expiry or transfer; it grants no
+current execution authority. Changed proof or edit intent with that id conflicts.
+Omitting the update id preserves a fresh id per CLI invocation. Preview writes
+nothing and does not consume the id. Updates preserve the lease exactly: they
+cannot acquire, renew, release or transfer it. Missing, stale or expired proof
+fails closed. These options do not enable promotion or a legacy Markdown fallback;
+legacy updates without the new options retain their existing behavior.
+An empty or Unicode-whitespace-only `--note` is an omitted note update and keeps
+the persisted note, before and after promotion. It never means clear; clearing a
+note requires a separate explicit contract.
+
+显式切换到 canonical authority 后，当前租约持有者可使用执行 key 和当前租约版本
+修改 `text`／`note`。响应丢失后复用相同 `--update-operation-id`、凭证和修改内容；
+历史回执可在租约过期或转交后回放，但不授予当前执行权。相同 ID 搭配不同凭证或
+内容会冲突；省略 ID 则每次 CLI 调用生成新 ID。Preview 不写入、不消耗 ID。
+更新不获取、续期、释放或转交租约；缺失、陈旧或过期凭证拒绝。此入口不自动
+promotion，也不回退 Markdown；不带新选项的 legacy 更新保持原行为。
+空字符串或仅含 Unicode 空白的 `--note` 视为省略 note 更新，在 promotion 前后都保留
+已持久化 note；它不表示清空。清空 note 需要另行定义显式契约。
+
+### Reviewed canonical edits and recovery
+
+For promoted updates, `--authority-reason` now stays on the canonical path.
+Registry lifecycle grants can authorize `update` or reassign-only intent;
+combining a reassignment with copy/planning changes requires `update` authority.
+A reason never bypasses registration, exclusion, binding or lease-proof checks.
+Use the `provider_revision` returned by `todo list` to bind a reviewed edit:
+
+```sh
+loopx todo update --goal-id <goal> --todo-id <todo> --agent-id <agent> \
+  --note 'Reviewed correction' --authority-reason 'Verified the requested correction' \
+  --update-expected-provider-revision <reviewed-revision> \
+  --update-operation-id <stable-edit-id> --dry-run
+```
+
+Remove `--dry-run` to commit. Repeat the **same** revision, operation ID, reason
+and intent after a lost response. A matching receipt is historical success;
+without it, a stale revision rejects the new write. Reverse a change through a
+new reviewed operation, never by editing a stale Markdown projection. The v2
+wire fails closed on older runtimes; old v0/v1 receipt identities remain valid.
+
+Chat stores this basis itself; caller context cannot supply authority. Its Todo
+and Monitor nonterminal previews run the real dry-run, and pending display never
+becomes `projection_verified=true`. Retry the original card to recover its
+receipt and project the current head. Completion and run-now keep their separate
+owners; these changes neither create lease proof nor enable provider promotion.
+
+晋升后的 `--authority-reason` 保持 canonical 路由。Registry grant 可授权 update
+或纯 reassign；重分配夹带其他修改需要 update 权限，理由不替代注册、exclusion、
+binding 或 lease proof。上例用 `todo list` 的 provider_revision 绑定审阅基线；
+去掉 dry-run 执行，丢响应后原 revision、ID、理由和意图一起重试。匹配回执证明
+历史成功；没有回执时，陈旧 revision 拒绝新写入。撤销使用新的审阅操作。
+Chat 自行记录基线，不能从 caller context 注入权限。非终态预览执行真实 dry-run；
+展示 pending 不冒充验证成功，原卡片重试恢复回执并投影当前 head。完成和立即运行
+仍归各自 owner，不补造 lease proof，也不开启 provider promotion。
+
+### Canonical registry source witnesses
+
+Promoted local Todo create, claim, update, Monitor poll and complete/supersede
+share one registry-source check. Python captures the registry SHA-256 before
+reading registration/grant facts and verifies it after projection. TypeScript
+verifies the same witness before admitting new work, issuing a validation effect,
+and returning a successful preview or committing. Completion reuses the original
+witness after external validation: a successful validator does not authorize a
+commit under registration that changed while it ran.
+
+| Local request | Witnessed wire | Retained legacy wires |
+| --- | --- | --- |
+| `loopx_local_coordination_todo_create_request` | v1 | v0 |
+| `loopx_local_coordination_todo_claim_request` | v1 | v0 |
+| `loopx_local_coordination_todo_update_request` | v2 | v0, v1 |
+| `loopx_coordination_monitor_poll_request` | v2 | v0, v1 |
+| `loopx_local_coordination_todo_terminal_lifecycle_request` | v1 | v0 |
+
+Witnessed requests require `registry_source` with an absolute `path` and a
+lowercase SHA-256 `sha256`. Legacy versions retain their existing fact contract
+and reject this field; Monitor v1 still requires its execution proof, while v2
+supports the existing leased and unleased paths. The witness does not enter
+immutable operation identity or public receipts. A matching historical
+create/update/poll/terminal receipt is recovered before checking current source
+contents. Claim replay retains its current acceptance check and rejects a stale
+source while preserving `original_receipt`; this adds no new claim grant.
+
+On `authority_source_changed`, inspect current registration and the Todo again
+before issuing new work. The rejected attempt writes no canonical head or receipt;
+an external validator already executed may have its own effects. This is an
+optimistic byte-snapshot check, not a lock, grant, cross-resource transaction or
+linearizable revocation guarantee. Unrelated registry changes can also require
+retry. Provider CAS still owns atomic head/receipt persistence. Service-owned
+PostgreSQL callers retain their authenticated fact boundary; a local selector
+cannot manufacture one. Provider defaults and promotion do not change.
+
+晋升后的本地 create、claim、update、Monitor poll 和 complete/supersede 共用同一
+registry 来源校验。Python 在采集注册/grant 事实前后比较来源摘要；TS 在新操作准入、
+发出 validation effect 和成功预览/提交前复核。外部验证结束后沿用原 witness，
+不能刷新注册事实来掩盖验证期间发生的撤权。
+
+上表新 wire 必须携带绝对路径与 SHA-256，旧 wire 保留原合同并拒绝夹带此字段。
+来源不是操作身份：create/update/poll/terminal 先恢复匹配的历史回执；claim 仍检查
+当前 acceptance，来源失效时拒绝继续，但保留 `original_receipt`。遇到
+`authority_source_changed` 应重新检查注册和 Todo；拒绝不会写 canonical head/回执，
+但已经运行的外部验证可能有自己的副作用。整个 registry 的无关修改也可能导致重试。
+该机制是乐观字节快照校验，不是跨资源原子事务或线性一致的撤权保证；provider CAS
+继续负责状态与回执的原子持久化，不改变默认 provider、promotion 或 PostgreSQL 的
+service-owned 认证边界。
+
+### Canonical nonterminal planning updates
+
+An explicitly promoted agent Todo also accepts a bounded planning update through
+the same transaction: `--status open|blocked|deferred`, `--evidence`, `--reason`,
+`--resume-when` / `--clear-resume-when`, `--unblocks-todo-id`, successor links and
+`--no-follow-up`. Text/note may be supplied in the same atomic operation.
+
+```bash
+loopx todo update --goal-id <goal> --todo-id <todo> --agent-id <agent> \
+  --status deferred --resume-when 'pr_merged:#123' --reason 'Await upstream' \
+  --update-operation-id <wait-attempt-id>
+loopx todo update --goal-id <goal> --todo-id <todo> --agent-id <agent> \
+  --status open --clear-resume-when --update-operation-id <resume-attempt-id>
+loopx todo list --goal-id <goal>
+```
+
+Preview with `--dry-run` before the real attempt. A cleared resume condition also
+clears its generation fence; an omitted condition is retained. Empty successor
+arrays and explicit `no_followup=false` in API intent remain meaningful values.
+Dependency validation sees the complete canonical inventory, not a hot-path
+summary or a Markdown buffer. A satisfied Monitor wait is not silently re-armed
+by an evidence edit; changing its topology requires clearing that old condition.
+Planning uses a versioned request envelope (current transport: v2): an older
+runtime rejects the whole request instead of silently applying only its copy patch.
+A planning-only update preserves the existing `last_actor_agent_id`, matching the
+legacy public planner; a combined raw text/note correction retains its established
+copy-edit attribution behavior.
+
+Authority is unchanged: registered, non-excluded peers may edit unclaimed work
+without claiming it; another owner's claim is not writable. A lease-bearing edit
+requires current execution proof and preserves the entire lease. **Changing a
+leased Todo's status is unsupported** until status and lease effects can commit
+together. Monitor planning/observations, ownership, routing, capability fields
+and terminal operations are outside this update intent. Use the existing
+dedicated lifecycle operations where supported; no unsupported update falls
+back to Markdown. Missing display files do not block a canonical update; normal
+post-commit projection delivery restores the managed Todo display.
+
+显式 promotion 后，agent Todo 可在同一事务中修改上述非终态规划字段，并与 text/note
+合并提交。使用 `--dry-run` 预览，重试沿用相同 operation id 与意图；新的修改使用新 ID。
+清除 resume 时一起清除 generation fence，省略则保留。校验读取完整 canonical
+inventory，不依赖摘要条数或 Markdown。补 evidence 不会重新设置已满足的 Monitor
+等待；更改其拓扑需要先清除旧条件。API 中空 successor 数组和 `no_followup=false`
+不是省略值。当前规划 transport 使用 v2 请求，旧 runtime 必须拒绝整次请求，不能只提交 text/note。
+仅包含规划字段的更新保留既有 `last_actor_agent_id`，与 legacy public planner 一致；
+若同时包含 raw text/note 修正，则继续沿用既有文案修正的 actor 归属语义。
+权限不扩大：未 claim 的工作仍可由未被排除的注册 agent 修改，不能改写
+其他 owner 的工作。带租约的编辑须提供当前 proof，保持租约不变；**暂不支持改变
+带租约 Todo 的 status**。Monitor 规划/观察、ownership、routing、capability 与终态
+操作不在此 intent 内。缺失 display 不阻止 canonical 更新；提交后的正常投影恢复
+托管 Todo 展示。不支持的操作不会回退 Markdown，也不自动切换 provider 或 promotion。

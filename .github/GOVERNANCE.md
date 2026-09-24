@@ -36,7 +36,8 @@ as a maintainer or grant release, security, or governance authority.
 | [`@steven-kid`](https://github.com/steven-kid) | Write | Active |
 | [`@liubf21`](https://github.com/liubf21) | Write | Active |
 | [`@wchwawa`](https://github.com/wchwawa) | Write | Active |
-| [`@now-ing`](https://github.com/now-ing) | Write | Invitation pending |
+| [`@now-ing`](https://github.com/now-ing) | Write | Active |
+| [`@cocolord`](https://github.com/cocolord) | Write | Active |
 
 GitHub's repository settings are the operational source of truth for access.
 This public snapshot should be updated through a pull request when a write-role
@@ -123,7 +124,7 @@ losing attribution for their work. Silence is not acceptance or approval.
 | Chat/runtime session lifecycle | [`@Duang777`](https://github.com/Duang777) | Designated first-review contact: managed-session resume/submit/close, request idempotency, focused regressions and follow-up fixes. Shared goal, quota, lease and permission contracts remain outside this assignment. |
 | Shared goal authority qualification | [`@wchwawa`](https://github.com/wchwawa) | Invited to coordinate implementation review, writer/cursor recovery evidence and bounded qualification. Canonical-authority promotion, provider activation and shared-state policy require separate lead-maintainer review. |
 | Usage and host usage ingestion | [`@liubf21`](https://github.com/liubf21) | Invited to coordinate usage correctness and historical-data compatibility review. Pricing policy and unrelated host/session authority remain outside this scope. |
-| Post-writeback hooks and reporting | [`@now-ing`](https://github.com/now-ing) | Write invitation sent; invited to select one cohesive initial review scope. No CODEOWNERS route until access is active and the scope is accepted. |
+| Post-writeback hooks and reporting | [`@now-ing`](https://github.com/now-ing) | Write access active; invited to select one cohesive initial review scope. No CODEOWNERS route until the scope is accepted. |
 | TypeScript transaction migration | [`@hhyykk`](https://github.com/hhyykk) | Proposed paired review of complete transaction cutovers and Python/TypeScript parity; scope confirmation pending. |
 | Task leases and scheduler boundaries | [`@yuefengw`](https://github.com/yuefengw) | Proposed paired review of lease lifecycle and boundary regressions; scope confirmation pending. |
 | DSH integration | [`@wujc12`](https://github.com/wujc12) | Designated first-review contact for the DSH plugin, installation and host-integration regressions. Shared replan and lifecycle contracts stay separately reviewed. |
@@ -145,7 +146,7 @@ but do not replace the approval required from an eligible GitHub reviewer.
 
 ## Main Branch Merge Gates
 
-The live [main ruleset](https://github.com/huangruiteng/loopx/rules/18121976)
+The live [main ruleset](https://github.com/loopx-project/loopx/rules/18121976)
 is the operational authority. It requires a pull request, one approving
 review, code-owner approval where applicable, dismissal of stale approvals,
 approval of the last push by another reviewer, resolved review threads, and
@@ -219,7 +220,7 @@ The versioned
 [Current Technical Directions](../docs/project/technical-directions.md) page is
 the canonical map of active strategic programs, maturity, contribution routes,
 and promotion gates. The pinned
-[GitHub Discussion](https://github.com/huangruiteng/loopx/discussions/2851) is
+[GitHub Discussion](https://github.com/loopx-project/loopx/discussions/2851) is
 its community-facing projection; an issue, Discussion, RFC, or integration
 branch does not override merged runtime and stable reference contracts.
 

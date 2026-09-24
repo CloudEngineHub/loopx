@@ -19,20 +19,29 @@ jobs:
 
       - name: Require a DCO trailer on every commit
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         shell: bash
         run: |
           set -euo pipefail
 
+          # The event's base SHA can predate upstream commits already in the PR.
+          # Refresh the exact target branch before selecting PR-only commits.
+          git fetch --no-tags origin \
+            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          # Keep this outside process substitution so a failed range lookup
+          # cannot silently turn into a successful check of zero commits.
+          commits=$(git rev-list --reverse "refs/remotes/origin/${BASE_REF}..${HEAD_SHA}")
+
           missing=0
           while IFS= read -r commit; do
+            [[ -z "${commit}" ]] && continue
             if ! git show -s --format=%B "${commit}" |
               grep -Eq '^Signed-off-by: [^<]+ <[^<>[:space:]]+@[^<>[:space:]]+>$'; then
               echo "::error::Commit ${commit} is missing a valid Signed-off-by trailer."
               missing=1
             fi
-          done < <(git rev-list --reverse "${BASE_SHA}..${HEAD_SHA}")
+          done <<< "${commits}"
 
           if [[ "${missing}" -ne 0 ]]; then
             echo "Add the DCO certification with: git commit --amend -s"

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from .todo_semantics import todo_blocker_reason
+
 AGENT_LANE_TODO_LIST_PROJECTION_SCHEMA_VERSION = "agent_lane_todo_list_projection_v0"
 AGENT_LANE_TODO_LIST_SUMMARY_SCHEMA_VERSION = (
     "agent_lane_todo_list_summary_compaction_v0"
@@ -41,12 +43,16 @@ _RETAINED_LANE_LIMITS = {
     "active_next_action_executable_items": 3,
 }
 _RETAINED_DICTS = {
+    "work_counts",
     "monitor_writeback",
     "source_proof",
     "terminal_closure_proof",
 }
 _ITEM_FIELDS = (
     "schema_version",
+    "gate_state",
+    "successor_count",
+    "excluded_agents",
     "index",
     "todo_id",
     "role",
@@ -139,11 +145,16 @@ def _project_item_fields(
 
 
 def _compact_item(value: Any) -> Any:
-    return _project_item_fields(
+    compact = _project_item_fields(
         value,
         fields=_ITEM_FIELDS,
         text_fields=_COMPACT_ITEM_TEXT_FIELDS,
     )
+    if isinstance(value, dict) and isinstance(compact, dict):
+        reason = todo_blocker_reason(value)
+        if reason:
+            compact["reason"] = reason
+    return compact
 
 
 def _compact_thin_item(value: Any) -> Any:
@@ -208,7 +219,9 @@ def compact_thin_todo_summary(
                 omitted_nonempty_lane_count += bool(value)
             continue
         if isinstance(value, dict):
-            if key == "payload_compaction":
+            if key == "work_counts":
+                compact[key] = value
+            elif key == "payload_compaction":
                 source_view = _summary_source_view(value)
             else:
                 omitted_nonempty_dict_count += bool(value)

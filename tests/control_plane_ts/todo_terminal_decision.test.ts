@@ -144,7 +144,7 @@ test("executor reclaim remains internal and preserves actor rejection precedence
   })));
 });
 
-test("standalone fence is preauthorized and never completes or attributes a Todo", () => {
+test("in-process preauthorized fence never completes or attributes a Todo", () => {
   const base = request({ schema_version: COORDINATION_TERMINAL_FENCE_REQUEST_SCHEMA,
     actor_agent_id: null, delegated_authority: false, require_active_when_fence_supplied: false,
     lease_idempotency_key: "old-key" });
@@ -286,6 +286,34 @@ test("hard-lease terminal transition releases the exact owned generation", () =>
   assert.equal(accepted.next_lease?.status, "released");
   assert.equal(accepted.next_lease?.version, 3);
   assert.equal(accepted.next_lease?.lease_epoch, 7);
+});
+
+test("hard-lease deferred supersede is owner-scoped without reviving execution", () => {
+  const deferred = {...request().todo as object, status: "deferred"};
+  const base = {command: "supersede", authority_action: "supersede",
+    handoff_mode: "hard_lease", todo: deferred};
+  const resumed = evaluateCoordinationTodoTerminalDecision(request(base));
+  assert.equal(resumed.outcome, "apply");
+  assert.equal(resumed.next_todo_status, "done");
+  assert.equal(resumed.next_lease, null);
+  assert.equal(resumed.lease_fence, "not_required");
+  const expired = evaluateCoordinationTodoTerminalDecision(request({...base,
+    lease: {present: true, active: false, status: "active", owner: "agent-a",
+      idempotency_key: "old-lease", version: 2, lease_epoch: 2, write_scopes: []},
+  }));
+  assert.equal(expired.outcome, "apply");
+  assert.equal(expired.next_lease?.status, "released");
+  for (const [overrides, code] of [
+    [{actor_agent_id: "agent-b"}, "claim_owner_mismatch"],
+    [{todo: {...deferred, excluded_agents: ["agent-a"]}}, "actor_excluded"],
+    [{lease: {present: true, active: true, status: "active", owner: "agent-a",
+      idempotency_key: "live-lease", version: 2, lease_epoch: 2, write_scopes: []}},
+    "handoff_mode_lease_claim_divergence"],
+  ] as const) {
+    assert.equal(evaluateCoordinationTodoTerminalDecision(request({...base, ...overrides})).code, code);
+  }
+  assert.equal(evaluateCoordinationTodoTerminalDecision(request({...base,
+    command: "complete", authority_action: "complete"})).code, "handoff_mode_requires_lease");
 });
 
 test("hard-lease divergence and terminal replay fail closed in the established order", () => {

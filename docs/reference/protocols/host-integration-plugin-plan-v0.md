@@ -38,7 +38,7 @@ The eventual host plugin should be small and explicit:
 | Lifecycle reads | Surface status, quota, review packet, and command-pack output as compact host packets. | CLI JSON from `status`, `quota should-run`, `review-packet`, and `bootstrap-command-pack`. |
 | Controlled writes | Offer only CLI-equivalent todo/gate/reward/refresh/spend operations, with dry-run when required. | LoopX CLI commands and active-state/event ledger writes. |
 | Automation install | Create or refresh the host heartbeat using `heartbeat-prompt --thin` and scoped agent identity. | Generated heartbeat prompt and registry coordination fields. |
-| Scheduler adapter | Apply `scheduler_hint.codex_app.recommended_rrule` through `automation_update` only when `stateful_backoff.apply_needed=true`, then run `codex_app.ack_hint.cli_args`; when only `ack_needed=true`, skip the host write and run the bound ack directly. | `quota should-run.scheduler_hint`, `quota scheduler-ack-current`. |
+| Scheduler adapter | Apply `scheduler_hint.app_automation.recommended_rrule` through `automation_update` only when `stateful_backoff.apply_needed=true`, then run `app_automation.ack_hint.cli_args`; when only `ack_needed=true`, skip the host write and run the bound ack directly. | `quota should-run.scheduler_hint`, `quota scheduler-ack-current`. |
 | Privacy guard | Redact local paths and reject raw transcript/session-file/credential payloads. | Public/private boundary plus host projection boundary checks. |
 
 ## Phased Path
@@ -87,6 +87,12 @@ The plugin should not hand-copy project-specific policy into the automation.
 It should store only host-owned scheduling metadata, such as the current
 `reset_token`, last applied RRULE, and unchanged-poll state.
 
+With JSON output, this command returns the versioned
+`heartbeat_agent_input_v1` projection. Host adapters consume `goal_id`, the
+optional `agent_id`, and `task_body`; they must not depend on generator paths,
+duplicate lifecycle commands, or diagnostic metadata. Those details remain
+available through human-readable Markdown output and non-thin generator modes.
+
 Exit criteria:
 
 - Missing agent identity fails closed when the goal has registered agents.
@@ -99,10 +105,10 @@ Exit criteria:
 The host applies `quota should-run.scheduler_hint` after each heartbeat result:
 
 - `run_now` restores or keeps active cadence.
-- wait/backoff states expose `codex_app.recommended_rrule` only when host update
+- wait/backoff states expose `app_automation.recommended_rrule` only when host update
   work is needed.
-- `codex_app.stateful_backoff.apply_needed=true` means call `automation_update`
-  for that RRULE; after success, run `codex_app.ack_hint.cli_args` so LoopX
+- `app_automation.stateful_backoff.apply_needed=true` means call `automation_update`
+  for that RRULE; after success, run `app_automation.ack_hint.cli_args` so LoopX
   persists reset token, identity signature,
   progression index, and
   last applied RRULE.

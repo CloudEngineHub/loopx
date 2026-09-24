@@ -25,6 +25,7 @@ from .slash_command_files import (
     skill_body as _skill_body,
     target_status as _target_status,
 )
+from .skill_install_readback import retire_duplicate_managed_skills
 from .slash_commands import build_slash_command_catalog
 from .zcode_goal_mode import zcode_home as _zcode_home
 
@@ -170,15 +171,18 @@ def _command_prompt_specs(*, cli_bin: str, include_legacy_aliases: bool) -> list
             "argument_hint": "[--fine-grained] [--capability-route issue-fix] [task text]",
             "instructions": [
                 "Visible command arguments: `$ARGUMENTS`.",
-                "Identify the exact current host surface (codex-app, codex-app-ssh, codex-ide-plugin, codex-cli-tui, opencode, opencode2, traex-cli, pi, gemini-cli, cursor-agent, zcode, agy, kiro-cli, deepseek-harness, or ark-managed-agent).",
+                "Identify the exact current host surface (codex-app, trae_app, codex-app-ssh, codex-ide-plugin, codex-cli-tui, opencode, opencode2, traex-cli, pi, gemini-cli, cursor-agent, zcode, agy, kiro-cli, deepseek-harness, or ark-managed-agent).",
                 _loopx_start_goal_arguments_instruction(
                     cli_bin=cli_bin,
                     host_surface=None,
                 ),
                 "Treat the returned `ordered_steps` and `goal_start_contract` as authoritative. Follow their identity, capability-route, Todo, writeback, host-loop, quota, and stop/gate rules before substantive work; do not reconstruct those rules from skill memory.",
+                "When the host explicitly supplies a `loopx_task_planning_v0` packet from `loopx todo plan` for a registered Goal/Agent, execute that bounded planning checkpoint instead of starting another Goal. Follow its shared planner and Todo delta, then return actual Todo ids for readback. Its caller-owned execution_handoff retains host activation and quota; do not create a planning Todo, execute task work, or claim delivery during the checkpoint.",
+                "For a Codex App heartbeat, run the returned activation command, require ok=true, and save its `LoopX managed heartbeat bootstrap v2` task_body through automation_update. The saved loader fetches the current thin contract on every wake; do not persist a raw thin/compact/full execution body. Preserve the current goal, registered agent, task binding and existing schedule; read back the automation through the same App.",
                 "If the packet exposes a goal-selection gate, rerun one exact choice before any mutation.",
                 "When authoring task Todos, treat `--action-kind` as the documented extensible public-safe token: choose a short task-relevant value such as `implement`, `test`, or `review`; do not search the LoopX source for an allowlist.",
                 "Consume the turn-start quota JSON packet exactly once: read the complete output directly or save it and query it with `jq`; never pipe it through `head` or `tail`, and never rerun the turn-start call to recover hidden fields. A host whose runtime mints Turn identity uses `--begin-turn`; every other host passes its own `--turn-instance-id`. When selection is required, choose the Todo and use `interaction_contract.cli_channel.selection_command` with the returned Turn identity before mutation.",
+                "Runtime capability flags are host observations, not task requirements or grants; registered Agents reuse supported ones via `loopx agent-capabilities`. Before initial quota, include capabilities already established by this host context or successful task-facing use. Read capability_gate.repair_missing even when should_run is true: when runtime_capability_reentry is projected, verify its real callsite and follow the returned same-Turn command before choosing fallback work. Never infer credentials or production access from network availability, and do not claim a missing declaration proves a missing tool.",
                 f"If arguments are empty and the host already identifies an active LoopX goal, follow its exact CLI `interaction_contract` or quota command first; otherwise inspect `{cli_bin} status` and `{cli_bin} bootstrap-command-pack --project .` before changing files.",
                 "If this session cannot mutate the host loop surface, surface the exact pasteable gate instead of claiming autonomous setup.",
             ],
@@ -234,11 +238,11 @@ def _command_prompt_specs(*, cli_bin: str, include_legacy_aliases: bool) -> list
             "command": "/loopx-pr-review",
             "name": "loopx-pr-review",
             "description": "Run the LoopX PR-review packet first, then review selected PR groups with evidence.",
-            "argument_hint": "[--repo owner/repo] [--state open|merged|all] [--since ISO]",
+            "argument_hint": "[--repo owner/repo] [--state open|merged|all] [--review-priority other-developers-first|owner-first] [--since ISO]",
             "instructions": [
                 "Visible command arguments: `$ARGUMENTS`.",
                 "Use the installed `loopx-pr-review` skill when available.",
-                f"Run `{cli_bin} --format json pr-review $ARGUMENTS` first and keep `agent_response_contract.review_execution_contract`, `review_groups`, `pull_requests[].review_plan`, `pull_requests[].review_template`, and `pull_requests[].evidence_commands` visible.",
+                f"Run `{cli_bin} --format json pr-review $ARGUMENTS` first and keep the full packet visible. The default review priority is `other-developers-first`; pass `--review-priority owner-first` only when the authenticated reviewer's own PRs should lead. Only non-null action rows carry review plans, templates, and evidence commands; null actions are readback-only. A fresh audit requires `--fresh-audit-exact-head NUMBER@HEAD_OID`.",
                 "Do not reconstruct the PR queue manually from ad hoc GitHub calls before reading the LoopX packet.",
                 "This command is read-only; do not comment, approve, merge, rerun CI, or spend quota unless separately authorized.",
             ],
@@ -353,11 +357,23 @@ def materialize_loopx_entry_skill(
             else "codex-skills"
         ),
     )
-    return {
-        "skill_id": "loopx",
-        "path": str(skill_path),
-        "status": _target_status(skill_path, content, execute=execute),
-    }
+    status = _target_status(skill_path, content, execute=execute)
+    result = {"skill_id": "loopx", "path": str(skill_path), "status": status}
+    # Workflow installs can generate this entry without slash-commands. Keep
+    # the Codex presentation identical, without changing exact managed hosts.
+    if host_surface is None and status not in {
+        "skipped_user_file", "preserved_existing_loopx_skill",
+    }:
+        result["metadata_status"] = _target_status(
+            skill_path.parent / "agents" / "openai.yaml",
+            _openai_skill_metadata(
+                command=str(spec["command"]),
+                display_name="LoopX",
+                short_description=str(spec["description"]),
+            ),
+            execute=execute,
+        )
+    return result
 
 
 def _codex_home(value: str | None = None) -> Path:
@@ -797,9 +813,24 @@ def install_slash_commands(
             }
         )
 
+    codex_reconciliation = None
     if "codex" in effective_surfaces:
+        # Keep aliases in the catalog and native slash hosts, but expose one
+        # canonical skill per outcome in Codex's skill picker.
+        codex_specs = _command_prompt_specs(cli_bin=cli_bin, include_legacy_aliases=False)
+        legacy_specs = [s for s in _command_prompt_specs(cli_bin=cli_bin, include_legacy_aliases=True)
+                        if str(s["name"]).startswith("loop-global-")]
+        for spec in legacy_specs:
+            for path in (codex_root / "skills" / spec["name"] / "SKILL.md",
+                         codex_root / "skills" / spec["name"] / "agents" / "openai.yaml",
+                         codex_root / "prompts" / f"{spec['name']}.md"):
+                status = _retire_managed_file(path, execute=execute)
+                if status:
+                    installed.append({"surface": "codex", "mechanism": "retired_codex_legacy_alias",
+                                      "command": spec["command"], "path": str(path),
+                                      "status": status, "invoke_as": []})
         prompt_dir = codex_root / "prompts"
-        for spec in specs:
+        for spec in codex_specs:
             prompt_path = prompt_dir / f"{spec['name']}.md"
             if uninstall:
                 retire_status = _retire_status(prompt_path, execute=execute)
@@ -830,7 +861,7 @@ def install_slash_commands(
                 )
 
         skill_dir = codex_root / "skills"
-        for spec in specs:
+        for spec in codex_specs:
             skill_path = skill_dir / str(spec["name"]) / "SKILL.md"
             metadata_path = skill_path.parent / "agents" / "openai.yaml"
             if uninstall:
@@ -874,7 +905,7 @@ def install_slash_commands(
             )
             if skill_status not in {"skipped_user_file", "preserved_existing_loopx_skill"}:
                 display_name = (
-                    "LoopX" if spec["command"] == "/loopx" else f"LoopX {spec['command']}"
+                    "LoopX" if spec["name"] == "loopx" else "LoopX " + str(spec["name"])[6:].replace("-", " ").title().replace("Pr ", "PR ")
                 )
                 metadata = _openai_skill_metadata(
                     command=str(spec["command"]),
@@ -907,7 +938,7 @@ def install_slash_commands(
                             "invoke_as": [],
                         }
                     )
-        for spec in specs:
+        for spec in codex_specs:
             installed.append(
                 {
                     "surface": "codex",
@@ -930,6 +961,11 @@ def install_slash_commands(
                         "message, then set `/goal <thin task_body>`."
                     ),
                 }
+            )
+
+        if not uninstall:
+            codex_reconciliation = retire_duplicate_managed_skills(
+                skill_dir, execute=execute, retire_legacy_aliases=True,
             )
 
     if "claude-code" in effective_surfaces:
@@ -1382,6 +1418,7 @@ def install_slash_commands(
             ),
         },
         "installed": installed,
+        "codex_skill_reconciliation": codex_reconciliation,
         "notes": [
             "Codex does not currently support user-defined native top-level slash commands; use explicit skill invocation through `$loopx` or `/skills`.",
             "Explicit LoopX command-facade skills use agents/openai.yaml policy allow_implicit_invocation=false and remain distinct from richer workflow skills such as loopx-project.",

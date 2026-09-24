@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ...control_plane.work_items.operator_inbox import (
+    CAPTURE_SCOPES,
     OperatorInboxSourceContract,
     operator_inbox_attention_kind,
     project_operator_inbox_urgency,
@@ -33,7 +34,6 @@ EVENT_SCHEMA_VERSION = "lark_event_inbox_event_v0"
 CONFIG_SCHEMA_VERSION = "lark_event_inbox_config_v0"
 PROCESSED_SCHEMA_VERSION = "lark_event_inbox_processed_v0"
 MATERIAL_REVIEW_LEDGER_SCHEMA_VERSION = "lark_material_review_ledger_v0"
-CAPTURE_SCOPES = {"addressed_only", "configured_chat_all"}
 MESSAGE_ID_PATTERN = re.compile(r"om_[A-Za-z0-9_-]+")
 EVENT_ID_PATTERN = re.compile(r"[A-Za-z0-9:_-]{1,200}")
 SAFE_PROFILE_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,100}")
@@ -146,6 +146,9 @@ def load_lark_event_inbox_config(
         ).strip()
     else:
         received_reaction_emoji = "Get" if reply_enabled else ""
+    received_reaction_policy = reply_payload.get("received_reaction_policy", "transient")
+    if received_reaction_policy not in ("transient", "retain"):
+        raise ValueError("lark inbox received_reaction_policy must be transient or retain")
     processing_reaction_emoji = str(
         reply_payload.get("processing_reaction_emoji") or ""
     ).strip()
@@ -222,6 +225,7 @@ def load_lark_event_inbox_config(
             "placement_policy": placement_policy,
             "editorial_style": editorial_style,
             "received_reaction_emoji": received_reaction_emoji,
+            "received_reaction_policy": received_reaction_policy,
             "processing_reaction_emoji": processing_reaction_emoji,
         },
         "material_review": {
@@ -322,6 +326,13 @@ def _event_from_payload(
         or (bot_display_name is None and payload.get("addressed_to_bot") is True)
     )
     event["addressed_to_bot"] = addressed_to_bot
+    historical_context_only = payload.get("historical_context_only") is True
+    if historical_context_only:
+        # History catch-up is evidence recovery, never delayed Turn authority.
+        # Preserve this provenance so a later authorized manager Turn may use
+        # the item as context even when the old message contained a real Bot
+        # mention.  Live delivery still owns all execution authority.
+        event["historical_context_only"] = True
 
     mentions = payload.get("mentions")
     provider_mention_count = 0
@@ -382,7 +393,19 @@ def _event_from_payload(
         addressing_source = stored_addressing_source or "legacy_text"
     else:
         addressing_source = ""
-    if addressing_source:
+    if historical_context_only:
+        # Preserve what the provider observed without allowing a recovered
+        # historical mention/reply to re-enter the live attention or reply
+        # authority lanes.  Both the generic urgency projector and the Lark
+        # settlement adapter consume the normalized flags below.
+        event["historical_was_addressed_to_bot"] = addressed_to_bot
+        event["historical_was_reply_to_bot"] = event["reply_to_bot"]
+        if addressing_source:
+            event["historical_addressing_source"] = addressing_source
+        event["addressed_to_bot"] = False
+        event["reply_to_bot"] = False
+        event["reply_context_verified"] = False
+    elif addressing_source:
         event["addressing_source"] = addressing_source
     return event
 
@@ -439,6 +462,8 @@ def _event_attention_kind(
     bot_display_name: str,
     capture_scope: str,
 ) -> str | None:
+    if event.get("historical_context_only") is True:
+        return None
     normalized = dict(event)
     normalized["addressed_to_operator"] = bool(
         event.get("addressed_to_bot") is True
@@ -611,7 +636,14 @@ def inspect_lark_event_inbox(
     inbox = config["inbox_path"]
     processed = _load_processed(inbox / "processed.json")
     pending, captured_count, invalid_count = _pending_events(config)
-    bounded = pending[: max(1, min(int(limit), 100))]
+    requested_limit = int(limit)
+    # Internal retention/retry callers use zero to read the complete pending
+    # projection. Public callers retain the historical 1..100 bound.
+    bounded = (
+        pending
+        if requested_limit <= 0
+        else pending[: max(1, min(requested_limit, 100))]
+    )
     return {
         "ok": True,
         "schema_version": "lark_event_inbox_projection_v0",

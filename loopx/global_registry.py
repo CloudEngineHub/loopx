@@ -10,11 +10,11 @@ from typing import Any, Callable
 
 from .authority import compact_authority_registry
 from .control_plane.projects.contract import validate_project_record_bindings
+from .control_plane.projects.registry_codec import load_registry
 from .control_plane.runtime.time import now_local_iso
 from .file_lock import exclusive_file_lock
-from .history import load_registry
 from .paths import DEFAULT_RUNTIME_ROOT, global_registry_path, resolve_runtime_root
-from .registry import registry_goals
+from .registry import read_json, registry_goals
 from .registry_writability import is_write_denied_error, probe_registry_write_path
 
 
@@ -42,6 +42,10 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
     temp_path.replace(path)
 
 
+def _load_global_registry(path: Path) -> dict[str, Any]:
+    return read_json(path) if path.exists() else {}
+
+
 @dataclass(frozen=True, slots=True)
 class GlobalRegistryReduction:
     payload: dict[str, Any]
@@ -54,34 +58,30 @@ def _global_registry_backup_path(global_path: Path, label: str) -> Path:
     return global_path.with_name(f"{global_path.name}.{label}-{timestamp}.bak")
 
 
-def mutate_global_registry(
+def _mutate_global_registry_locked(
     global_path: Path,
-    operation: str,
     reducer: Callable[[dict[str, Any]], GlobalRegistryReduction],
 ) -> dict[str, Any]:
-    """Apply one authoritative global-registry read-modify-write transaction."""
+    current = _load_global_registry(global_path)
+    reduction = reducer(copy.deepcopy(current))
+    if not isinstance(reduction, GlobalRegistryReduction):
+        raise TypeError(
+            "global registry reducer must return GlobalRegistryReduction"
+        )
+    if not isinstance(reduction.payload, dict):
+        raise TypeError("global registry reducer payload must be a JSON object")
 
-    with exclusive_file_lock(global_path, operation=operation):
-        current = load_registry(global_path)
-        reduction = reducer(copy.deepcopy(current))
-        if not isinstance(reduction, GlobalRegistryReduction):
-            raise TypeError(
-                "global registry reducer must return GlobalRegistryReduction"
-            )
-        if not isinstance(reduction.payload, dict):
-            raise TypeError("global registry reducer payload must be a JSON object")
-
-        wrote = reduction.payload != current
-        backup_path = None
-        if wrote and reduction.backup_label and global_path.exists():
-            backup = _global_registry_backup_path(
-                global_path,
-                reduction.backup_label,
-            )
-            write_json(backup, current)
-            backup_path = str(backup)
-        if wrote:
-            write_json(global_path, reduction.payload)
+    wrote = reduction.payload != current
+    backup_path = None
+    if wrote and reduction.backup_label and global_path.exists():
+        backup = _global_registry_backup_path(
+            global_path,
+            reduction.backup_label,
+        )
+        write_json(backup, current)
+        backup_path = str(backup)
+    if wrote:
+        write_json(global_path, reduction.payload)
 
     return {
         "before": current,
@@ -90,6 +90,17 @@ def mutate_global_registry(
         "backup_path": backup_path,
         "wrote": wrote,
     }
+
+
+def mutate_global_registry(
+    global_path: Path,
+    operation: str,
+    reducer: Callable[[dict[str, Any]], GlobalRegistryReduction],
+) -> dict[str, Any]:
+    """Apply one authoritative global-registry read-modify-write transaction."""
+
+    with exclusive_file_lock(global_path, operation=operation):
+        return _mutate_global_registry_locked(global_path, reducer)
 
 
 def global_write_denied_payload(
@@ -535,7 +546,7 @@ def retire_global_registry_goals(
 
     updated_at = now_local()
     preview = _retire_global_registry_reduction(
-        load_registry(global_path),
+        _load_global_registry(global_path),
         requested_ids=requested_ids,
         global_path=global_path,
         updated_at=updated_at,
@@ -627,6 +638,7 @@ def sync_project_registry_to_global(
     goal_id: str | None = None,
     dry_run: bool = False,
     allow_route_replacement: bool = False,
+    _global_registry_lock_held: bool = False,
 ) -> dict[str, Any]:
     registry_path = registry_path.expanduser()
     if not registry_path.exists():
@@ -687,7 +699,7 @@ def sync_project_registry_to_global(
         "synced_at": synced_at,
     }
     preview = _sync_global_registry_reduction(
-        load_registry(global_path),
+        _load_global_registry(global_path),
         incoming,
         incoming_projects,
         **merge_kwargs,
@@ -740,15 +752,25 @@ def sync_project_registry_to_global(
                 else None
             )
         else:
-            mutation = mutate_global_registry(
-                global_path,
-                "sync_global_registry",
-                lambda current: _sync_global_registry_reduction(
+            def reduce_current(current: dict[str, Any]) -> GlobalRegistryReduction:
+                return _sync_global_registry_reduction(
                     current,
                     incoming,
                     incoming_projects,
                     **merge_kwargs,
-                ),
+                )
+
+            mutation = (
+                _mutate_global_registry_locked(
+                    global_path,
+                    reduce_current,
+                )
+                if _global_registry_lock_held
+                else mutate_global_registry(
+                    global_path,
+                    "sync_global_registry",
+                    reduce_current,
+                )
             )
             receipt = mutation["receipt"]
             merged_goals = receipt["merged_goals"]

@@ -5,6 +5,63 @@ import json
 import re
 from typing import Any
 
+def host_prompt_static_safety_revision(text: str) -> str | None:
+    """Exact renderer evidence for the one-time static-safety budget transition.
+
+    This is test-output attribution, never a runtime permission classifier.
+    Keep the full invariant block, not a substring such as 'safe' or 'LoopX'.
+    """
+    block = (
+        "Follow user authority and repository rules. Protect credentials/private material; "
+        "publish public-safe evidence. Destructive Git/production requires explicit authorization. "
+        "Gate only the affected path; continue independent allowed work."
+    )
+    return "host_prompt_static_safety_v1" if block in text else None
+
+
+def reward_memory_outcome_prompt_revision(text: str) -> str | None:
+    """Attribute the one-time automatic outcome lifecycle prompt transition.
+
+    This is qualification evidence for the exact fail-closed contract.  It is
+    not a runtime detector and deliberately requires every safety invariant.
+    """
+
+    required = (
+        "--reward-memory-reflection-json",
+        "Todo validator",
+        "digest",
+        "evidence",
+        "zero provider calls",
+        "raw",
+        "private",
+    )
+    return (
+        "reward_memory_outcome_prompt_v1"
+        if all(fragment in text for fragment in required)
+        else None
+    )
+
+
+def managed_executor_binding_revision(text: str) -> str | None:
+    """Attribute the managed-executor binding readback on a Turn surface.
+
+    This is qualification evidence for the exact projection, never a runtime
+    classifier: the binding key alone would match prose, so the revision also
+    requires the executor identity, its launchability claim, and the typed
+    reason slot that only this readback renders.
+    """
+
+    required = (
+        '"managed_executor"',
+        '"executor_kind"',
+        '"available"',
+        '"unavailable_reason"',
+    )
+    return (
+        "managed_executor_binding_v0"
+        if all(fragment in text for fragment in required)
+        else None
+    )
 
 _MARKDOWN_HEADING = re.compile(r"^#{1,6}\s+.+$")
 _RUNTIME_ROOT_COMMAND_ROUTE = re.compile(
@@ -120,6 +177,10 @@ def planning_inventory_detail_schema_versions(value: Any) -> list[str]:
 
 def guided_todo_delta_schema_versions(value: Any) -> list[str]:
     return _schema_versions_for_key(value, "todo_delta")
+
+
+def todo_work_counts_schema_versions(value: Any) -> list[str]:
+    return _schema_versions_for_key(value, "work_counts")
 
 
 def markdown_headings(text: str) -> list[str]:

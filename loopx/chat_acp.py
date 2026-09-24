@@ -59,6 +59,7 @@ class ACPStdioAdapter:
     work_dir: Path
     agent_work_dir: Path
     agent_capabilities: dict[str, Any]
+    execution_mode: bool = False
     startup_timeout_sec: float = 30.0
     idle_timeout_sec: float = 180.0
     hard_timeout_sec: float = 900.0
@@ -86,6 +87,7 @@ class ACPStdioAdapter:
         startup_timeout_sec: float = 30.0,
         idle_timeout_sec: float = 180.0,
         hard_timeout_sec: float = 900.0,
+        execution_mode: bool = False,
     ) -> "ACPStdioAdapter":
         if not command:
             raise ValueError("ACP command is required")
@@ -104,7 +106,7 @@ class ACPStdioAdapter:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
                 bufsize=1,
             )
         except OSError as exc:
@@ -122,6 +124,7 @@ class ACPStdioAdapter:
             work_dir=work_dir.expanduser().resolve(),
             agent_work_dir=agent_work_dir or work_dir.expanduser().resolve(),
             agent_capabilities={},
+            execution_mode=execution_mode,
             startup_timeout_sec=startup_timeout_sec,
             idle_timeout_sec=idle_timeout_sec,
             hard_timeout_sec=hard_timeout_sec,
@@ -376,7 +379,15 @@ class ACPStdioAdapter:
                 "session/prompt",
                 {
                     "sessionId": self.session_id,
-                    "prompt": [{"type": "text", "text": _turn_prompt(message)}],
+                    "prompt": [
+                        {
+                            "type": "text",
+                            "text": _turn_prompt(
+                                message,
+                                execution_mode=self.execution_mode,
+                            ),
+                        }
+                    ],
                 },
                 request_id=request_id,
                 timeout_sec=self.hard_timeout_sec,
@@ -386,7 +397,6 @@ class ACPStdioAdapter:
             )
         except TimeoutError as exc:
             elapsed = time.monotonic() - started_at
-            idle = time.monotonic() - last_activity_at
             error_code = "hard_timeout" if elapsed >= self.hard_timeout_sec else "idle_timeout"
             summary = (
                 "ACP Chat turn reached its hard time limit."
@@ -406,6 +416,7 @@ class ACPStdioAdapter:
         response = parse_agent_response(
             raw_response,
             protected_paths=[self.work_dir, self.agent_work_dir],
+            team_plan_context=getattr(self, "team_plan_context", None),
         )
         if CHAT_REVIEW_OPEN_TAG not in raw_response or CHAT_REVIEW_CLOSE_TAG not in raw_response:
             event_sink("protocol.warning", {"error_code": "missing_review_envelope"})

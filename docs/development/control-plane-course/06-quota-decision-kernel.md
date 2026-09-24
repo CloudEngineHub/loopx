@@ -103,8 +103,7 @@ capability_gate
 work_lane_contract
 vision_continuation_audit
 user_todo_summary / agent_todo_summary
-protocol_action_packet
-compatibility fields
+compatibility fields (historical protocol_action_packet is read-only)
 ```
 
 其中最稳定的执行入口是：

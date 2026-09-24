@@ -163,6 +163,7 @@ const POST_WRITEBACK_SIDECAR_RECEIPT_FIELDS = new Set([
   "recorded_at",
 ]);
 const TURN_START_WRITE_SCOPES = new Set([
+  "agent_private_capability_memory",
   "owner_private_inbox",
   "owner_private_cursor",
   "provider_message_reaction",
@@ -350,6 +351,15 @@ export function validateInteractionProjectionHookInvocation(input: {
   };
 }
 
+/** Optional per-read prompt allowance; never execution or effect authority. */
+export function turnStartPromptBudgetBytes(value: unknown): number {
+  if (value === undefined) return 0;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > 2_048) {
+    throw new Error("turn-start prompt budget must be an integer from 1 to 2048 bytes");
+  }
+  return value;
+}
+
 export function validateTurnStartHookRegistration(
   value: unknown,
 ): JsonObject & {
@@ -412,11 +422,10 @@ export function validateTurnStartHookRegistration(
       registration.required_read,
       "turn-start hook required_read",
     );
-    requireExactFields(
-      candidate,
-      TURN_START_REQUIRED_READ_FIELDS,
-      "turn-start hook required_read",
-    );
+    const readFields = new Set(TURN_START_REQUIRED_READ_FIELDS);
+    if ("prompt_budget_bytes" in candidate) readFields.add("prompt_budget_bytes");
+    requireExactFields(candidate, readFields, "turn-start hook required_read");
+    const promptBudget = turnStartPromptBudgetBytes(candidate.prompt_budget_bytes);
     const kind = requiredString(candidate.kind, "turn-start hook required_read kind");
     const command = requiredString(
       candidate.command,
@@ -429,7 +438,9 @@ export function validateTurnStartHookRegistration(
     const containsControlCharacter = /[\u0000-\u001f\u007f]/;
     if (
       !TOKEN_RE.test(kind) ||
-      new TextEncoder().encode(command).byteLength > 360 ||
+      // Bound explicit registry/runtime routes too; two legitimate absolute
+      // paths can exceed the old 360-byte display-oriented budget.
+      new TextEncoder().encode(command).byteLength > 1024 ||
       reason.length > 240 ||
       containsControlCharacter.test(command) ||
       containsControlCharacter.test(reason)
@@ -440,6 +451,12 @@ export function validateTurnStartHookRegistration(
       throw new Error("turn-start hook required_read ordering is invalid");
     }
     requiredRead = { kind, command, reason, ordering: "before_work" };
+    if (promptBudget) {
+      requiredRead.prompt_budget_bytes = promptBudget;
+      if (Buffer.byteLength(JSON.stringify(requiredRead), "utf8") > promptBudget) {
+        throw new Error("turn-start required read exceeds its declared prompt budget");
+      }
+    }
   }
   return {
     ...registration,

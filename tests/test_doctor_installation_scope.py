@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+import threading
+import time
+
 import pytest
 
 from loopx import doctor
+from loopx.control_plane.runtime import runtime_projection_route
 
 
 @pytest.mark.parametrize(
@@ -69,3 +75,94 @@ def test_installation_scope_cannot_claim_host_integration_health():
     ).installation_only
     with pytest.raises(SystemExit):
         parser.parse_args(["doctor", "--installation-only", "--agent-type", "codex"])
+
+
+def test_runtime_projection_diagnostics_bound_one_stalled_source_and_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    global_registry = runtime_root / "registry.global.json"
+    stalled_registry = tmp_path / "offline" / "registry.json"
+    healthy_registry = tmp_path / "healthy" / "registry.json"
+    healthy_registry.parent.mkdir()
+    healthy_registry.write_text(
+        json.dumps(
+            {
+                "common_runtime_root": str(runtime_root),
+                "goals": [{"id": "healthy-goal"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    global_registry.write_text(
+        json.dumps(
+            {
+                "registry_role": "global-local",
+                "common_runtime_root": str(runtime_root),
+                "goals": [
+                    {
+                        "id": "offline-goal",
+                        "source_registry": str(stalled_registry),
+                    },
+                    {
+                        "id": "healthy-goal",
+                        "source_registry": str(healthy_registry),
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    stalled_registry.parent.mkdir()
+    stalled_registry.write_text(
+        json.dumps(
+            {
+                "common_runtime_root": str(runtime_root),
+                "goals": [{"id": "offline-goal"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    real_load_registry = runtime_projection_route.load_registry
+    release_stalled_read = threading.Event()
+
+    def load_registry(path: Path):
+        if path == stalled_registry:
+            release_stalled_read.wait(timeout=2)
+        return real_load_registry(path)
+
+    monkeypatch.setattr(runtime_projection_route, "load_registry", load_registry)
+    started = time.monotonic()
+    first = runtime_projection_route.collect_runtime_projection_route_diagnostics(
+        registry_path=global_registry,
+        runtime_root=runtime_root,
+        source_registry_read_timeout_seconds=0.02,
+    )
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 0.5
+    assert first["healthy"] is False
+    assert first["counts"]["unavailable"] == 1
+    assert first["counts"]["single_runtime"] == 1
+    unavailable = next(
+        item for item in first["items"] if item["goal_id"] == "offline-goal"
+    )
+    assert unavailable == {
+        "goal_id": "offline-goal",
+        "status": "unavailable",
+        "reason": "source_registry_timeout",
+    }
+    assert str(tmp_path) not in json.dumps(unavailable)
+
+    release_stalled_read.set()
+    second = runtime_projection_route.collect_runtime_projection_route_diagnostics(
+        registry_path=global_registry,
+        runtime_root=runtime_root,
+        source_registry_read_timeout_seconds=0.2,
+    )
+
+    assert second["counts"]["unavailable"] == 0
+    assert second["counts"]["single_runtime"] == 2

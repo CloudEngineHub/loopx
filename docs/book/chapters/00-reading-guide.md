@@ -5,7 +5,7 @@ LoopX Kernel 源码，也不需要理解所有 CLI 子命令。
 
 ## 你会完成什么
 
-全书先用六章建立一套控制面心智模型，再进入两条实践主线：
+全书先用六个编号章节和一张状态机地图建立控制面心智模型，再进入两条实践主线：
 
 ```text
 控制面基础
@@ -22,6 +22,8 @@ LoopX Kernel 源码，也不需要理解所有 CLI 子命令。
 2. 普通会话、Host Goal 与 LoopX 分别拥有哪一层状态；
 3. canonical state、workbench、event 与 read-only projection；
 4. Todo 工作图、Gate、claim、lease、authority 与 Peer 协作；
+   读完后用[主要状态机与状态流转](./core-state-machines.md)把 source state、derived decision、
+   projection 与九组状态机连成一张图；
 5. 一轮受治理的 Turn 如何决定、执行、验证和写回；
 6. retry、replan、self-repair、terminal closure 与运行边界。
 
@@ -45,10 +47,12 @@ LoopX Kernel 源码，也不需要理解所有 CLI 子命令。
   [第 1 讲：Harness 是 effectful program](/loopx/docs/development/control-plane-course/01-agent-loop-effectful-program/)与
   [第 2 讲](/loopx/docs/development/control-plane-course/02-goal-control-plane-architecture/)，
   再用[第 3 讲](/loopx/docs/development/control-plane-course/03-first-real-loop/)走一遍真实 Loop。
-- **状态、工作图与权限分别由谁拥有？** 先读第 3、4 章，再下钻
+- **状态、工作图与权限分别由谁拥有？** 先读第 3、4 章和
+  [主要状态机与状态流转](./core-state-machines.md)，再下钻
   [第 4 讲](/loopx/docs/development/control-plane-course/04-state-substrate/)与
   [第 5 讲](/loopx/docs/development/control-plane-course/05-work-graph-and-peers/)。
-- **Gate、Monitor、Replan 同时出现时哪条规则优先？** 先读第 5 章，再下钻
+- **Gate、Monitor、Replan 同时出现时哪条规则优先？** 先读
+  [主要状态机与状态流转](./core-state-machines.md)和第 5 章，再下钻
   [第 6 讲](/loopx/docs/development/control-plane-course/06-quota-decision-kernel/)与
   [第 7 讲](/loopx/docs/development/control-plane-course/07-host-scheduler-and-heartbeat/)。
 - **长程任务怎样防止目标漂移与局部空转？** 先读第 6 章，再下钻
@@ -104,8 +108,9 @@ lifecycle 选择，不是所有贡献的默认终点。
 
 ## 版本基线
 
-当前内容以 LoopX GitHub release `v1.0.2` 为发布锚点；本地命令示例已按 `loopx 1.0.2` 的
-公开 CLI 与协议表面复核。该版本要求 Python 3.11+ 与 Node.js 22.6+；后者运行由 LoopX 自动管理、
+当前内容以 LoopX GitHub release `v1.1.0` 为发布锚点；本地命令示例已按 `loopx 1.1.0` 的
+公开 CLI 与协议表面复核。该历史版本要求 Python 3.11+ 与 Node.js 22.18.0+；此源码版本要求
+Node.js 22.22.3+。后者运行由 LoopX 自动管理、
 空闲后退出的 TypeScript Effect runtime，用户不需要手工维护 daemon。
 
 发布标签、已安装 CLI 与源码 checkout 可能处于不同 revision，因此以下表面尤其需要按实际环境复核：

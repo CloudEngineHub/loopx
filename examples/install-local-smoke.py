@@ -69,11 +69,18 @@ def run_install(
     release_id: str,
     *,
     cwd: Path = REPO_ROOT,
+    revalidate_extensions: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(INSTALL_SCRIPT)],
         cwd=cwd,
-        env={**env, "LOOPX_RELEASE_ID": release_id},
+        env={
+            **env,
+            "LOOPX_RELEASE_ID": release_id,
+            "LOOPX_INSTALL_REVALIDATE_EXTENSIONS": (
+                "1" if revalidate_extensions else "0"
+            ),
+        },
         check=True,
         capture_output=True,
         text=True,
@@ -115,7 +122,7 @@ def assert_release_snapshot_source_fallback(root: Path) -> None:
         "release_id": "fixture-source",
         "source": {
             "kind": "github_archive",
-            "repo": "huangruiteng/loopx",
+            "repo": "loopx-project/loopx",
             "ref": "main",
             "git_commit": "abc123def4567890abc123def4567890abc123de",
             "git_ref": "main",
@@ -357,10 +364,23 @@ def main() -> int:
         )
         assert skill_readback["integration_mode"] == "fixed_install_script"
         assert skill_readback["source"]["revision"] == source_commit
-        assert set(skill_readback["materialized_skill_ids"]) == {
+        materialized_skill_ids = set(skill_readback["materialized_skill_ids"])
+        assert materialized_skill_ids == {
             "loopx",
             *PACKAGED_HOST_SKILL_IDS,
         }
+        # Only declared global scopes are delivered: a repo-kept workflow carries
+        # no scope marker, so the fixed install keeps it in the checkout instead
+        # of copying a merge-decision workflow onto a host that never merges.
+        repo_only_skill_ids = {
+            path.name
+            for path in (REPO_ROOT / "skills").iterdir()
+            if path.is_dir() and not (path / ".loopx-skill-scope").exists()
+        }
+        assert repo_only_skill_ids, "the checkout no longer carries a repo-only skill source"
+        assert not (materialized_skill_ids & repo_only_skill_ids), sorted(
+            materialized_skill_ids & repo_only_skill_ids
+        )
         skill_text = skill.read_text(encoding="utf-8")
         compact_skill_text = " ".join(skill_text.split())
         for phrase in (
@@ -378,7 +398,8 @@ def main() -> int:
             "Identify the target project and goal first",
             "loopx register-authority-source",
             "loopx import-doc-registry-authority",
-            "--source heartbeat --execute",
+            "LoopX managed heartbeat bootstrap v2",
+            "Direct SQLite/TOML migration requires the App to be closed",
             "Generate A Review Packet",
             "loopx review-packet --goal-id",
             "loopx review-packet --goal-id <STABLE_GOAL_ID> --handoff-only",
@@ -397,13 +418,14 @@ def main() -> int:
         pr_review_skill = codex_home / "skills" / "loopx-pr-review" / "SKILL.md"
         pr_review_text = " ".join(pr_review_skill.read_text(encoding="utf-8").split())
         for phrase in (
-            "loopx --format json pr-review --state all",
+            "keeps ordinary queue discovery open-only",
+            "explicit `--state merged|all`",
             "thin host adapter",
             "agent_response_contract.review_execution_contract",
             "review_groups",
-            "pull_requests[].review_plan",
-            "pull_requests[].review_template",
-            "pull_requests[].evidence_commands",
+            "pull_requests[review_action_kind!=null].review_plan",
+            "pull_requests[review_action_kind!=null].review_template",
+            "pull_requests[review_action_kind!=null].evidence_commands",
             "Do not pipe the only copy through `jq`",
             "completion_gate",
             "Never infer `verified` from metadata or CI",
@@ -567,7 +589,7 @@ def main() -> int:
         assert freshness["manifest_source_git_commit_short"] == source_commit[:12], freshness
         assert freshness["manifest_source_revision"] == source_commit, freshness
         assert freshness["manifest_skills_digest"] == release_manifest["skills"]["digest"], freshness
-        assert "huangruiteng.github.io/loopx/install.sh" in freshness["upgrade_command"], freshness
+        assert "loopx-project.github.io/loopx/install.sh" in freshness["upgrade_command"], freshness
         assert "loopx doctor" in freshness["upgrade_command"], freshness
         assert doctor_payload["upgrade_hint"] == freshness, doctor_payload
         assert doctor_payload["path"]["loopx"] == str(wrapper), doctor_payload
@@ -661,7 +683,7 @@ def main() -> int:
         assert f"manifest_source_git_commit: `{source_commit[:12]}`" in doctor_markdown, doctor_markdown
         assert "manifest_source: `local_checkout` @ `n/a`" not in doctor_markdown, doctor_markdown
         assert "manifest_skills_digest:" in doctor_markdown, doctor_markdown
-        assert "huangruiteng.github.io/loopx/install.sh" in doctor_markdown, doctor_markdown
+        assert "loopx-project.github.io/loopx/install.sh" in doctor_markdown, doctor_markdown
         assert "latest_promotion_readiness: available=`True`" in doctor_markdown, doctor_markdown
         assert "freshness=`fresh`" in doctor_markdown, doctor_markdown
         assert "requires_readiness_run=`False`" in doctor_markdown, doctor_markdown
@@ -692,7 +714,7 @@ def main() -> int:
         assert stale_install["status"] == "stale", stale_install
         assert stale_install["requires_upgrade"] is True, stale_install
         assert stale_install["release_age_hours"] == 192.0, stale_install
-        assert "huangruiteng.github.io/loopx/install.sh" in stale_install["no_clone_upgrade_command"], stale_install
+        assert "loopx-project.github.io/loopx/install.sh" in stale_install["no_clone_upgrade_command"], stale_install
 
         fresh_install = build_install_freshness(
             command_path=wrapper,
@@ -766,23 +788,22 @@ def main() -> int:
         )
         payload = json.loads(cli.stdout)
         assert payload["ok"] is True, payload
-        assert payload["quota_guard_command"] == (
+        assert payload["schema_version"] == "heartbeat_agent_input_v1", payload
+        expected_quota_guard = (
             'loopx --format json --registry "$HOME/.codex/loopx/registry.global.json" '
             'quota should-run --goal-id installer-smoke-goal '
             '--turn-instance-id "${LOOPX_TURN:?}"'
-        ), payload
-        assert payload["quota_spend_command"] == (
-            'loopx --format json --registry "$HOME/.codex/loopx/registry.global.json" '
-            "quota spend-slot --goal-id installer-smoke-goal --slots 1 --source heartbeat --execute"
-        ), payload
-        assert payload["thin"] is True, payload
+        )
+        assert expected_quota_guard in payload["task_body"], payload
         assert payload["interface_budget"]["mode"] == "thin", payload
         assert payload["interface_budget"]["within_budget"] is True, payload
-        assert "--delivery-batch-scale <ACTUAL_DELIVERY_BATCH_SCALE>" in payload["progress_refresh_state_command"], payload
-        assert "--delivery-outcome <ACTUAL_DELIVERY_OUTCOME>" in payload["progress_refresh_state_command"], payload
-        assert "--delivery-batch-scale multi_surface" not in payload["progress_refresh_state_command"], payload
-        assert "--delivery-outcome outcome_progress" not in payload["progress_refresh_state_command"], payload
-        assert "<PUBLIC_SAFE_PROGRESS_CLASSIFICATION>" in payload["progress_refresh_state_command"], payload
+        for generator_only_field in (
+            "quota_guard_command",
+            "quota_spend_command",
+            "progress_refresh_state_command",
+            "cli_bin",
+        ):
+            assert generator_only_field not in payload, payload
         assert normal_turns_use_cli_interaction_contract(payload["task_body"]), payload
         assert not normal_turns_use_cli_interaction_contract(
             "Normal turns use the runtime skill; recovery may inspect CLI `interaction_contract`."
@@ -790,10 +811,10 @@ def main() -> int:
         assert not normal_turns_use_cli_interaction_contract(
             "Normal turns use the runtime skill and repair contract."
         )
-        assert "`LOOPX_TURN=<current_time_iso>`; reuse." in payload["task_body"], payload
-        assert "guard receipt; 2 stalls->replan" in payload["task_body"], payload
-        assert "no-change=`surface_only`/no spend" in payload["task_body"], payload
-        assert payload["cli_bin"] == "loopx", payload
+        assert "```sh\nLOOPX_TURN=<current_time_iso>\n" in payload["task_body"], payload
+        assert "not a command-prefix assignment" in payload["task_body"], payload
+        assert "guard; 2 stalls->replan" in payload["task_body"], payload
+        assert "no-change=surface_only/no spend" in payload["task_body"], payload
 
         canary_cli = subprocess.run(
             [
@@ -821,21 +842,30 @@ def main() -> int:
         assert "loopx-canary --format json" in canary_payload["quota_guard_command"], canary_payload
         assert "loopx-canary heartbeat-prompt --compact" in canary_payload["task_body"], canary_payload
         canary_task_body = canary_payload["task_body"]
-        progress_command = canary_payload["progress_refresh_state_command"]
-        spend_command = canary_payload["quota_spend_command"]
-        assert progress_command in canary_task_body, canary_payload
-        assert spend_command in canary_task_body, canary_payload
-        assert canary_task_body.index(progress_command) < canary_task_body.index(
-            spend_command
-        ), canary_payload
+        # Brief mode renders one bounded guard block: it deliberately omits the
+        # accountable refresh/spend pair, which belongs to the full and compact
+        # modes. Assert the brief contract instead of the retired sequence.
+        assert canary_payload["quota_guard_command"] in canary_task_body, canary_payload
+        assert canary_payload["progress_refresh_state_command"] not in canary_task_body, canary_payload
+        assert canary_payload["quota_spend_command"] not in canary_task_body, canary_payload
+        assert "```bash\n" in canary_task_body and "LOOPX_TURN=<current_time_iso>" in canary_task_body, canary_payload
+        assert "not a command-prefix assignment" in canary_task_body, canary_payload
 
-        fresh_install = run_install(env, "install-smoke-fresh")
+        # The initial install exercises the default post-install extension
+        # revalidation. Repeated fixture installs do not add coverage for that
+        # same provider scan, so skip the optional pass to keep this smoke
+        # inside the public-suite timeout budget.
+        fresh_install = run_install(
+            env, "install-smoke-fresh", revalidate_extensions=False
+        )
         assert "loopx installed locally" in fresh_install.stdout, fresh_install.stdout
         assert "loopx install warning" not in fresh_install.stderr, fresh_install.stderr
 
         stale_generated_at = (datetime.now(timezone.utc) - timedelta(hours=25)).replace(microsecond=0).isoformat()
         write_promotion_readiness(runtime_run_dir, generated_at=stale_generated_at, label="stale")
-        stale_install = run_install(env, "install-smoke-stale")
+        stale_install = run_install(
+            env, "install-smoke-stale", revalidate_extensions=False
+        )
         assert "loopx installed locally" in stale_install.stdout, stale_install.stdout
         assert "promotion-readiness evidence is stale" in stale_install.stderr, stale_install.stderr
         assert "age_hours=" in stale_install.stderr, stale_install.stderr
@@ -854,6 +884,7 @@ def main() -> int:
                 "OPENCODE_CONFIG_DIR": str(blocked_opencode_root),
             },
             "install-smoke-opencode-blocked",
+            revalidate_extensions=False,
         )
         assert (
             "loopx OpenCode bridge: install attempted; run manually:"
@@ -867,6 +898,7 @@ def main() -> int:
         opencode_install = run_install(
             {**env, "LOOPX_INSTALL_OPENCODE": "1"},
             "install-smoke-opencode",
+            revalidate_extensions=False,
         )
         assert "loopx OpenCode bridge:" in opencode_install.stdout, opencode_install.stdout
         assert (opencode_root / "commands" / "loopx.md").is_file()

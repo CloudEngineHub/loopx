@@ -292,6 +292,8 @@ M7 只有在至少产生一个下列最终 effect 时才有理由存在：
 - around 语义编码在 `capability_gate`、`interaction_contract`、`work_lane_contract` 和 `scheduler_hint` 中。
 - 聚焦测试和文档固定该视角。
 
+配额收尾适配现在消费 TS readback 按回执归约的结算进度，不再独立把存在 spend run 当作已结算。正常刷新、重放和扣款响应共享该投影；可执行命令绑定原 Agent 和路由。补回执复用现有幂等 writer。这是有界的 M7.4 接入，没有增加共享 executor 或 authority store，也不证明 Todo 终态或 Goal 验收完成。
+
 ### 还缺什么
 
 - 通用共享 executor 被有意保留为空。当前 adapter 共享 plan/receipt algebra，却拥有不同的执行边界，因此 M7.3 应以 no-follow-up 关闭，而不是用推测性 framework 填充。

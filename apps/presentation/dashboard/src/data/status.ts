@@ -1,6 +1,8 @@
 import rawStatus from "../../../../../examples/status.example.json";
 import { z } from "zod";
 
+import { goalAcceptanceObservationSchema } from "./goal-acceptance-observation";
+
 import { goalChannelProjectionSchema } from "./goal-channel-frontstage";
 
 export const quotaSchema = z.object({
@@ -41,6 +43,9 @@ export const controlPlaneSchema = z.object({
 }).passthrough();
 
 export const orchestrationPolicySchema = z.object({
+  model_config: z.object({ model: z.string(), reasoning_effort: z.string().optional() }).optional(),
+  execution_config: z.string().optional(),
+
   mode: z.string().optional().default("default"),
   orchestration_mode: z.string().optional().nullable(),
   spawn_allowed: z.boolean().optional().default(false),
@@ -66,6 +71,8 @@ export const todoItemSchema = z.object({
   role: z.string().optional().nullable(),
   status: z.string().optional().nullable(),
   resume_when: z.string().optional().nullable(),
+  resume_ready: z.boolean().optional().nullable(),
+  resume_condition: z.record(z.string(), z.unknown()).optional().nullable(),
   priority: z.string().optional().nullable(),
   title: z.string().optional().nullable(),
   archive_state: z.string().optional().nullable(),
@@ -78,6 +85,16 @@ export const todoItemSchema = z.object({
   note: z.string().optional().nullable(),
   evidence: z.string().optional().nullable(),
   updated_at: z.string().optional().nullable(),
+  completion_validation_required: z.boolean().optional().nullable(),
+  completion_validation_sha256: z.string().optional().nullable(),
+  completion_validation_revision: z.number().int().nonnegative().optional().nullable(),
+  completion_validation_revision_history: z.array(z.object({
+    revision: z.number().int().positive(),
+    previous_declaration_sha256: z.string(),
+    declaration_sha256: z.string(),
+    actor_agent_id: z.string(),
+    revised_at: z.string(),
+  }).passthrough()).optional().default([]),
   review_materials: z.array(reviewMaterialSchema).optional().default([]),
 }).passthrough();
 
@@ -479,6 +496,7 @@ export const runRecordSchema = z.object({
 });
 
 export const runGoalSchema = z.object({
+  acceptance_observation: goalAcceptanceObservationSchema.optional().nullable().catch(null),
   id: z.string(),
   activation_state: z.enum(["active", "stopped"]).optional().default("active"),
   display_name: z.string().optional().nullable(),

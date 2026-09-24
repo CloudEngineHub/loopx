@@ -1,7 +1,13 @@
+import {decodeTaskLeaseProof, type TaskLeaseProof} from "../coordination/task_lease_proof.ts";
+import {monitorPollRequestHash} from "../coordination/todo_monitor_poll.ts";
+import { EffectiveAction, type QuotaEffectiveActionValue } from "./effective_action.generated.ts";
+import { AgentScopeFrontierAction } from "../agents/agent_scope_frontier.generated.ts";
 import { createHash } from "node:crypto";
 import { access, readFile, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { monitorSuccessorIntent, monitorSuccessorRoute, monitorSuccessorCapabilities } from "../scheduler/monitor_successor.ts";
+import { monitorSuccessorIntent, monitorSuccessorRoute } from "../scheduler/monitor_successor.ts";
+import { normalizeTodoCapabilities } from "../todos/work_requirements.ts";
+import { parseProjectionDelivery } from "../todos/projection_delivery.ts";
 
 import type { JsonObject } from "../effect_program.ts";
 import { EffectRuntimeRequestError } from "../effect_runtime_errors.ts";
@@ -24,16 +30,19 @@ import {
 
 export const QUOTA_MONITOR_POLL_COMMIT_REQUEST_SCHEMA =
   "loopx_quota_monitor_poll_commit_request_v0";
+export const QUOTA_LEASED_MONITOR_POLL_COMMIT_REQUEST_SCHEMA = "loopx_quota_monitor_poll_commit_request_v1";
 export const QUOTA_MONITOR_POLL_COMMIT_RESULT_SCHEMA =
   "loopx_quota_monitor_poll_commit_result_v0";
 export const QUOTA_MONITOR_POLL_COMMIT_RECEIPT_SCHEMA =
   "quota_monitor_poll_commit_receipt_v0";
+const MONITOR_PENDING_ADMISSION_SCHEMA = "quota_monitor_poll_pending_admission_v1";
 export const QUOTA_MONITOR_POLL_CLASSIFICATION = "quota_monitor_poll";
 
 const MONITOR_TARGET_SCHEMA = "quota_monitor_target_v0";
 const MONITOR_TODO_PROVIDER_PLAN_SCHEMA = "monitor_poll_todo_provider_plan_v0";
+const LEASED_MONITOR_TODO_PROVIDER_PLAN_SCHEMA = "monitor_poll_todo_provider_plan_v1";
 const MONITOR_TODO_WRITEBACK_SCHEMA = "monitor_poll_todo_writeback_v0";
-const MONITOR_PHASES = ["event", "preflight", "commit"] as const;
+const MONITOR_PHASES = ["event", "preflight", "commit", "provider_rejected"] as const;
 const MONITOR_SOURCES = ["heartbeat", "controller", "adapter", "visible-goal"] as const;
 const EXTERNAL_MONITOR_POLICIES = new Set([
   "material_transition_only",
@@ -51,6 +60,7 @@ type MonitorSource = (typeof MONITOR_SOURCES)[number];
 type MonitorStatus =
   | "preview"
   | "provider_required"
+  | "aborted"
   | "written"
   | "replayed"
   | "repaired"
@@ -82,7 +92,9 @@ interface MonitorDecision extends JsonObject {
 }
 
 interface MonitorObservation extends JsonObject {
+  lease_proof?: TaskLeaseProof;
   actor_agent_id: string | null;
+  settlement_todo_id: string | null;
   reason_summary: string | null;
   todo_id: string | null;
   target_key: string | null;
@@ -102,7 +114,7 @@ interface MonitorObservation extends JsonObject {
 }
 
 interface MonitorRequest {
-  schema_version: typeof QUOTA_MONITOR_POLL_COMMIT_REQUEST_SCHEMA;
+  schema_version: typeof QUOTA_MONITOR_POLL_COMMIT_REQUEST_SCHEMA | typeof QUOTA_LEASED_MONITOR_POLL_COMMIT_REQUEST_SCHEMA;
   phase: MonitorPhase;
   effect_id: string;
   runtime_root: string | null;
@@ -119,7 +131,8 @@ interface MonitorRequest {
 }
 
 interface MonitorProviderPlan extends JsonObject {
-  schema_version: typeof MONITOR_TODO_PROVIDER_PLAN_SCHEMA;
+  schema_version: typeof MONITOR_TODO_PROVIDER_PLAN_SCHEMA | typeof LEASED_MONITOR_TODO_PROVIDER_PLAN_SCHEMA;
+  lease_proof?: TaskLeaseProof;
   monitor_effect_id: string;
   goal_id: string;
   generated_at: string;
@@ -143,8 +156,7 @@ interface MonitorProviderPlan extends JsonObject {
   agent_id: string | null;
 }
 
-interface PendingMonitorReceipt extends JsonObject {
-  schema_version: typeof QUOTA_MONITOR_POLL_COMMIT_RECEIPT_SCHEMA;
+interface PendingMonitorReceiptFields extends JsonObject {
   effect_id: string;
   request_digest: string;
   status: "provider_pending";
@@ -153,6 +165,11 @@ interface PendingMonitorReceipt extends JsonObject {
   expected_index_bytes: number;
   provider_plan: JsonObject;
 }
+
+type PendingMonitorReceipt = PendingMonitorReceiptFields & (
+  | {schema_version: typeof QUOTA_MONITOR_POLL_COMMIT_RECEIPT_SCHEMA}
+  | {schema_version: typeof MONITOR_PENDING_ADMISSION_SCHEMA; admitted_decision: MonitorDecision}
+);
 
 interface DurableMonitorReceipt extends JsonObject {
   schema_version: typeof QUOTA_MONITOR_POLL_COMMIT_RECEIPT_SCHEMA;
@@ -299,16 +316,21 @@ function decisionObject(value: unknown): MonitorDecision {
 
 function observationObject(value: unknown): MonitorObservation {
   const observation = requiredObject(value, "observation");
+  const proof = decodeTaskLeaseProof(observation.lease_proof);
   const materialChange = requireBoolean(
     observation.material_change,
     "observation.material_change",
   );
-  const result = {
+  const result: MonitorObservation = {
     ...observation,
     actor_agent_id: optionalString(
       observation.actor_agent_id,
       "observation.actor_agent_id",
     )?.trim() ?? null,
+    settlement_todo_id: normalizedTodoId(
+      observation.settlement_todo_id,
+      "observation.settlement_todo_id",
+    ),
     reason_summary: optionalString(
       observation.reason_summary,
       "observation.reason_summary",
@@ -358,11 +380,17 @@ function observationObject(value: unknown): MonitorObservation {
       observation.next_claimed_by,
       "observation.next_claimed_by",
     )?.trim() ?? null,
-  } satisfies MonitorObservation;
+  };
   if (materialChange && !result.todo_id && !result.target_key) {
     throw new EffectRuntimeRequestError(
       "`quota monitor-poll --material-change` requires --todo-id or --target-key",
     );
+  }
+  if (proof) {
+    if (!result.todo_id && !result.target_key) throw new EffectRuntimeRequestError("lease proof requires a Monitor target");
+    result.lease_proof = proof;
+  } else {
+    delete result.lease_proof;
   }
   // Validate the route without rewriting the persisted observation fingerprint.
   // Pending receipts from earlier versions must remain replayable.
@@ -372,7 +400,8 @@ function observationObject(value: unknown): MonitorObservation {
 
 function requestObject(value: unknown): MonitorRequest {
   const request = requiredObject(value, "quota.monitor_poll.commit params");
-  if (request.schema_version !== QUOTA_MONITOR_POLL_COMMIT_REQUEST_SCHEMA) {
+  if (request.schema_version !== QUOTA_MONITOR_POLL_COMMIT_REQUEST_SCHEMA &&
+      request.schema_version !== QUOTA_LEASED_MONITOR_POLL_COMMIT_REQUEST_SCHEMA) {
     throw new EffectRuntimeRequestError("Quota monitor-poll commit request schema mismatch");
   }
   const phase = requireStringLiteral(request.phase, MONITOR_PHASES, "phase");
@@ -400,8 +429,15 @@ function requestObject(value: unknown): MonitorRequest {
       "turn-scoped monitor-poll requires a registered --agent-id",
     );
   }
+  const observation = observationObject(request.observation);
+  if (observation.lease_proof && request.schema_version !== QUOTA_LEASED_MONITOR_POLL_COMMIT_REQUEST_SCHEMA) {
+    throw new EffectRuntimeRequestError("lease-backed monitor-poll requires request v1");
+  }
+  if (request.schema_version === QUOTA_LEASED_MONITOR_POLL_COMMIT_REQUEST_SCHEMA && !observation.lease_proof) {
+    throw new EffectRuntimeRequestError("monitor-poll request v1 requires lease_proof");
+  }
   return {
-    schema_version: QUOTA_MONITOR_POLL_COMMIT_REQUEST_SCHEMA,
+    schema_version: request.schema_version,
     phase,
     effect_id: requiredString(request.effect_id, "effect_id").trim(),
     runtime_root: runtimeRoot,
@@ -420,7 +456,7 @@ function requestObject(value: unknown): MonitorRequest {
     ),
     turn_instance_id: turnId,
     decision,
-    observation: observationObject(request.observation),
+    observation,
     provider_receipt: jsonObject(request.provider_receipt),
     status_reload_warning: jsonObject(request.status_reload_warning),
   };
@@ -447,9 +483,12 @@ function exactBlockedWait(decision: MonitorDecision): JsonObject | null {
 }
 
 function blockedSuccessorAllowed(decision: MonitorDecision): boolean {
-  return ["agent_scope_wait", "monitor_quiet_skip"].includes(
+  return ([
+    AgentScopeFrontierAction.AGENT_SCOPE_WAIT, EffectiveAction.MONITOR_QUIET_SKIP,
+  ] satisfies readonly QuotaEffectiveActionValue[] as readonly string[]).includes(
     decision.effective_action ?? "",
-  ) && !decision.should_run && !decision.requires_user_action && exactBlockedWait(decision) !== null;
+  ) && !decision.should_run &&
+    !decision.requires_user_action && exactBlockedWait(decision) !== null;
 }
 
 function externalMonitorAllowed(decision: MonitorDecision): boolean {
@@ -503,7 +542,7 @@ function admission(request: MonitorRequest): Admission {
   const external = externalMonitorAllowed(request.decision);
   const due = dueMonitorAllowed(request.decision, request.observation);
   if (
-    request.decision.effective_action !== "monitor_quiet_skip" &&
+    request.decision.effective_action !== EffectiveAction.MONITOR_QUIET_SKIP &&
     !external && !due && !blocked
   ) {
     throw new EffectRuntimeRequestError(
@@ -633,11 +672,32 @@ function compactProviderWriteback(receipt: JsonObject): JsonObject {
   ]) {
     compact[field] = receipt[field] ?? null;
   }
+  if (receipt.lease_proof != null) compact.lease_proof = receipt.lease_proof;
+  Object.assign(compact, monitorProjectionDelivery(receipt));
   return compact;
 }
 
-function buildRecord(request: MonitorRequest): JsonObject {
-  const allowed = admission(request);
+/** Display acknowledgement is diagnostic, never evidence for business commit.
+ * Omitted on the legacy path to retain its exact v0 response shape. */
+function monitorProjectionDelivery(receipt: JsonObject): JsonObject {
+  if (receipt.projection_delivery == null) return {};
+  let status: ReturnType<typeof parseProjectionDelivery>;
+  try {
+    status = parseProjectionDelivery(receipt.projection_delivery);
+  } catch (error) {
+    throw new EffectRuntimeRequestError(
+      error instanceof Error ? error.message : "invalid Monitor projection delivery status",
+    );
+  }
+  const outbox = requiredObject(receipt.projection_outbox, "projection_outbox");
+  const diagnostic: JsonObject = {};
+  for (const key of ["schema_version", "status", "reason_code", "retryable", "recommended_action", "retry_business_mutation"]) {
+    if (outbox[key] != null) diagnostic[key] = outbox[key];
+  }
+  return {projection_delivery: status, projection_outbox: diagnostic};
+}
+
+function buildRecord(request: MonitorRequest, allowed: Admission): JsonObject {
   const material = request.observation.material_change;
   let kind = "monitor";
   let prefix = "monitor";
@@ -689,6 +749,7 @@ function buildRecord(request: MonitorRequest): JsonObject {
     monitor_target: target,
     reason_summary: request.observation.reason_summary ?? defaultReason,
     material_change: material,
+    settlement_todo_id: request.observation.settlement_todo_id,
     todo_id: request.observation.todo_id,
     target_key: request.observation.target_key,
     result_hash: request.observation.result_hash,
@@ -703,6 +764,7 @@ function buildRecord(request: MonitorRequest): JsonObject {
       request.decision.reason,
     health_check: healthCheck,
     delivery_outcome: material ? "outcome_progress" : "surface_only",
+    settlement_todo_id: request.observation.settlement_todo_id,
     monitor_target: target,
     monitor_event: event,
   };
@@ -735,6 +797,8 @@ function requestDigest(request: MonitorRequest): string {
   // Admission evidence is intentionally absent: Todo writeback changes the
   // projected decision during a retry, while the logical observation remains
   // the same effect. Mutable phase/CAS/provider fields are fenced separately.
+  const observation: JsonObject = { ...request.observation };
+  if (!observation.settlement_todo_id) delete observation.settlement_todo_id;
   return sha256(pythonJson({
     schema_version: request.schema_version,
     effect_id: request.effect_id,
@@ -742,7 +806,7 @@ function requestDigest(request: MonitorRequest): string {
     goal_id: request.goal_id,
     source: request.source,
     turn_instance_id: request.turn_instance_id,
-    observation: request.observation,
+    observation,
   }));
 }
 
@@ -752,7 +816,8 @@ function providerPlanFor(request: MonitorRequest): MonitorProviderPlan {
     throw new EffectRuntimeRequestError("monitor todo writeback requires --result-hash");
   }
   return {
-    schema_version: MONITOR_TODO_PROVIDER_PLAN_SCHEMA,
+    schema_version: request.observation.lease_proof ? LEASED_MONITOR_TODO_PROVIDER_PLAN_SCHEMA : MONITOR_TODO_PROVIDER_PLAN_SCHEMA,
+    ...(request.observation.lease_proof ? {lease_proof: request.observation.lease_proof} : {}),
     monitor_effect_id: request.effect_id,
     goal_id: request.goal_id,
     generated_at: request.generated_at,
@@ -779,11 +844,17 @@ function providerPlanFor(request: MonitorRequest): MonitorProviderPlan {
 
 function providerPlanObject(value: unknown): MonitorProviderPlan {
   const plan = requiredObject(value, "receipt.provider_plan");
-  if (plan.schema_version !== MONITOR_TODO_PROVIDER_PLAN_SCHEMA) {
+  if (plan.schema_version !== MONITOR_TODO_PROVIDER_PLAN_SCHEMA &&
+      plan.schema_version !== LEASED_MONITOR_TODO_PROVIDER_PLAN_SCHEMA) {
     throw new EffectRuntimeRequestError("Monitor Todo provider plan schema mismatch");
   }
+  const proof = decodeTaskLeaseProof(plan.lease_proof);
+  if ((plan.schema_version === LEASED_MONITOR_TODO_PROVIDER_PLAN_SCHEMA) !== (proof !== null)) {
+    throw new EffectRuntimeRequestError("Monitor provider plan lease proof/schema mismatch");
+  }
   return {
-    schema_version: MONITOR_TODO_PROVIDER_PLAN_SCHEMA,
+    schema_version: plan.schema_version,
+    ...(proof ? {lease_proof: proof} : {}),
     monitor_effect_id: requiredString(
       plan.monitor_effect_id,
       "provider_plan.monitor_effect_id",
@@ -851,8 +922,8 @@ function requireProviderCapabilityMatch(
   expected: readonly string[],
   label: string,
 ): void {
-  const actualCapabilities = monitorSuccessorCapabilities(actual, label);
-  const expectedCapabilities = monitorSuccessorCapabilities(expected, label);
+  const actualCapabilities = normalizeTodoCapabilities(actual, label);
+  const expectedCapabilities = normalizeTodoCapabilities(expected, label);
   if (pythonJson(actualCapabilities) !== pythonJson(expectedCapabilities)) {
     throw new EffectRuntimeRequestError(`${label} must match provider plan`);
   }
@@ -1098,8 +1169,14 @@ function validatedProviderReceipt(
     "provider_receipt.successor_receipts",
   );
   validateSuccessorReceipts(successors, nextTodos, plan, todoId);
+  const proof = decodeTaskLeaseProof(receipt.lease_proof);
+  requireProviderMatch(proof?.idempotency_key ?? null, plan.lease_proof?.idempotency_key ?? null,
+    "provider_receipt.lease_proof.idempotency_key");
+  requireProviderMatch(proof?.expected_version ?? null, plan.lease_proof?.expected_version ?? null,
+    "provider_receipt.lease_proof.expected_version");
   return {
     schema_version: MONITOR_TODO_WRITEBACK_SCHEMA,
+    ...(proof ? {lease_proof: proof} : {}),
     dry_run: dryRun,
     goal_id: plan.goal_id,
     todo_id: todoId,
@@ -1114,6 +1191,7 @@ function validatedProviderReceipt(
     todo_update: requiredObject(receipt.todo_update, "provider_receipt.todo_update"),
     next_todos: nextTodos,
     successor_receipts: successors,
+    ...monitorProjectionDelivery(receipt),
   };
 }
 
@@ -1250,6 +1328,20 @@ function matchingIndexRecord(
   return null;
 }
 
+function pendingIndexHistoryIntact(
+  pending: PendingMonitorReceipt,
+  current: Buffer | null,
+): boolean {
+  const expectedBytes = pending.expected_index_bytes;
+  if (!Number.isSafeInteger(expectedBytes) || expectedBytes < 0 ||
+      (current?.length ?? 0) < expectedBytes) return false;
+  if (pending.expected_index_digest === null) {
+    return expectedBytes === 0;
+  }
+  return sha256Bytes((current ?? Buffer.alloc(0)).subarray(0, expectedBytes)) ===
+    pending.expected_index_digest;
+}
+
 function indexRecordFor(
   request: MonitorRequest,
   record: JsonObject,
@@ -1277,6 +1369,7 @@ function indexRecordFor(
   for (const [field, value] of Object.entries({
     agent_id: record.agent_id,
     turn_instance_id: record.turn_instance_id,
+    settlement_todo_id: event.settlement_todo_id,
     todo_id: event.todo_id,
     target_key: event.target_key,
     material_change: event.material_change === true ? true : null,
@@ -1311,6 +1404,7 @@ function monitorMarkdown(record: JsonObject): string {
     `- source: \`${pyValue(event.source)}\``,
     `- effective_action: \`${pyValue(before.effective_action)}\``,
     `- monitor_target: \`${pyValue(target.target_id)}\``,
+    `- settlement_todo_id: \`${pyValue(event.settlement_todo_id ?? "")}\``,
     `- todo_id: \`${pyValue(event.todo_id ?? "")}\``,
     `- target_key: \`${pyValue(event.target_key ?? "")}\``,
     `- material_change: \`${pyValue(event.material_change)}\``,
@@ -1361,6 +1455,7 @@ function payloadFor(
     classification: QUOTA_MONITOR_POLL_CLASSIFICATION,
     generated_at: record.generated_at,
     agent_id: record.agent_id ?? null,
+    settlement_todo_id: event.settlement_todo_id ?? null,
     todo_id: event.todo_id ?? null,
     target_key: event.target_key ?? null,
     material_change: event.material_change === true,
@@ -1384,6 +1479,46 @@ function payloadFor(
   if (request.turn_instance_id) {
     payload.turn_instance_id = request.turn_instance_id;
     payload.replayed = options.replayed;
+    if (request.execute) {
+      const settlementTodoId = optionalString(
+        event.settlement_todo_id,
+        "monitor_event.settlement_todo_id",
+      )?.trim() ?? null;
+      const observedTodoId = optionalString(
+        event.todo_id,
+        "monitor_event.todo_id",
+      )?.trim() ?? null;
+      const exactSettlement = settlementTodoId !== null &&
+        observedTodoId === settlementTodoId;
+      const auxiliaryObservation = settlementTodoId !== null &&
+        observedTodoId !== null && observedTodoId !== settlementTodoId;
+      payload.turn_continuation = exactSettlement
+        ? {
+          schema_version: "quota_turn_continuation_v0",
+          settlement_binding_matches_observation: true,
+          current_turn_settled: true,
+          same_turn_independent_settlement_allowed: false,
+          next_turn_required: true,
+          next_action:
+            "rerun quota should-run with a fresh --turn-instance-id before independent work",
+          reason: "the committed monitor-poll is this Turn's single settlement identity",
+        }
+        : {
+          schema_version: "quota_turn_continuation_v0",
+          settlement_binding_matches_observation: auxiliaryObservation
+            ? false
+            : null,
+          current_turn_settled: false,
+          same_turn_independent_settlement_allowed: false,
+          next_turn_required: false,
+          next_action: auxiliaryObservation
+            ? "continue the original advancement settlement in this Turn"
+            : "obtain a typed settlement binding before claiming this Turn settled",
+          reason: auxiliaryObservation
+            ? "the committed monitor-poll is an auxiliary observation and does not settle the advancement Turn"
+            : "the committed monitor-poll has no exact Todo settlement binding",
+        };
+    }
   }
   if (request.status_reload_warning) {
     payload.status_reload_warning = request.status_reload_warning;
@@ -1393,7 +1528,8 @@ function payloadFor(
 
 function receiptObject(value: unknown): MonitorReceipt {
   const receipt = requiredObject(value, "quota monitor-poll transaction receipt");
-  if (receipt.schema_version !== QUOTA_MONITOR_POLL_COMMIT_RECEIPT_SCHEMA) {
+  if (receipt.schema_version !== QUOTA_MONITOR_POLL_COMMIT_RECEIPT_SCHEMA &&
+      receipt.schema_version !== MONITOR_PENDING_ADMISSION_SCHEMA) {
     throw new EffectRuntimeRequestError(
       "Quota monitor-poll transaction receipt schema mismatch",
     );
@@ -1422,11 +1558,20 @@ function receiptObject(value: unknown): MonitorReceipt {
     "receipt.status",
   );
   if (status === "provider_pending") {
+    if (receipt.schema_version === MONITOR_PENDING_ADMISSION_SCHEMA) {
+      return {...common, schema_version: MONITOR_PENDING_ADMISSION_SCHEMA, status,
+        provider_plan: providerPlanObject(receipt.provider_plan),
+        admitted_decision: decisionObject(receipt.admitted_decision)};
+    }
     return {
       ...common,
       status,
       provider_plan: providerPlanObject(receipt.provider_plan),
     };
+  }
+  if (receipt.schema_version !== QUOTA_MONITOR_POLL_COMMIT_RECEIPT_SCHEMA) {
+    throw new EffectRuntimeRequestError("admitted pending receipt cannot represent a completed settlement",
+      "malformed_transaction_receipt");
   }
   return {
     ...common,
@@ -1716,6 +1861,11 @@ function conflictFields(
   if (requested.material_change !== (recorded.material_change === true)) {
     conflicts.push("material_change");
   }
+  const recordedProof = decodeTaskLeaseProof(recorded.lease_proof ?? jsonObject(recorded.todo_writeback)?.lease_proof);
+  if ((requested.lease_proof?.idempotency_key ?? null) !== (recordedProof?.idempotency_key ?? null) ||
+      (requested.lease_proof?.expected_version ?? null) !== (recordedProof?.expected_version ?? null)) {
+    conflicts.push("lease_proof");
+  }
   return conflicts;
 }
 
@@ -1742,13 +1892,40 @@ function effectConflict(
   );
 }
 
+function validateNoEffect(receipt: JsonObject | null, plan: MonitorProviderPlan): void {
+  const proof = receipt?.no_effect as JsonObject | undefined;
+  const observation = Object.fromEntries([
+    "todo_id", "target_key", "result_hash", "material_change", "generated_at",
+    "cadence", "next_due_at", "reason_summary",
+  ].map(key => [key, plan[key]]));
+  const intent = Object.fromEntries([
+    "next_agent_todo", "next_action_kind", "next_task_repository", "next_required_capabilities",
+    "next_continuation_policy", "next_target_key", "next_claimed_by", "next_user_todo", "next_user_task_class",
+  ].map(key => [key, plan[key]]));
+  const hash = monitorPollRequestHash({goal_id: plan.goal_id, actor_agent_id: plan.agent_id,
+    dry_run: !plan.execute, observation, intent, lease_proof: plan.lease_proof});
+  if (receipt?.schema_version !== "loopx_coordination_monitor_poll_result_v0" ||
+      receipt.status !== "failed" || receipt.changed !== false ||
+      receipt.reason_code !== "monitor_poll_rejected" ||
+      !["file_v0", "sqlite_v0", "postgresql_v0"].includes(String(receipt.source_authority)) ||
+      receipt.decision_read_from_provider !== true || receipt.legacy_fallback_used !== false ||
+      proof?.schema_version !== "monitor_poll_no_effect_v0" ||
+      proof.goal_id !== plan.goal_id || proof.operation_id !== plan.monitor_effect_id || proof.request_sha256 !== hash) {
+    throw new EffectRuntimeRequestError("provider rejection does not prove this pending Monitor request had no effect",
+      "monitor_poll_no_effect_unproven");
+  }
+}
+
 export async function evaluateQuotaMonitorPollCommit(
   value: unknown,
 ): Promise<QuotaMonitorPollCommitResult> {
   const request = requestObject(value);
   const fingerprint = requestDigest(request);
+  if (request.phase === "provider_rejected" && !request.execute) {
+    throw new EffectRuntimeRequestError("provider rejection recovery requires execute");
+  }
   if (request.phase === "event") {
-    const record = buildRecord(request);
+    const record = buildRecord(request, admission(request));
     return result(
       request,
       fingerprint,
@@ -1769,7 +1946,7 @@ export async function evaluateQuotaMonitorPollCommit(
   if (!request.execute) {
     // A provider may mutate the Todo registry, so previews must pass admission
     // before returning a provider plan.
-    admission(request);
+    const allowed = admission(request);
     if (request.phase === "preflight") {
       const providerPlan = providerPlanFor(request);
       return result(
@@ -1801,7 +1978,7 @@ export async function evaluateQuotaMonitorPollCommit(
         validatedProviderReceipt(request.provider_receipt, plan),
       );
     }
-    const record = buildRecord(effectiveRequest);
+    const record = buildRecord(effectiveRequest, allowed);
     const runsDir = request.runtime_root
       ? join(request.runtime_root, "goals", request.goal_id, "runs")
       : null;
@@ -1855,6 +2032,9 @@ export async function evaluateQuotaMonitorPollCommit(
         );
       }
       if (existing.status !== "provider_pending") {
+        if (request.phase === "provider_rejected") {
+          throw new EffectRuntimeRequestError("cannot abort a prepared or committed Monitor effect");
+        }
         return await replayDurableReceipt(
           request,
           fingerprint,
@@ -1864,10 +2044,48 @@ export async function evaluateQuotaMonitorPollCommit(
       }
     }
 
-    // A completed or provider-pending receipt already proves that the original
-    // request passed admission. Revalidate only new effects so a changed Todo
-    // projection cannot block exact-effect replay or crash recovery.
-    if (!existing) admission(request);
+    if (request.phase === "provider_rejected") {
+      if (!existing || existing.status !== "provider_pending") {
+        throw new EffectRuntimeRequestError("provider rejection recovery requires an exact pending Monitor receipt");
+      }
+      validateNoEffect(request.provider_receipt, providerPlanObject(existing.provider_plan));
+      const bytes = await readOptionalBytes(indexPath);
+      if (!pendingIndexHistoryIntact(existing, bytes) ||
+          matchingIndexRecord(indexRecords(bytes?.toString("utf8") ?? null), request.effect_id)) {
+        throw new EffectRuntimeRequestError("cannot abort Monitor effect with conflicting index history");
+      }
+      // Remove only this proven uncommitted reservation under the effect lock.
+      // Any timeout, unknown outcome, changed request or committed effect keeps
+      // its original recovery fence and never reaches this branch.
+      await rm(receiptPath);
+      return result(request, fingerprint, "aborted", null, {ok: false, appended: false},
+        "provider rejected before commit; pending Monitor reservation released");
+    }
+
+    // A pending v1 receipt preserves the decision that admitted this effect.
+    // Validate that historical basis, never the post-business-commit projection.
+    // It only authorizes settlement; the provider still fences any new mutation.
+    let admittedRequest = request;
+    if (existing?.schema_version === MONITOR_PENDING_ADMISSION_SCHEMA) {
+      const decision = existing.admitted_decision;
+      if (decision.goal_id !== request.goal_id || decision.agent_id !== request.decision.agent_id) {
+        throw new EffectRuntimeRequestError("pending Monitor admission goal/agent does not match request",
+          "malformed_transaction_receipt");
+      }
+      admittedRequest = {...request, decision};
+    }
+    let allowed: Admission;
+    try {
+      allowed = admission(admittedRequest);
+    } catch (error) {
+      if (existing?.schema_version === QUOTA_MONITOR_POLL_COMMIT_RECEIPT_SCHEMA &&
+          error instanceof EffectRuntimeRequestError && error.code === "monitor_poll_admission_rejected") {
+        throw new EffectRuntimeRequestError(
+          "legacy pending Monitor receipt has no frozen admission; current admission is unavailable; preserve the receipt for reconciliation",
+          "legacy_monitor_admission_unavailable");
+      }
+      throw error;
+    }
 
     const indexBytes = await readOptionalBytes(indexPath);
     const indexContent = indexBytes?.toString("utf8") ?? null;
@@ -1887,6 +2105,13 @@ export async function evaluateQuotaMonitorPollCommit(
       );
     }
     const records = indexRecords(indexContent);
+    if (existing?.status === "provider_pending" && matchingIndexRecord(records, request.effect_id)) {
+      return result(
+        request, fingerprint, "conflict", null, {ok: false, appended: false},
+        "quota monitor-poll effect identity exists while its provider receipt is pending",
+        currentDigest, null, null, {reason_code: "effect_id_conflict"},
+      );
+    }
     if (!existing && matchingIndexRecord(records, request.effect_id)) {
       return result(
         request,
@@ -1903,11 +2128,7 @@ export async function evaluateQuotaMonitorPollCommit(
     }
 
     if (request.phase === "preflight") {
-      if (
-        existing &&
-        (currentDigest !== existing.expected_index_digest ||
-          (indexBytes?.length ?? 0) !== existing.expected_index_bytes)
-      ) {
+      if (existing && !pendingIndexHistoryIntact(existing, indexBytes)) {
         return result(
           request,
           fingerprint,
@@ -1936,7 +2157,7 @@ export async function evaluateQuotaMonitorPollCommit(
       }
       if (!existing) {
         const pending = {
-          schema_version: QUOTA_MONITOR_POLL_COMMIT_RECEIPT_SCHEMA,
+          schema_version: MONITOR_PENDING_ADMISSION_SCHEMA,
           effect_id: request.effect_id,
           request_digest: fingerprint,
           status: "provider_pending",
@@ -1944,6 +2165,7 @@ export async function evaluateQuotaMonitorPollCommit(
           expected_index_digest: currentDigest,
           expected_index_bytes: indexBytes?.length ?? 0,
           provider_plan: plan,
+          admitted_decision: request.decision,
         } satisfies PendingMonitorReceipt;
         await atomicWriteJson(receiptPath, pending);
       }
@@ -1959,7 +2181,7 @@ export async function evaluateQuotaMonitorPollCommit(
       );
     }
 
-    let effectiveRequest = request;
+    let effectiveRequest = admittedRequest;
     let expectedDigest = currentDigest;
     let expectedBytes = indexBytes?.length ?? 0;
     if (providerNeeded) {
@@ -1984,10 +2206,7 @@ export async function evaluateQuotaMonitorPollCommit(
           "malformed_transaction_receipt",
         );
       }
-      if (
-        currentDigest !== existing.expected_index_digest ||
-        (indexBytes?.length ?? 0) !== existing.expected_index_bytes
-      ) {
+      if (!pendingIndexHistoryIntact(existing, indexBytes)) {
         return result(
           request,
           fingerprint,
@@ -2002,17 +2221,21 @@ export async function evaluateQuotaMonitorPollCommit(
         );
       }
       effectiveRequest = requestWithProvider(
-        request,
+        admittedRequest,
         plan,
         validatedProviderReceipt(request.provider_receipt, plan),
       );
-      expectedDigest = existing.expected_index_digest;
-      expectedBytes = existing.expected_index_bytes;
+      // The pending receipt freezes the admitted observation, not the entire
+      // append-only run index. An unrelated run may have committed while the
+      // provider wrote this exact effect. The new prepared WAL fences the
+      // current index under the same lock after its historical prefix passes.
+      expectedDigest = currentDigest;
+      expectedBytes = indexBytes?.length ?? 0;
     } else if (existing?.status === "provider_pending") {
       return effectConflict(request, fingerprint, currentDigest, existing);
     }
 
-    const record = buildRecord(effectiveRequest);
+    const record = buildRecord(effectiveRequest, allowed);
     const { jsonPath, markdownPath } = await nextArtifactPaths(
       runsDir,
       effectiveRequest.generated_at,

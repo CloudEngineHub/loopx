@@ -1,3 +1,8 @@
+import type { CollaborationReadback, LoopXModeSettings } from "../../data/chat-model";
+import type { TeamPlanAppliedOutcome } from "./team-plan-preview";
+import type { ActionReviewPlan } from "../../../../../../loopx/control_plane/presentation/action_review_plan.js";
+import type { GoalAcceptanceObservation } from "../../data/goal-acceptance-observation";
+import type { AttentionDetails } from "./attention-details";
 import type { WorkspaceLoadError } from "../../data/workspace-progressive-status";
 export type WorkspaceGoalState =
   | "需修复"
@@ -18,6 +23,8 @@ export type WorkspaceHomeLane =
 
 export type WorkspaceAgentTodo = {
   resumeWhen?: string | null;
+  resumeReady?: boolean | null;
+  resumeReceiptId?: string | null;
   claimedBy?: string | null;
   dependencies?: string[];
   done: boolean;
@@ -29,6 +36,9 @@ export type WorkspaceAgentTodo = {
   taskDomain?: string | null;
   text: string;
   todoId: string;
+  validationDigest?: string | null;
+  validationRevision?: number | null;
+  validationRevisionActor?: string | null;
 };
 
 export type WorkspaceTodo = WorkspaceAgentTodo & {
@@ -54,6 +64,17 @@ export type WorkspaceRepositoryContext = {
 };
 
 export type WorkspaceGoalSubagentConfiguration = {
+  alignCodexHostCapacity?: boolean;
+  codexHostCapacity?: {
+    configuredChildren: number | null;
+    newSessionRequired: boolean;
+    requiredChildren: number;
+    status: string;
+    writeRequired: boolean;
+    written: boolean;
+  };
+  modelConfig?: { model: string; reasoning_effort?: string } | null;
+  executionConfig?: string;
   allowedDomains: string[];
   domainCandidates?: Array<{
     domain: string;
@@ -64,6 +85,7 @@ export type WorkspaceGoalSubagentConfiguration = {
 };
 
 export type WorkspaceGoal = {
+  acceptanceObservation?: GoalAcceptanceObservation | null;
   loadState?: "loading" | "error";
   loadError?: WorkspaceLoadError;
   activationState: "active" | "stopped";
@@ -93,6 +115,8 @@ export type WorkspaceGoal = {
 };
 
 export type WorkspaceAttention = {
+  details?: AttentionDetails;
+  sourceId?: string;
   blocking: boolean;
   evidence?: string | null;
   explanation?: string | null;
@@ -166,7 +190,7 @@ export type WorkspaceOutput = {
 };
 
 export type WorkspaceChannel = "manager" | "attention" | "running" | "outputs";
-export type WorkspaceGoalTab = "chat" | "tasks" | "files";
+export type WorkspaceGoalTab = "overview" | "chat" | "tasks" | "files";
 
 export type WorkspaceScheduleKind = "heartbeat" | "monitor";
 
@@ -194,6 +218,7 @@ export type WorkspaceSchedule = {
 };
 
 export type WorkspaceActionPreview = {
+  reviewPlan?: ActionReviewPlan;
   actionKind:
     | "goal.create"
     | "goal.update"
@@ -205,7 +230,9 @@ export type WorkspaceActionPreview = {
     | "monitor.create"
     | "monitor.update"
     | "gate.resolve"
-    | "run.correct";
+    | "run.correct"
+    | "operation.execute"
+    | "team.plan";
   agentLabel?: string;
   fields: Array<{ key: string; label: string; value: string }>;
   goalId?: string;
@@ -220,19 +247,34 @@ export type WorkspaceActionPreview = {
   primaryLabel?: string;
   errorMessage?: string;
   status: "draft" | "ready" | "applying" | "applied" | "gated" | "stale" | "error" | "rejected" | "deferred";
+  // The lanes a confirmed team plan left unstaffed, read from the apply
+  // receipt so the card can name them after the confirmation, not only in the
+  // preview that the confirmation replaced.
+  teamPlanOutcome?: TeamPlanAppliedOutcome;
+  teamPlanAssignments?: Array<{ laneId: string; agentId: string; task: string }>;
+  teamPlanGapLanes?: Array<{ laneId: string; agentId: string; reasonCode: string; task?: string }>;
+  teamPlanTodoIds?: string[];
   title: string;
   sourceRequest?: WorkspaceActionPreviewRequest;
   workspaceCandidates?: Array<{ label: string; workspaceRef: string }>;
 };
 
 export type WorkspaceMessage = {
+  collaboration?: CollaborationReadback;
   agentLabel?: string;
   attachments?: WorkspaceImageAttachment[];
   id: string;
   pending?: boolean;
+  returnDelivery?: WorkspaceReturnDelivery;
   role: "assistant" | "user" | "system";
   text: string;
   time?: string;
+};
+
+export type WorkspaceReturnDelivery = {
+  error?: string | null;
+  status: string;
+  verification?: "reconciled_after_restart";
 };
 
 export type WorkspaceImageAttachment = {
@@ -287,6 +329,7 @@ export type WorkspaceModel = {
   };
   systemHealth?: WorkspaceSystemHealth;
   timeline?: WorkspaceTimelineItem[];
+  attentionHistory?: WorkspaceAttention[];
   userTodos: WorkspaceAttention[];
   workers?: WorkspaceWorker[];
 };
@@ -314,7 +357,7 @@ export type WorkspaceDrawerSelection =
   | { item: WorkspaceRun; kind: "run" }
   | { item: WorkspaceOutput; kind: "output" }
   | { item: WorkspaceActionPreview; kind: "proposal" }
-  | { goalId?: string; kind: "settings"; tab?: "appearance" | "capabilities" | "language" | "lark" | "machine" }
+  | { goalId?: string; kind: "settings"; tab?: "appearance" | "capabilities" | "language" | "lark" | "machine" | "steward" }
   | {
       item: WorkspaceSchedule;
       kind: "schedule";
@@ -326,6 +369,7 @@ export type PersonalHomeCompatibleModel = {
   goals: WorkspaceGoal[];
   openUserTodoCount: number;
   systemHealth?: WorkspaceSystemHealth;
+  attentionHistory?: WorkspaceAttention[];
   userTodos: WorkspaceAttention[];
   workers?: WorkspaceWorker[];
 };
@@ -360,8 +404,18 @@ export type PersonalWorkspaceCallbacks = {
     request: WorkspaceGoalSubagentConfiguration & { goalId: string; previewId: string },
   ) => Promise<WorkspaceGoalSubagentConfiguration>;
   onGoalActivationStateChange?: (goalId: string, activationState: "active" | "stopped") => void;
+  onExecuteGoalLifecycle?: (request: {
+    goalId: string;
+    operation: "stop" | "resume";
+    reason: string;
+  }) => Promise<{
+    activationState: "active" | "stopped";
+    projectionVerified: boolean;
+  }>;
   onGoalDeleted?: (goalId: string) => void;
-  onReconcileStatus?: () => void | Promise<void>;
+  /** Re-read the workspace projection after an applied action. `invalidateGoalIds`
+   * names the Goals the action touched, so a peer's snapshot is not re-read for it. */
+  onReconcileStatus?: (options?: { invalidateGoalIds?: string[] }) => void | Promise<void>;
   onRefresh?: () => void | Promise<void>;
   onRetryGoalArchive?: () => void | Promise<void>;
   onPreviewAction?: (request: WorkspaceActionPreviewRequest) => WorkspaceActionPreview | Promise<WorkspaceActionPreview>;
@@ -376,6 +430,9 @@ export type PersonalWorkspaceCallbacks = {
     goalId: string | null,
     attachments?: WorkspaceImageAttachment[],
   ) => void | WorkspaceActionPreviewRequest | Promise<void | WorkspaceActionPreviewRequest>;
+  onPrepareLoopX?: (agentId: string, goalId: string) => Promise<string>;
+  onStartLoopX?: (operation: "start" | "resume", agentId: string, goalId: string,
+    settings?: LoopXModeSettings) => void;
   onSelectAgent?: (agentId: string) => void;
   onSelectChannel?: (channel: WorkspaceChannel) => void;
   onSelectGoal?: (goalId: string | null) => void;
@@ -400,6 +457,7 @@ export function normalizePersonalHomeModel(model: PersonalHomeCompatibleModel): 
     goals: model.goals,
     openUserTodoCount: model.openUserTodoCount,
     systemHealth: model.systemHealth,
+    attentionHistory: model.attentionHistory,
     userTodos: model.userTodos,
     workers: model.workers,
   };
@@ -423,9 +481,14 @@ export function workspaceSessionStatusLabel(status?: string): string {
   } as Record<string, string>)[status] ?? status;
 }
 
+/** A quiet persistent conversation must not masquerade as waiting work. */
+export function goalHasExecutionSummary(goal: Pick<WorkspaceGoal, "state">): boolean {
+  return ["推进中", "需修复", "等待条件"].includes(goal.state);
+}
+
 /**
  * Project the detailed Goal lifecycle onto the five manager-home buckets.
- * The home keeps four active lanes visible and collapses terminal work into history.
+ * The home shows populated active lanes and collapses terminal work into history.
  */
 export function workspaceHomeLaneForGoal(goal: WorkspaceGoal): WorkspaceHomeLane {
   if (goal.activationState === "stopped" || goal.state === "已停止") return "stopped";
@@ -515,4 +578,10 @@ export function workerStateLabel(state?: string | null): string {
   if (state === "monitoring") return "监控中";
   if (state === "blocked") return "受阻";
   return "待命";
+}
+
+/** Bounded card copy; the owning item retains its complete detail text. */
+export function compactWorkspaceText(value?: string | null, limit = 132) {
+  const text = (value ?? "").replace(/\s+/g, " ").trim();
+  return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
 }

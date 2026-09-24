@@ -43,6 +43,7 @@ def test_host_materialization_installs_generated_loopx_entry_skill(
         "skill_id": "loopx",
         "path": str(skill),
         "status": "created",
+        "metadata_status": "created",
     }
     # A plain scalar, not `name: "loopx"`: hosts such as Kiro CLI keep the quote
     # characters verbatim and would expose the skill as `/"loopx"`.
@@ -134,6 +135,31 @@ def test_host_materialization_rejects_unknown_fixed_surface(tmp_path: Path) -> N
         )
 
 
+@pytest.mark.parametrize("host_surface", ["ark-managed-agent", "deepseek-harness-native"])
+def test_exact_host_materialization_does_not_add_codex_policy(tmp_path, host_surface):
+    result = materialize_loopx_entry_skill(
+        skills_dir=tmp_path, execute=True, host_surface=host_surface,
+    )
+    assert "metadata_status" not in result
+    assert not (tmp_path / "loopx/agents/openai.yaml").exists()
+
+
+@pytest.mark.parametrize("user_skill", [False, True])
+def test_entry_materialization_preserves_user_metadata(tmp_path, user_skill):
+    skill, metadata = _loopx_paths(tmp_path)
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text('interface:\n  display_name: "My workflow"\n')
+    if user_skill:
+        skill.write_text("User-owned skill\n")
+    result = materialize_loopx_entry_skill(skills_dir=tmp_path / "skills", execute=True)
+    assert metadata.read_text() == 'interface:\n  display_name: "My workflow"\n'
+    if user_skill:
+        assert result["status"] == "skipped_user_file"
+        assert skill.read_text() == "User-owned skill\n"
+    else:
+        assert result["metadata_status"] == "skipped_user_file"
+
+
 def test_codex_install_upgrades_managed_loopx_facade(tmp_path: Path) -> None:
     codex_home = tmp_path / "codex"
     skill, metadata = _loopx_paths(codex_home)
@@ -167,6 +193,8 @@ def test_codex_install_upgrades_managed_loopx_facade(tmp_path: Path) -> None:
     assert "never pipe a `--begin-turn` call" not in skill_text
     assert "passes its own `--turn-instance-id`" in skill_text
     assert "interaction_contract.cli_channel.selection_command" in skill_text
+    assert "Read capability_gate.repair_missing even when should_run is true" in skill_text
+    assert "do not claim a missing declaration proves a missing tool" in skill_text
     assert "do not return merely after setup, planning, or claim" not in skill_text
     metadata_text = metadata.read_text(encoding="utf-8")
     assert 'display_name: "LoopX"' in metadata_text

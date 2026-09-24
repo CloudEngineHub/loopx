@@ -30,8 +30,10 @@ surface:
 | Context / Settings | How are the repository, Session, Goal Channel, and optional features configured? | Writes require preview, apply, and readback |
 
 This is not a new source of truth. The browser cannot bypass the Kernel to edit registries, Todos, quota,
-or Host automation. Remote SSH sources remain read-only. Stage 2C authority and other candidate Providers
-are still promoted in stages; the 1.0 label does not mean that every tenant has migrated.
+or Host automation. Remote SSH projections remain read-only except for the
+explicit Goal stop/resume control routed through an exact configured Host alias;
+manual URLs cannot acquire that authority. Stage 2C authority and other candidate
+Providers are still promoted in stages; the 1.0 label does not mean that every tenant has migrated.
 
 Use the [LoopX v1.0.0 release](https://github.com/huangruiteng/loopx/releases/tag/v1.0.0) for shipped
 facts and the [Personal Workspace guide](/loopx/docs/guides/personal-workspace-user-guide/) for detailed
@@ -109,9 +111,12 @@ For example, the first Goal-stop command is preview-only:
 
 ```bash
 loopx goal-lifecycle --goal-id <goal-id> --operation stop
-loopx goal-lifecycle --goal-id <goal-id> --operation stop --execute
+loopx goal-lifecycle --goal-id <goal-id> --operation stop --actor-kind owner --execute
 loopx quota status --goal-id <goal-id>
 ```
+
+Executed lifecycle transitions require an explicit `--actor-kind owner` or
+`controller`; anonymous previews remain read-only.
 
 Stopping a Goal removes it from active attention and projects zero effective automatic-run quota while
 preserving Todos, history, evidence, and configuration. Explicit `resume --execute` restores scheduling

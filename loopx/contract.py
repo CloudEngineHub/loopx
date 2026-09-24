@@ -23,7 +23,12 @@ from .control_plane.runtime.run_index_duplicates import (
     index_identity,
 )
 from .control_plane.todos.active_state_editing import COMPLETED_WORK_ARCHIVE_HEADING
-from .history import collect_history, load_registry
+from .history import (
+    RunHistoryAudit,
+    build_run_history_audit,
+    collect_history,
+    load_registry,
+)
 from .paths import DEFAULT_RUNTIME_ROOT, rel_or_abs, resolve_runtime_root
 from .registry import inspect_registry, inspect_registry_boundary, registry_goals, resolve_state_file
 from .state_projection import state_projection_gap_warning
@@ -750,16 +755,22 @@ def iter_scan_files(scan_root: Path) -> list[Path]:
     files: list[Path] = []
     tracked_files = _tracked_scan_files(scan_root)
     root_parts = set(scan_root.parts)
-    if any(part in DEFAULT_SKIP_DIRS or part.endswith(".egg-info") for part in root_parts):
+    # Dependency pruning never overrides tracked repository ownership.
+    if (
+        any(part in DEFAULT_SKIP_DIRS or part.endswith(".egg-info") for part in root_parts)
+        or os.path.isfile(scan_root / "pyvenv.cfg")
+    ):
         return sorted(tracked_files)
 
     for dir_path, dir_names, file_names in os.walk(scan_root):
+        current_dir = Path(dir_path)
         dir_names[:] = [
             name
             for name in dir_names
-            if name not in DEFAULT_SKIP_DIRS and not name.endswith(".egg-info")
+            if name not in DEFAULT_SKIP_DIRS
+            and not name.endswith(".egg-info")
+            and not os.path.isfile(current_dir / name / "pyvenv.cfg")
         ]
-        current_dir = Path(dir_path)
         for file_name in file_names:
             path = (current_dir / file_name).resolve()
             if path.name.endswith(".local.json"):
@@ -877,6 +888,8 @@ def check_contract(
     goal_id_filter: str | None = None,
     activation_state_filter: GoalActivationState | str | None = None,
     include_public_boundary_scan: bool = True,
+    history_audit: RunHistoryAudit | None = None,
+    registry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     error_diagnostics: list[dict[str, Any]] = []
     warnings: list[str] = []
@@ -924,7 +937,8 @@ def check_contract(
         for risk in boundary_payload.get("risks") or []:
             add_global_error("registry_boundary_risk", f"registry boundary risk: {risk}")
 
-    registry = load_registry(registry_path)
+    if registry is None:
+        registry = load_registry(registry_path)
     todo_contract_diagnostics, checked_user_gates = (
         _active_state_todo_contract_diagnostics(
             registry,
@@ -953,34 +967,70 @@ def check_contract(
     else:
         warnings.append(f"runtime root does not exist yet: {runtime_root}")
 
-    history = collect_history(
+    if history_audit is None:
+        history = collect_history(
+            registry_path=registry_path,
+            runtime_root=runtime_root,
+            goal_id=goal_id_filter,
+            limit=limit,
+            activation_state_filter=activation_state_filter,
+        )
+        history_audit = build_run_history_audit(
+            history,
+            registry_path=registry_path,
+            runtime_root=runtime_root,
+            goal_id=goal_id_filter,
+            activation_state_filter=activation_state_filter,
+            include_runtime_goals=True,
+        )
+    elif not history_audit.matches(
         registry_path=registry_path,
         runtime_root=runtime_root,
         goal_id=goal_id_filter,
-        limit=limit,
         activation_state_filter=activation_state_filter,
+        include_runtime_goals=True,
+    ):
+        raise ValueError("history audit scope does not match contract request")
+    checks.append(
+        f"run-history goals={history_audit.goal_count} runs={history_audit.run_count}"
     )
-    checks.append(f"run-history goals={history.get('goal_count')} runs={history.get('run_count')}")
-    for item in history.get("goals") or []:
-        raw = int(item.get("raw_index_records") or 0)
-        unique = int(item.get("unique_runs") or 0)
-        if item.get("legacy_runtime_goal") and raw > unique:
-            checks.append(f"{item.get('id')}: legacy runtime goal has duplicate rows raw={raw} unique={unique}")
+    for item in history_audit.goals:
+        raw = item.raw_index_records
+        unique = item.unique_runs
+        if item.legacy_runtime_goal and raw > unique:
+            checks.append(
+                f"{item.goal_id}: legacy runtime goal has duplicate rows "
+                f"raw={raw} unique={unique}"
+            )
             continue
         if raw > unique:
-            duplicate_summary = _index_duplicate_summary(Path(str(item.get("index_path") or "")))
+            duplicate_summary = _index_duplicate_summary(item.index_path)
             if duplicate_summary.get("unexpected_duplicate_rows"):
-                warnings.append(_index_duplicate_warning(item.get("id"), raw, unique, duplicate_summary))
+                warnings.append(
+                    _index_duplicate_warning(
+                        item.goal_id,
+                        raw,
+                        unique,
+                        duplicate_summary,
+                    )
+                )
             else:
                 emitted_check = False
                 if duplicate_summary.get("reward_overlay_rows"):
                     emitted_check = True
                     checks.append(
-                        f"{item.get('id')}: reward overlay rows raw={raw} unique={unique} "
+                        f"{item.goal_id}: reward overlay rows raw={raw} unique={unique} "
                         f"overlays={duplicate_summary.get('reward_overlay_rows')}"
                     )
                 if not emitted_check:
-                    warnings.append(_index_duplicate_warning(item.get("id"), raw, unique, duplicate_summary))
+                    warnings.append(
+                        _index_duplicate_warning(
+                            item.goal_id,
+                            raw,
+                            unique,
+                            duplicate_summary,
+                        )
+                    )
 
     if include_public_boundary_scan:
         boundary = scan_public_boundary(scan_roots, registry=registry)

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ...file_lock import exclusive_file_lock
+from ..coordination.authority_core import HandoffMode
 from ..coordination.coordination_state_contract_generated import (
     LOCAL_AUTHORITY_SHADOW_CONFIG_SCHEMA,
 )
@@ -30,7 +31,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 TS_READBACK_PROBE = Path("tests") / "control_plane_ts" / "authority_store_readback_probe.ts"
 DEFAULT_REGISTERED_AGENTS: tuple[str, ...] = ("agent-a", "agent-b")
 RUNTIME_ROOT_BINDINGS: tuple[str, ...] = ("registry", "cli_override", "cli_override_divergent")
-HANDOFF_MODES: tuple[str, ...] = ("legacy", "soft_claim", "hard_lease")
+HANDOFF_MODES: tuple[str, ...] = tuple(mode.value for mode in HandoffMode)
 LOCAL_AUTHORITY_SHADOW_CONFIG = {
     "schema_version": LOCAL_AUTHORITY_SHADOW_CONFIG_SCHEMA,
     "mode": "file_one_way",
@@ -421,7 +422,7 @@ def run_cli(
         cwd=REPO_ROOT,
         env=cli_env(workspace),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         timeout=timeout,
         check=False,
     )
@@ -444,7 +445,7 @@ def spawn_cli(workspace: CliWorkspace, *args: str) -> subprocess.Popen[str]:
         env=cli_env(workspace),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
     )
 
 
@@ -532,7 +533,7 @@ def ts_readback(
         command,
         cwd=REPO_ROOT,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         timeout=60,
         check=False,
     )
@@ -591,7 +592,7 @@ def tap_summary(
         cwd=cwd,
         env=dict(env) if env is not None else None,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         timeout=timeout,
         check=False,
     )

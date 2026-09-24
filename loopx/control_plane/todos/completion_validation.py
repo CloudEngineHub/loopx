@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from collections.abc import Mapping
 from json import loads as json_loads
@@ -8,6 +9,11 @@ from typing import Any, cast
 
 from ...history import load_registry
 from ...materials import find_registry_goal, goal_repo
+from ..agents.delivery_workspace import normalize_delivery_workspace_snapshot
+from ..agents.workspace_guard import (
+    capture_delivery_workspace,
+    delivery_workspace_repository,
+)
 from ..runtime.validation_command import (
     CALLER_VALIDATION_RECEIPT_SCHEMA_VERSION,
     run_caller_validation,
@@ -72,6 +78,162 @@ def _resolve_goal_repo_workspace(registry_path: Path, goal_id: str) -> Path | No
     return cast(Path, repo)
 
 
+def _workspace_failure(label: str, *, status: str, summary: str) -> dict[str, Any]:
+    """Return a path-free completion-validation workspace receipt."""
+
+    return {
+        "schema_version": CALLER_VALIDATION_RECEIPT_SCHEMA_VERSION,
+        "command_label": label,
+        "exit_code": None,
+        "passed": False,
+        "status": status,
+        "summary": summary,
+        "stdout_captured": False,
+        "stderr_captured": False,
+        "local_path_captured": False,
+    }
+
+
+def _git_workspace_is_clean(path: Path) -> bool | None:
+    """Return clean/dirty without exposing local paths or command output."""
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(path), "status", "--porcelain=v1", "--untracked-files=normal"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True, encoding="utf-8", errors="replace",
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return not bool(result.stdout.strip())
+
+
+def _resolve_completion_validation_workspace(
+    *,
+    registry_path: Path,
+    goal_id: str,
+    task_repository: str | None,
+    delivery_workspace: Mapping[str, Any] | None,
+    validation_workspace_path: Path | None,
+    label: str,
+) -> tuple[Path | None, dict[str, Any] | None]:
+    """Resolve the authority-bound workspace for one validation effect.
+
+    The Goal repository remains the default when a Todo does not select a
+    repository.  When the host supplies a path-free, turn-bound delivery
+    workspace snapshot, validation must honor that exact clean independent
+    worktree even when it has the same canonical repository identity as the
+    Goal checkout. The snapshot may come from prior writeback or from the
+    host's exact-Turn pre-completion check because completion itself precedes
+    refresh. The candidate path is host execution context, never a public CLI
+    cwd override.
+    """
+
+    goal_workspace = _resolve_goal_repo_workspace(registry_path, goal_id)
+    if goal_workspace is None:
+        return None, _workspace_failure(
+            label,
+            status="workspace_unavailable",
+            summary=(
+                "validation_command is declared but the goal has no repository "
+                "workspace to run it in"
+            ),
+        )
+    expected_repository = str(task_repository or "").strip()
+    if not expected_repository:
+        return goal_workspace, None
+
+    recorded = None
+    if delivery_workspace is not None:
+        try:
+            recorded = normalize_delivery_workspace_snapshot(delivery_workspace)
+        except (RuntimeError, TypeError, ValueError):
+            # Decoder rejection is an input/receipt failure, not an adapter crash.
+            # Keep it inside the path-free completion state model and never expose
+            # the TypeScript decoder's internal error text at the CLI/Turn boundary.
+            return None, _workspace_failure(
+                label,
+                status="workspace_receipt_invalid",
+                summary=(
+                    "the recorded delivery workspace receipt is invalid and cannot "
+                    "authorize completion validation"
+                ),
+            )
+
+    if recorded is None:
+        goal_snapshot = capture_delivery_workspace(goal_workspace)
+        if delivery_workspace_repository(goal_snapshot) == expected_repository:
+            return goal_workspace, None
+        return None, _workspace_failure(
+            label,
+            status="workspace_receipt_unavailable",
+            summary=(
+                "validation outside the Goal repository requires a verified "
+                "delivery workspace receipt for the selected Todo"
+            ),
+        )
+    if (
+        delivery_workspace_repository(recorded) != expected_repository
+        or recorded.get("workspace_kind") != "independent_git_worktree"
+    ):
+        return None, _workspace_failure(
+            label,
+            status="workspace_receipt_mismatch",
+            summary=(
+                "the recorded delivery workspace does not match the selected "
+                "Todo repository and isolation contract"
+            ),
+        )
+
+    candidate = validation_workspace_path or Path.cwd()
+    current = capture_delivery_workspace(
+        candidate,
+        peer_independent_worktree_required=True,
+    )
+    if current is None:
+        return None, _workspace_failure(
+            label,
+            status="workspace_unverified",
+            summary=(
+                "recorded delivery-workspace validation requires a verifiable "
+                "independent Git worktree"
+            ),
+        )
+    if (
+        delivery_workspace_repository(current) != expected_repository
+        or current.get("workspace_kind") != "independent_git_worktree"
+        or (
+            recorded.get("workspace_revision_digest") is not None
+            and current.get("workspace_revision_digest")
+            != recorded.get("workspace_revision_digest")
+        )
+    ):
+        return None, _workspace_failure(
+            label,
+            status="workspace_repository_mismatch",
+            summary=(
+                "the current validation worktree does not match the recorded "
+                "delivery workspace"
+            ),
+        )
+    clean = _git_workspace_is_clean(candidate)
+    if clean is not True:
+        return None, _workspace_failure(
+            label,
+            status=("workspace_dirty" if clean is False else "workspace_unverified"),
+            summary=(
+                "recorded delivery-workspace validation requires a clean, "
+                "verifiable delivery worktree"
+            ),
+        )
+    return candidate, None
+
+
 def _materialized_todo_item(
     *, state_file: Path, todo_id: str, role: str | None
 ) -> dict[str, Any] | None:
@@ -96,6 +258,9 @@ def _run_declared_completion_validation(
     validation_timeout_seconds: int | None,
     registry_path: Path,
     goal_id: str,
+    task_repository: str | None = None,
+    delivery_workspace: Mapping[str, Any] | None = None,
+    validation_workspace_path: Path | None = None,
 ) -> dict[str, Any] | None:
     """Run a todo's declared caller-approved validation command.
 
@@ -118,22 +283,17 @@ def _run_declared_completion_validation(
         else _COMPLETION_VALIDATION_TIMEOUT_SECONDS
     )
     label = validation_label or "todo completion validation"
-    workspace = _resolve_goal_repo_workspace(registry_path, goal_id)
-    if workspace is None:
-        return {
-            "schema_version": CALLER_VALIDATION_RECEIPT_SCHEMA_VERSION,
-            "command_label": label,
-            "exit_code": None,
-            "passed": False,
-            "status": "workspace_unavailable",
-            "summary": (
-                "validation_command is declared but the goal has no "
-                "repository workspace to run it in"
-            ),
-            "stdout_captured": False,
-            "stderr_captured": False,
-            "local_path_captured": False,
-        }
+    workspace, workspace_failure = _resolve_completion_validation_workspace(
+        registry_path=registry_path,
+        goal_id=goal_id,
+        task_repository=task_repository,
+        delivery_workspace=delivery_workspace,
+        validation_workspace_path=validation_workspace_path,
+        label=label,
+    )
+    if workspace_failure is not None:
+        return workspace_failure
+    assert workspace is not None
     try:
         if validation_argv is not None:
             return cast(
@@ -168,14 +328,17 @@ def _run_declared_completion_validation(
             "stderr_captured": False,
             "local_path_captured": False,
         }
-    except (FileNotFoundError, PermissionError) as exc:
+    except (FileNotFoundError, PermissionError):
         return {
             "schema_version": CALLER_VALIDATION_RECEIPT_SCHEMA_VERSION,
             "command_label": label,
             "exit_code": None,
             "passed": False,
             "status": "command_not_run",
-            "summary": f"validation command could not be launched: {exc}",
+            "summary": (
+                "validation command could not be launched because its executable "
+                "is unavailable"
+            ),
             "stdout_captured": False,
             "stderr_captured": False,
             "local_path_captured": False,
@@ -202,6 +365,8 @@ def run_declared_completion_validation_effect(
     effect: Mapping[str, Any],
     registry_path: Path,
     goal_id: str,
+    delivery_workspace: Mapping[str, Any] | None = None,
+    validation_workspace_path: Path | None = None,
 ) -> dict[str, Any]:
     """Execute exactly one TypeScript-authorized validation effect.
 
@@ -219,6 +384,14 @@ def run_declared_completion_validation_effect(
         and all(isinstance(item, str) and item for item in raw_argv)
     ):
         raise ValueError("validation_effect.validation_argv must be a string array")
+    declaration_digest = effect.get("validation_declaration_sha256")
+    if declaration_digest is not None and (
+        not isinstance(declaration_digest, str)
+        or not re.fullmatch(r"[a-f0-9]{64}", declaration_digest)
+    ):
+        raise ValueError(
+            "validation_effect.validation_declaration_sha256 must be a SHA-256 digest"
+        )
     receipt = _run_declared_completion_validation(
         validation_command=(
             str(effect["validation_command"])
@@ -238,9 +411,18 @@ def run_declared_completion_validation_effect(
         ),
         registry_path=registry_path,
         goal_id=goal_id,
+        task_repository=(
+            str(effect["task_repository"])
+            if effect.get("task_repository") is not None
+            else None
+        ),
+        delivery_workspace=delivery_workspace,
+        validation_workspace_path=validation_workspace_path,
     )
     if receipt is None:
         raise RuntimeError("authorized validation effect produced no receipt")
+    if declaration_digest is not None:
+        receipt["validation_declaration_sha256"] = declaration_digest
     return receipt
 
 
@@ -333,6 +515,8 @@ def run_completion_validation_gate_with_source(
     requested_has_successor: bool = False,
     completion_policy_facts: Mapping[str, Any] | None = None,
     requested_successor_todo_ids: list[str] | None = None,
+    completion_delivery_workspace: Mapping[str, Any] | None = None,
+    completion_validation_workspace_path: Path | None = None,
 ) -> dict[str, Any]:
     """Run the caller-approved completion validation gate, OUTSIDE the mutation lock.
 
@@ -403,30 +587,12 @@ def run_completion_validation_gate_with_source(
     completion_validation = None
     if transaction["decision"] == "execute_validation":
         effect = transaction["validation_effect"]
-        validation_argv = effect.get("validation_argv")
-        completion_validation = _run_declared_completion_validation(
-            validation_command=(
-                str(effect["validation_command"])
-                if effect.get("validation_command") is not None
-                else None
-            ),
-            validation_argv=(
-                list(validation_argv)
-                if isinstance(validation_argv, list)
-                else None
-            ),
-            validation_label=(
-                str(effect["validation_label"])
-                if effect.get("validation_label") is not None
-                else None
-            ),
-            validation_timeout_seconds=(
-                int(effect["validation_timeout_seconds"])
-                if effect.get("validation_timeout_seconds") is not None
-                else None
-            ),
+        completion_validation = run_declared_completion_validation_effect(
+            effect=effect,
             registry_path=registry_path,
             goal_id=goal_id,
+            delivery_workspace=completion_delivery_workspace,
+            validation_workspace_path=completion_validation_workspace_path,
         )
         if completion_validation is None:
             raise RuntimeError("Todo completion validation effect produced no receipt")
@@ -572,3 +738,69 @@ def locked_todo_completion_source(
     todo = dict(event_context["item"])
     todo["role"] = event_context["role"]
     return None, todo, event_context
+
+
+def execute_completion_validation_effects(
+    result: Mapping[str, Any], *, registry_path: Path, goal_id: str,
+    delivery_workspace: Mapping[str, Any] | None = None,
+    validation_workspace_path: Path | None = None,
+) -> dict[str, Any]:
+    """Execute only the declared effects; the TS caller owns admission/resume."""
+    updates: dict[str, Any] = {}
+    effect = result.get("validation_effect")
+    acceptance_effects = result.get("goal_acceptance_validation_effects")
+    if not isinstance(effect, Mapping) and not isinstance(acceptance_effects, list):
+        raise RuntimeError("Todo terminal validation effect shape mismatch")
+    if isinstance(effect, Mapping):
+        updates["validation_receipt"] = run_declared_completion_validation_effect(
+            effect=effect,
+            registry_path=registry_path,
+            goal_id=goal_id,
+            delivery_workspace=delivery_workspace,
+            validation_workspace_path=validation_workspace_path,
+        )
+    if acceptance_effects is not None:
+        from ..goals.acceptance import run_goal_acceptance_validation_effect
+
+        if not isinstance(acceptance_effects, list) or not acceptance_effects:
+            raise RuntimeError("Goal acceptance validation effects are missing")
+        source_binding = result.get("goal_acceptance_source_binding")
+        if not isinstance(source_binding, Mapping):
+            raise RuntimeError("Goal acceptance validation omitted its source basis")
+        receipts = []
+        for row in acceptance_effects:
+            if not isinstance(row, Mapping) or not isinstance(row.get("effect"), Mapping):
+                raise RuntimeError("Goal acceptance validation effect shape mismatch")
+            receipt = run_goal_acceptance_validation_effect(
+                effect=row["effect"], registry_path=registry_path, goal_id=goal_id,
+                delivery_workspace=delivery_workspace,
+                validation_workspace_path=validation_workspace_path,
+            )
+            receipts.append({"criterion_id": row.get("criterion_id"), "receipt": receipt})
+        updates["goal_acceptance_source_binding"] = dict(source_binding)
+        updates["goal_acceptance_validation_receipts"] = receipts
+    return updates
+
+
+def completion_validation_failure(
+    result: Mapping[str, Any], *, goal_id: str, todo_id: str, dry_run: bool
+) -> dict[str, Any] | None:
+    if result.get("status") != "failed":
+        return None
+    if result.get("reason_code") not in {
+        "validation_declaration_invalid",
+        "validation_failed",
+    }:
+        return None
+    return {
+        "ok": False,
+        "dry_run": dry_run,
+        "completed": False,
+        "changed": False,
+        "goal_id": goal_id,
+        "todo_id": todo_id,
+        "validation_blocked_completion": True,
+        "reason": result.get("reason"),
+        "validation_failure": result.get("validation_failure"),
+        **dict(result),
+    }
