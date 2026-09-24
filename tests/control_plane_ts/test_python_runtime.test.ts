@@ -74,19 +74,32 @@ test("a worktree venv wins over an unusable system python3", t => {
   assert.equal(existsSync(systemMarker), false);
 });
 
-test("test and browser smokes may not introduce bare python3 subprocess fallbacks", () => {
+test("test and browser smokes may not introduce bare python or python3 subprocess fallbacks", () => {
   const directories = ["tests/control_plane_ts", "examples", "apps/presentation/dashboard/smoke"];
   const offenders: string[] = [];
-  const direct = /\b(?:spawn|spawnSync|execFile|execFileSync)\s*\(\s*["']python3["']/;
-  const fallback = /(?:\?\?|\|\|)\s*["']python3["']/;
-  const assigned = /\b(?:const|let)\s+\w+\s*=\s*["']python3["']/;
+  // A bare `python` alias is not guaranteed to exist (and may point at an
+  // incompatible interpreter), so direct launches, fallbacks and assigned
+  // defaults must both route through resolveTestPython().
+  const direct = /\b(?:spawn|spawnSync|execFile|execFileSync)\s*\(\s*["']python3?["']/;
+  const fallback = /(?:\?\?|\|\|)\s*["']python3?["']/;
+  const assigned = /\b(?:const|let)\s+\w+\s*=\s*["']python3?["']/;
   const bare = JSON.stringify("python3");
+  const barePython = JSON.stringify("python");
   assert.ok(direct.test(`spawn(${bare}, ["-m", "loopx.cli"])`));
+  assert.ok(direct.test(`spawn(${barePython}, ["-m", "loopx.cli"])`));
+  assert.ok(direct.test(`spawnSync(${barePython}, ["-c", "raise SystemExit(0)"])`));
   assert.ok(fallback.test(`process.env.LOOPX_TEST_PYTHON ?? ${bare}`));
+  assert.ok(fallback.test(`process.env.LOOPX_TEST_PYTHON ?? ${barePython}`));
   assert.ok(fallback.test(`process.env.NEW_TEST_PYTHON || ${bare}`));
+  assert.ok(fallback.test(`process.env.NEW_TEST_PYTHON || ${barePython}`));
   assert.ok(assigned.test(`const PYTHON = ${bare}`));
+  assert.ok(assigned.test(`const PYTHON = ${barePython}`));
   assert.ok(assigned.test(`const testInterpreter = ${bare}`));
   assert.equal(direct.test(`validation_command_argv: [${bare}, "-m", "pytest"]`), false);
+  assert.equal(direct.test(`validation_command_argv: [${barePython}, "-m", "pytest"]`), false);
+  // An absolute path or a versioned executable is a resolved interpreter, not a bare alias.
+  assert.equal(direct.test(`spawnSync(${JSON.stringify("/usr/bin/python3")}, [])`), false);
+  assert.equal(assigned.test(`const executable = ${JSON.stringify("/opt/loopx-qualification/bin/python")}`), false);
   function inspect(directory: string) {
     for (const entry of readdirSync(join(root, directory), { withFileTypes: true })) {
       const path = join(directory, entry.name);
