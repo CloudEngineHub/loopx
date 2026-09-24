@@ -576,3 +576,16 @@ for (const [label, leaseChange, todoChange, reason] of [
     assert.equal((await store.readReceipt(request.operation_id)).status, "missing");
   });
 }
+
+
+test("schema-less historical canonical leases retain active execution semantics without mutation", async () => {
+  const {canonicalTaskLease} = await import("../../loopx/control_plane/coordination/task_lease_state.ts");
+  const {leaseIsActive} = await import("../../loopx/control_plane/work_items/task_lease_acquire.ts");
+  const original = {todo_id: "todo_a", owner: "agent-a", idempotency_key: "execution-a",
+    status: "active", version: 1, lease_epoch: 1, expires_at: "2031-01-01T00:00:00Z"};
+  const normalized = canonicalTaskLease(original, "goal-a", "todo_a");
+  assert.equal(normalized.schema_version, "task_lease_v0");
+  assert.equal(leaseIsActive(normalized, new Date("2030-01-01T00:00:00Z")), true);
+  assert.equal(Object.hasOwn(original, "schema_version"), false);
+  assert.throws(() => canonicalTaskLease({...original, schema_version: "unknown"}, "goal-a", "todo_a"), /schema/);
+});
