@@ -195,15 +195,16 @@ def test_merge_gate_runs_on_all_prs_and_checks_every_core_aggregate() -> None:
             assert "needs: [changes, kernel-static-checks, dashboard-acceptance]" in job
             assert "if: always() && needs.changes.outputs.core_tests == 'true'" in job
         else:
-            assert "needs: changes" in job
+            assert "needs: [changes, chat-bundle]" in job
             assert f"if: needs.changes.outputs.{output} == 'true'" in job
 
 
 def test_presentation_exemption_retains_real_frontend_checks_and_force_full() -> None:
     job = WORKFLOW.split("  presentation:\n", 1)[1].split("  merge-gate:\n", 1)[0]
-    assert "npm run build:chat" in job
+    assert "name: chat-bundle-${{ github.sha }}" in job
     assert "npm run smoke:personal-workspace-packaged" in job
-    assert "status --short --untracked-files=all -- loopx/web/chat" in job
+    assert "scripts/chat_bundle.py verify --source" in job
+    assert "status --short --untracked-files=all -- loopx/web/chat" not in job
     assert "continue-on-error" not in job
     assert "labels.*.name, 'ci:full'" in WORKFLOW
     assert "labeled, unlabeled" in WORKFLOW
