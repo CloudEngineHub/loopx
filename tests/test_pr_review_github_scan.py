@@ -1416,6 +1416,19 @@ def test_review_conclusion_requires_format_exact_head_and_formal_state(
     assert valid["review_conclusion"]["status"] == "valid"
     assert valid["review_action_kind"] == "qualify_pull_request_merge_readiness"
 
+    row["reviews"][0]["body"] = "<!--\n" + _full_review_body(head) + "\n-->"
+    hidden = pr_review_module.build_pr_review_packet(
+        pull_requests=[row],
+        repository="owner/repo",
+        limit=10,
+        source="fixture",
+        state_filter="open",
+        reviewer_login="maintainer",
+    )["pull_requests"][0]
+    assert hidden["review_conclusion"]["status"] == "invalid"
+    assert hidden["review_action_kind"] == "review_pull_request_exact_head"
+
+    row["reviews"][0]["body"] = _full_review_body(head)
     row["reviews"][0]["author"] = {"login": "peer-reviewer"}
     peer_valid = pr_review_module.build_pr_review_packet(
         pull_requests=[row],

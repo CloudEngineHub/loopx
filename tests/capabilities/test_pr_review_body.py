@@ -51,6 +51,33 @@ def test_headings_inside_code_do_not_count_as_review_sections():
     assert "missing_section:具体改动" in result["invalid_reasons"]
 
 
+def test_review_hidden_in_html_comment_cannot_claim_published_conclusion():
+    result = check_review_body("<!--\n" + review_body() + "\n-->",
+                               head_oid=HEAD, behavior_bearing=True)
+    assert "missing_section:具体改动" in result["invalid_reasons"]
+    assert "missing_exact_head" in result["invalid_reasons"]
+    assert "missing_english_verdict" in result["invalid_reasons"]
+
+
+def test_html_comments_do_not_supply_prose_or_change_visible_fence_state():
+    body = review_body()
+    start, end = body.index("## 对主干的风险"), body.index("## 我的整体评价")
+    body = (body[:start] + "## 对主干的风险\n风险很小。\n"
+            + "<!-- ```\n" + "隐藏的风险解释。" * 20 + "\n-->\n"
+            + body[end:])
+    result = check_review_body(body, head_oid=HEAD, behavior_bearing=True)
+    assert any(reason.startswith("section_too_short:对主干的风险")
+               for reason in result["invalid_reasons"])
+    assert "missing_section:我的整体评价" not in result["invalid_reasons"]
+    assert "missing_english_verdict" not in result["invalid_reasons"]
+
+
+def test_unclosed_html_comment_hides_following_review_text():
+    result = check_review_body("<!--\n" + review_body(),
+                               head_oid=HEAD, behavior_bearing=True)
+    assert "missing_section:具体改动" in result["invalid_reasons"]
+
+
 def test_verdict_and_head_inside_code_do_not_count_as_published_conclusion():
     # Historical reviews also name the head in the motivation. Remove every
     # visible occurrence to isolate the fenced-conclusion regression.

@@ -222,6 +222,15 @@ def test_final_body_cannot_drop_the_risk_explanation_or_change_verdict():
     assert "review_body:missing_section:对主干的风险" in check_review_result(packet, result)["errors"]
 
 
+def test_final_body_cannot_hide_the_entire_review_in_html_comment():
+    packet, result = _review()
+    result["review_body"] = "<!--\n" + result["review_body"] + "\n-->"
+    errors = check_review_result(packet, result)["errors"]
+    assert "review_body:missing_section:对主干的风险" in errors
+    assert "review_body:missing_exact_head" in errors
+    assert "review_body:missing_english_verdict" in errors
+
+
 @pytest.mark.parametrize(
     ("candidate_decision", "verdict", "blocker"),
     [

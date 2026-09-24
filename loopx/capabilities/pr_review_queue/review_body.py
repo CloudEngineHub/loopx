@@ -33,17 +33,35 @@ def _english_verdicts(body: str) -> list[str]:
 
 def _visible_lines(body: str) -> Iterator[str]:
     fence: str | None = None
+    comment_open = False
     for line in body.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(("```", "~~~")):
-            marker = stripped[:3]
-            if fence is None:
-                fence = marker
-            elif fence == marker:
+        if fence is not None:
+            if line.strip().startswith(fence):
                 fence = None
             continue
-        if fence is None:
-            yield line
+        visible_parts: list[str] = []
+        offset = 0
+        while offset < len(line):
+            if comment_open:
+                end = line.find("-->", offset)
+                if end < 0:
+                    break
+                comment_open = False
+                offset = end + 3
+            else:
+                start = line.find("<!--", offset)
+                if start < 0:
+                    visible_parts.append(line[offset:])
+                    break
+                visible_parts.append(line[offset:start])
+                comment_open = True
+                offset = start + 4
+        visible = "".join(visible_parts)
+        stripped = visible.strip()
+        if stripped.startswith(("```", "~~~")):
+            fence = stripped[:3]
+            continue
+        yield visible
 
 
 def _prose_size(lines: list[str]) -> int:
