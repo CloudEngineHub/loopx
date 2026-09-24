@@ -171,12 +171,13 @@ def _command_prompt_specs(*, cli_bin: str, include_legacy_aliases: bool) -> list
             "argument_hint": "[--fine-grained] [--capability-route issue-fix] [task text]",
             "instructions": [
                 "Visible command arguments: `$ARGUMENTS`.",
-                "Identify the exact current host surface (codex-app, codex-app-ssh, codex-ide-plugin, codex-cli-tui, opencode, opencode2, traex-cli, pi, gemini-cli, cursor-agent, zcode, agy, kiro-cli, deepseek-harness, or ark-managed-agent).",
+                "Identify the exact current host surface (codex-app, trae_app, codex-app-ssh, codex-ide-plugin, codex-cli-tui, opencode, opencode2, traex-cli, pi, gemini-cli, cursor-agent, zcode, agy, kiro-cli, deepseek-harness, or ark-managed-agent).",
                 _loopx_start_goal_arguments_instruction(
                     cli_bin=cli_bin,
                     host_surface=None,
                 ),
                 "Treat the returned `ordered_steps` and `goal_start_contract` as authoritative. Follow their identity, capability-route, Todo, writeback, host-loop, quota, and stop/gate rules before substantive work; do not reconstruct those rules from skill memory.",
+                "When the host explicitly supplies a `loopx_task_planning_v0` packet from `loopx todo plan` for a registered Goal/Agent, execute that bounded planning checkpoint instead of starting another Goal. Follow its shared planner and Todo delta, then return actual Todo ids for readback. Its caller-owned execution_handoff retains host activation and quota; do not create a planning Todo, execute task work, or claim delivery during the checkpoint.",
                 "For a Codex App heartbeat, run the returned activation command, require ok=true, and save its `LoopX managed heartbeat bootstrap v2` task_body through automation_update. The saved loader fetches the current thin contract on every wake; do not persist a raw thin/compact/full execution body. Preserve the current goal, registered agent, task binding and existing schedule; read back the automation through the same App.",
                 "If the packet exposes a goal-selection gate, rerun one exact choice before any mutation.",
                 "When authoring task Todos, treat `--action-kind` as the documented extensible public-safe token: choose a short task-relevant value such as `implement`, `test`, or `review`; do not search the LoopX source for an allowlist.",
@@ -356,11 +357,23 @@ def materialize_loopx_entry_skill(
             else "codex-skills"
         ),
     )
-    return {
-        "skill_id": "loopx",
-        "path": str(skill_path),
-        "status": _target_status(skill_path, content, execute=execute),
-    }
+    status = _target_status(skill_path, content, execute=execute)
+    result = {"skill_id": "loopx", "path": str(skill_path), "status": status}
+    # Workflow installs can generate this entry without slash-commands. Keep
+    # the Codex presentation identical, without changing exact managed hosts.
+    if host_surface is None and status not in {
+        "skipped_user_file", "preserved_existing_loopx_skill",
+    }:
+        result["metadata_status"] = _target_status(
+            skill_path.parent / "agents" / "openai.yaml",
+            _openai_skill_metadata(
+                command=str(spec["command"]),
+                display_name="LoopX",
+                short_description=str(spec["description"]),
+            ),
+            execute=execute,
+        )
+    return result
 
 
 def _codex_home(value: str | None = None) -> Path:

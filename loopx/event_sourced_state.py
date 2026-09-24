@@ -988,6 +988,7 @@ def render_todo_markdown(item: dict[str, Any]) -> list[str]:
         excluded_agents=item.get("excluded_agents"),
         global_gate=item.get("global_gate"),
         unblocks_todo_id=item.get("unblocks_todo_id"),
+        resume_when=item.get("resume_when"),
         successor_todo_ids=item.get("successor_todo_ids"),
         completion_continuation=item.get("completion_continuation"),
         completion_recovery=item.get("completion_recovery"),

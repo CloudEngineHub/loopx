@@ -338,6 +338,9 @@ def workflow_skill_install(
             "install_required": (
                 not before.get("ready")
                 or entry_preview.get("status") != "unchanged"
+                or entry_preview.get("metadata_status") in {
+                    "would_create", "updated", "upgraded_legacy_managed",
+                }
             ),
             "install_command": shlex.join(install_command),
         }

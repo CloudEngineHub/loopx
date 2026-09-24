@@ -68,7 +68,7 @@ def _command_summary(command_path: Path | None) -> dict[str, Any]:
                 command_argv(command_path, args),
                 check=False,
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
                 timeout=30,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:

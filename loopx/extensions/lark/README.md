@@ -80,6 +80,23 @@ remain in the Core Chat action store; Lark owns only authenticated transport,
 callback provenance checks, and result-card readback. It does not create a
 second User Todo or approval ledger.
 
+Confirmation and result cards consume the same internal TypeScript
+`operation_review_frame_v0` used by Dashboard. Lark requests that frame once per
+card render, then owns only provider-specific Card 2.0 markup and delivery; the
+frame neither grants authority nor replaces the canonical operation receipt.
+
+That request path is not operation-only. `presentation.action_review_plan.compile`
+also returns a `review_card_frame_v0` for a validated steward team plan
+(`team.plan`), whose confirmation identity is the action proposal and the state
+fingerprint the apply re-validates against rather than an operation envelope. Its
+fields are `{key, value}` pairs and its fixed labels are keys, so this boundary
+stays language-neutral and the surface owns the words. A plan card can therefore
+reuse the card shell, the callback consumer, the operator membership check,
+replay protection and card readback described here. What a plan card still needs
+is its own delivery route for the audience that asked (the manager group is not a
+Goal channel binding) and a callback effect that applies the proposal through the
+Chat action service instead of claiming an operation envelope.
+
 ```bash
 loopx goal-channel prepare-operation \
   --goal-id <goal-id> \
@@ -111,6 +128,20 @@ separate `card.action.trigger` consumer beside message capture because each
 `lark-cli event consume` process owns one EventKey. Collector status reports
 listener health separately from real callback evidence; a healthy process does
 not prove the application console is configured to deliver callbacks.
+
+The callback listener becomes ready only after the provider emits its event-bus
+ready marker or the listener receives a typed callback. Status remains
+`listener_ready_unqualified` until one authenticated callback is handled and its
+canonical result-card readback succeeds; only then does it become
+`callback_qualified`. Simulation-only cards use one explicit confirmation click.
+Effectful protected operations retain the provider's second confirmation dialog
+and label the first button as a continuation rather than a completed decision.
+
+回调进程只有在 provider 发出事件总线 ready 标记，或收到一条真实 typed callback
+后，才会被视为 ready。在一条已认证 callback 被处理且结果卡完成规范读回之前，
+状态保持 `listener_ready_unqualified`；完成后才进入 `callback_qualified`。
+纯模拟卡使用一次明确确认；有外部效果的受保护操作仍保留平台二次确认，并把第一步
+按钮明确标为继续操作，而不是已经完成决策。
 
 On click, LoopX verifies the original App, chat, message, immutable card digest,
 operator allowlist, tenant membership, expiry, and globally unique event id.

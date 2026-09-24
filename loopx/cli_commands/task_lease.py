@@ -52,6 +52,10 @@ def render_task_lease_markdown(payload: dict[str, object]) -> str:
         )
     if payload.get("lease_path"):
         lines.append(f"- lease_path: `{payload.get('lease_path')}`")
+    if payload.get("transfer_claim") is True:
+        lines.append(f"- committed claim owner: `{payload.get('claimed_by')}`")
+        lines.append(f"- Todo projection delivery: `{payload.get('projection_delivery')}`")
+        lines.append("- A replay reports the original handover; use task-lease inspect for current authority.")
     conflicts = payload.get("conflicts")
     if isinstance(conflicts, list) and conflicts:
         lines.append("- conflicts:")
@@ -87,6 +91,8 @@ def register_task_lease_command(
     parser.add_argument("--idempotency-key", help="Public-safe token used for idempotent retries and CAS.")
     parser.add_argument("--new-owner", help="For transfer, target registered public-safe agent id.")
     parser.add_argument("--new-idempotency-key", help="For transfer, target idempotency key.")
+    parser.add_argument("--transfer-claim", action="store_true",
+        help="For transfer on canonical hard_lease authority, atomically move the source owner's Todo claim with its lease.")
     parser.add_argument(
         "--ttl-seconds",
         type=int,
@@ -123,6 +129,8 @@ def handle_task_lease_command(
     if args.command != "task-lease":
         return None
     try:
+        if args.transfer_claim and args.task_lease_command != "transfer":
+            raise ValueError("--transfer-claim is valid only for task-lease transfer")
         if _requires_owner(args) and not args.owner:
             raise ValueError("task-lease action requires --owner")
         if _requires_owner(args) and not args.idempotency_key:
@@ -167,6 +175,7 @@ def handle_task_lease_command(
                 idempotency_key=args.idempotency_key,
                 new_owner=args.new_owner,
                 new_idempotency_key=args.new_idempotency_key,
+                transfer_claim=args.transfer_claim,
                 ttl_seconds=args.ttl_seconds,
                 expected_version=args.expected_version,
             )

@@ -73,6 +73,18 @@ Minimizing attention does not mean minimizing information or removing human
 judgment. It means maximizing the decision value of each interruption and each
 visible screen:
 
+Each visible element must earn its place through **high-value information,
+essential interaction, or expressive visual presentation** (at least one).
+Evaluate the whole viewport, not isolated components. The canonical development
+and PR evidence workflow is [Earn The User's Attention](../../development/design.md#earn-the-users-attention).
+The bounded workspace application spans Goal conversations, manager home,
+overview, Tasks, outputs and Settings: one-step execution inspection; populated
+home lanes and change-only digests; compact progress and usage; short conversation
+receipts above the unchanged Kanban; output provenance in the existing drawer;
+and configuration consequences kept visible beside the existing preview/apply
+flow. Failures and uncertainty remain prominent. This presentation slice does
+not claim the shared interaction compiler or cross-channel projection is implemented.
+
 - routine, reversible, verified work should stay quiet or complete directly;
 - material progress should be legible without demanding a decision;
 - actual human judgment should arrive as one bounded decision frame;
@@ -661,6 +673,58 @@ canonical facts, authority, evidence status, or whether an effect committed.
 Adaptive policies must be inspectable and resettable. Their outputs carry
 reason codes and preserve a deterministic fallback.
 
+### 8.7 Live team workspace
+
+[Live Team Workspace v0](live-team-workspace-v0.md) specifies the S5/R2 research
+journey: a command surface and spatial studio share typed facts with the list,
+semantic zoom and historical replay. Purposeful motion is a product objective;
+registration, execution, return, independent acceptance and requester adoption
+remain distinct. Preserve source/revision lineage and uncertainty; never infer
+activity from decorative motion or confidence from agreement counts. This is a
+Draft presentation slice, not a shipped team stream or new scheduling authority.
+Its L1–L3 plan and V1–V7 acceptance extend this RFC's Stage 3 presentation journey;
+they do not close cross-channel or governed settlement acceptance here.
+
+### 8.8 Reusable conversation work surface
+
+Steward Chat, Goal Chat, direct Agent conversations and their frontend/Lark
+projections share one interaction pattern. A short factual question deserves a
+direct answer and source; a complex investigation deserves a leading conclusion,
+readable Markdown report, evidence links, decisions and bounded uncertainty.
+Answer shape follows the task, not a compulsory four-section template. Complete
+answer bytes and a separately addressable report reference are preserved when
+the existing artifact owner supports one. Render model Markdown with an admitted
+safe subset; executable HTML is never accepted from answer text. Channel limits
+may change the presentation density, but cannot silently remove the conclusion
+or evidence path. A report attachment alone does not settle an answer obligation.
+
+Project only real host events into a compact current-phase line and expandable
+history: accepted, queued, started, tool/public progress, waiting, interrupted,
+failed and completed. The final answer has priority; completed routine activity
+folds, while refusal, missing result and lost receiver remain visible. Preserve
+source message, admitted Turn, current continuation owner, event cursor and
+final-result identities separately. Reconnect and replay must neither start a
+second model Turn nor duplicate events or drop the final result. No adapter may
+claim tool activity it did not emit.
+
+Stop and correction bind the current session and Turn. An old control cannot
+affect a later Turn. Stop readback distinguishes actual interruption, already
+terminal and unsupported/refused. A busy correction is accepted as native
+in-Turn steering or explicitly queued for a later Turn with a recoverable ingress
+receipt; completion races and lost acknowledgements cannot silently discard it.
+Stopping a conversation Turn has no implicit effect on a delegated worker's
+Todo/lease or an outstanding return obligation. Frontend and Lark qualify the
+same identity, interruption, replay and audience-isolation cases at their own
+display densities. This shared contract reuses Chat/session, artifact, and
+presentation owners; it creates no second conversation store or scheduler.
+
+Botmux is an interaction reference: its [live card](https://github.com/deepcoldy/botmux/blob/982e2c9f16e4f45ae2581967bc1a35a286e7bfa2/docs-site/docs/zh/cards.md)
+keeps final text ahead of collapsible recorded activity, its [session model](https://github.com/deepcoldy/botmux/blob/982e2c9f16e4f45ae2581967bc1a35a286e7bfa2/docs-site/docs/zh/session-model.md)
+distinguishes talk and operation rights, and its [Codex steering study](https://github.com/deepcoldy/botmux/blob/982e2c9f16e4f45ae2581967bc1a35a286e7bfa2/docs/design/2026-05-28-codex-type-ahead-steer-design.md)
+records merged versus separate replies under type-ahead. Stop support varies by
+backend. These public sources guide the race and display cases; they do not
+qualify LoopX adapters or require installing Botmux on an existing Lark token.
+
 ## 9. Coverage across the long-horizon lifecycle
 
 | Phase | Intelligent surface responsibility |
@@ -822,19 +886,30 @@ periodic digest, Lark rendering, or model assistance.
 - retain current backends and renderers;
 - publish the protocol and focused tests.
 
-The bounded implementation lives in Dashboard's
-`features/personal-workspace/action-review-plan.ts`. `compileActionReviewPlan`
-compiles proposals already validated by the Chat transport schema into an internal
-`action_review_plan_v0` union; this is not a new public wire contract or legal-action
-catalog. The Goal directory consumes `direct` for stop and the existing proposal
-drawer consumes the explanation and apply state. Resume and delete remain reviewed;
-incomplete, unknown-permission or stale lifecycle proposals offer recheck rather
-than direct execution. The shared Chat transport schema requires every validation
-evidence item to be non-blank text, preserving the original string. Malformed or
-mixed arrays fail parsing and show an execution error without calling apply. The
-compiler reuses the same schema for direct invocations; only lifecycle completeness
-requires a nonempty array, preserving generic actions with empty evidence arrays.
-Backend preview/apply, fingerprint and reducers are unchanged.
+The bounded implementation lives in
+`loopx/control_plane/presentation/action_review_plan.ts`.
+`compileActionReviewPlan` compiles proposals already validated by the Chat
+transport schema into an internal `action_review_plan_v0` union; this is not a
+new public wire contract or legal-action catalog. The Goal directory consumes
+`direct` for stop and the existing proposal drawer consumes the explanation and
+apply state. Resume and delete remain reviewed; incomplete, unknown-permission
+or stale lifecycle proposals offer recheck rather than direct execution. The
+shared Chat transport schema requires every validation evidence item to be
+non-blank text, preserving the original string. Malformed or mixed arrays fail
+parsing and show an execution error without calling apply. The compiler reuses
+the same schema for direct invocations; only lifecycle completeness requires a
+nonempty array, preserving generic actions with empty evidence arrays. Backend
+preview/apply, fingerprint and reducers are unchanged.
+
+After the human-confirmed Goal Channel operation flow shipped, its Dashboard
+and Lark presentations became the second real consumer of this seam. The same
+compiler now emits an internal `operation_review_frame_v0` for confirmation,
+pending, and result states. Dashboard imports the pure reducer directly; each
+Lark card render requests the frame once through the managed TypeScript runtime
+and then performs only provider-specific Card 2.0 rendering and transport.
+Canonical lifecycle, authorization, claim, outcome, and delivery receipt state
+remain in the Python Chat action store. This does not add a new Lark entry point
+or move effect authority into presentation code.
 
 This slice also corrects failed-readback presentation: an `applied` proposal without
 `projection_verified: true` cannot display completion. Failed direct actions open
@@ -884,6 +959,27 @@ deduplication. CLI and Lark contracts are unchanged.
 - add semantic parity fixtures across different layouts and locales.
 
 ### Stage 4: replan, acceptance, and settlement review
+
+The local Goal **Overview** delivery section composes the existing bounded
+`task_graph_projection_v0` and `goal_acceptance_observation_projection_v0` in
+one on-demand Chat read. It supports map/list layouts, search, direct-neighbor
+focus, current-source navigation and a Markdown snapshot export. Coverage,
+missing predecessors, omitted gates and unassessed acceptance remain explicit.
+Workspace changes invalidate navigation/export until refresh; failed reads and
+source/Goal mismatch never become empty success. Outputs retain their existing Files owner and are not exported as acceptance evidence.
+Overview, Tasks, Chat and Files are direct Goal navigation; configuration opens
+the existing settings editor. Visited views retain filters, completed history
+and scroll within the same Goal/source. The delivery section is inline in
+Overview, not a third board/list layout or nested settings modal.
+
+This is a bounded S5/G2 visibility slice, not G2 qualification or a general
+interaction compiler. It reuses existing graph, acceptance and preview/apply
+owners; it creates no task, lease, permission or acceptance writer. CLI readback
+retains the same projections. Lark's existing Goal Channel is unchanged;
+cross-channel review rendering and governed amendment/settlement interaction
+remain the next domain-owned boundary in this tracker. Validation:
+`tests/test_delivery_review.py`, Dashboard `smoke:delivery-review`, and real
+packaged-browser interaction in both locales and narrow/desktop layouts.
 
 - add domain adapters for material replan delta, acceptance gaps, and effect
   repair state;

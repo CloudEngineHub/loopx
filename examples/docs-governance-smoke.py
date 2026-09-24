@@ -14,6 +14,8 @@ DOCS = REPO_ROOT / "docs"
 ROOT_DOCS = {
     "README.md",
     "architecture.md",
+    "community.md",
+    "community.zh-CN.md",
     "heartbeat-automation-prompt.md",
     "index.md",
     "integration.md",
@@ -79,12 +81,17 @@ MOVED_PATHS = {
 
 # docs/index.md .md targets that stay outside mkdocs nav on purpose.
 # Prefer fixing mkdocs.yaml nav for public hosted entry points instead.
-DOCS_INDEX_NAV_ALLOWLIST: dict[str, str] = {}
+DOCS_INDEX_NAV_ALLOWLIST: dict[str, str] = {
+    "community.md": "hosted community entry linked below the first screen; top-nav promotion remains owner-reviewed",
+    "community.zh-CN.md": "zh locale sibling for the hosted community entry",
+}
 
 # docs/README.md catalog .md targets that stay outside mkdocs top nav on purpose.
 DOCS_CATALOG_NAV_ALLOWLIST = {
     "architecture/README.md": "architecture tree index; RFCs linked from Reference nav",
     "archive/README.md": "excluded from hosted site via exclude_docs",
+    "community.md": "community entry linked from the hosted index below the first screen",
+    "community.zh-CN.md": "zh locale sibling for the community entry",
     "community/open-strategy-reviews.md": "community process; catalog-only entry",
     "community/open-strategy-reviews.zh-CN.md": "zh locale sibling for community reviews",
     "development/contributor-tasks.md": "contributor board; not a hosted docs primary page",
@@ -200,6 +207,60 @@ def check_rfc_language_mirrors() -> None:
         assert english.name in chinese_text, f"RFC missing Chinese -> English link: {chinese.name}"
         assert "semantic mirror" in english_text.lower(), english.name
         assert "语义镜像" in chinese_text, chinese.name
+
+
+LEDGER_ENTRY_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$")
+# The appendix that points at the ledger directory is whichever one an RFC has
+# free: an RFC whose Appendix A carries other content adopts a later letter
+# rather than renumbering history and forcing every open branch to re-resolve it.
+LEDGER_APPENDIX_HEADING = re.compile(r"^## Appendix [A-Z]: Execution ledger", re.MULTILINE)
+
+
+def check_rfc_ledger_entries() -> None:
+    """Validate the per-file RFC execution ledger.
+
+    The ledger exists so that two branches adding an entry on the same day touch
+    two different files instead of the same append cluster. That only holds while
+    every entry is its own file with a sortable name, so the naming is checked
+    rather than described. Nothing enumerates the entries: an index line would
+    reintroduce exactly the shared line this directory removes.
+    """
+    ledger = DOCS / "architecture" / "rfcs" / "ledger"
+    if not ledger.is_dir():
+        return
+    assert (ledger / "README.md").exists(), "ledger README missing"
+    assert (ledger / "README.zh-CN.md").exists(), "ledger README missing its Chinese mirror"
+    # Several RFCs carry an execution-ledger appendix, so entries are shared and
+    # must say which one they belong to. The RFC slug is a directory, and the
+    # directory has to name a real RFC: an entry cannot claim an RFC that does
+    # not exist, and the per-RFC listing stays the index.
+    scopes = sorted(path for path in ledger.iterdir() if path.is_dir())
+    assert scopes, "ledger has no per-RFC directories"
+    for scope in scopes:
+        rfc_document = DOCS / "architecture" / "rfcs" / f"{scope.name}.md"
+        assert rfc_document.is_file(), (
+            f"ledger directory {scope.name}/ does not name an RFC: "
+            f"{rfc_document.relative_to(DOCS.parent)} does not exist"
+        )
+        assert LEDGER_APPENDIX_HEADING.search(
+            rfc_document.read_text(encoding="utf-8")
+        ), (
+            f"{scope.name} has a ledger directory but no execution-ledger appendix"
+        )
+        for entry in sorted(scope.glob("*.md")):
+            if entry.name.endswith(".zh-CN.md"):
+                english = entry.with_name(entry.name[: -len(".zh-CN.md")] + ".md")
+                assert english.exists(), (
+                    f"ledger entry has a Chinese mirror with no English original: {entry.name}"
+                )
+                continue
+            assert LEDGER_ENTRY_NAME.match(entry.stem), (
+                f"ledger entry must be named YYYY-MM-DD-slug.md, got: {entry.name}"
+            )
+            chinese = entry.with_name(f"{entry.stem}.zh-CN.md")
+            assert chinese.exists(), f"ledger entry missing required Chinese mirror: {entry.name}"
+            assert entry.read_text(encoding="utf-8").strip(), f"empty ledger entry: {entry.name}"
+            assert chinese.read_text(encoding="utf-8").strip(), f"empty ledger entry: {chinese.name}"
 
 
 def mkdocs_nav_paths(mkdocs_text: str) -> set[str]:
@@ -406,6 +467,8 @@ def assert_contributor_task_board_is_current() -> None:
         "The scheduler remains outside settlement",
         "M7 parity fixtures plus a read-only journal inspection/`interpret_turn_journal` lens shipped",
         "do not extract a shared executor until two adapters share execution ownership",
+        "Landed: #4659 owns `update` registration and dispatch",
+        "Landed via #4422: the provider-neutral parity fixture",
     ):
         assert required in tasks, required
     for stale in (
@@ -414,6 +477,9 @@ def assert_contributor_task_board_is_current() -> None:
         "Implement the remaining canonical `/loopx-global-risks` command",
         "global risks and goal summary stay host-only",
         "Add one negative fixture proving fail-closed legacy upgrade",
+        "| P2 | Maintainability | CLI ownership and hot-module extraction | GH-C06 / #4803 | In review |",
+        "Claimed: PR #4803 extracts",
+        "Characterize the shipped file-backed `claim_work` executor with a provider-neutral parity fixture (#3700)",
         "| GH-C82 |",
         "| GH-C59 |",
         "| GH-C61 |",
@@ -513,11 +579,11 @@ def assert_technical_direction_governance_is_current() -> None:
         assert required in rfc_index, required
     assert "## Status matrix" not in rfc_index
 
+    # The task board routes to canonical direction/roadmap owners instead of
+    # duplicating their mutable maturity table.
     for required in (
-        "Long-Horizon Benchmarks and Evidence",
-        "Operator Surface and IM Integration",
-        "Shared Goal Authority and Cross-host Coordination",
-        "Architecture and Research Incubator",
+        "../project/technical-directions.md",
+        "../architecture/rfcs/loopx-overall-roadmap-v0.md",
     ):
         assert required in tasks, required
 
@@ -853,6 +919,7 @@ def main() -> int:
         assert required in compact_multi_agent_product_recipe, required
 
     check_rfc_language_mirrors()
+    check_rfc_ledger_entries()
     print("docs-governance-smoke ok")
     return 0
 

@@ -591,6 +591,7 @@ def test_interrupt_does_not_overwrite_a_completed_turn(
     assert completed["response"] == {"message": "late response"}
     assert [
         event["kind"] for event in store.events_after(session_id, turn_id, None)
+        if event["kind"].startswith("turn.")
     ] == ["turn.queued", "turn.completed"]
     assert [
         message["text"]
@@ -708,9 +709,9 @@ def test_completed_turn_is_visible_only_after_its_side_effects(
     assert current is not None
     assert current["status"] == "busy"
     assert current["active_turn_id"] == turn_id
-    assert [event["kind"] for event in store.events_after(session_id, turn_id, None)] == [
-        "turn.queued"
-    ]
+    # Evidence-read events can precede completion; terminal publication cannot.
+    assert [event["kind"] for event in store.events_after(session_id, turn_id, None)
+            if event["kind"].startswith("turn.")] == ["turn.queued"]
 
     resume_completion.set()
     completed = runtime.wait_for_turn(
@@ -730,6 +731,7 @@ def test_completed_turn_is_visible_only_after_its_side_effects(
     ] == ["late response"]
     assert [
         event["kind"] for event in store.events_after(session_id, turn_id, None)
+        if event["kind"].startswith("turn.")
     ] == ["turn.queued", "turn.completed"]
 
 

@@ -7,6 +7,7 @@ from typing import Any, cast
 from uuid import uuid4
 
 from ...agent_registry import registered_agent_ids_from_registry
+from ..coordination.authority_source_capture import authority_registry_source
 from ...state_refresh import now_local
 from ..coordination.local_authority import (
     LOCAL_AUTHORITY_SOURCES,
@@ -77,19 +78,21 @@ def create_canonical_todo_if_promoted(
             action_kind=provider_metadata.get("action_kind"),
         ),
         **provider_metadata,
+        **{key: metadata[key] for key in ("priority", "title") if key in metadata and metadata.get("priority") is not None},
         **({"claimed_by": claimed_by} if claimed_by else {}),
     }
+    with authority_registry_source(registry_path) as registry_source:
+        registered = registered_agent_ids_from_registry(registry_path, goal_id)
     result = effect_runtime_result(
         "coordination.local_authority.todo_create",
         {
-            "schema_version": "loopx_local_coordination_todo_create_request_v0",
+            "schema_version": "loopx_local_coordination_todo_create_request_v1",
             "runtime_root": str(runtime_root.resolve()),
             "goal_id": goal_id,
             "todo": todo,
             "actor_agent_id": actor_agent_id,
-            "registered_agents": registered_agent_ids_from_registry(
-                registry_path, goal_id
-            ),
+            "registered_agents": registered,
+            "registry_source": registry_source,
             "operation_id": f"todo-create:{uuid4().hex}",
             "dry_run": dry_run,
             "observed_at": now_local(),

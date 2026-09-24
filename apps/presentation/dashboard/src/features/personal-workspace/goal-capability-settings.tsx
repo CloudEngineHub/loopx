@@ -16,11 +16,16 @@ import { CapabilityConfigurationFields } from "./capability-configuration-fields
 import { withReportScheduleTimezone } from "./periodic-report-schedule-field";
 import { localizeCapability, localizedCapabilityFieldCopy } from "./capability-localization";
 import { orderCapabilitiesForPresentation, canEditCapability, CapabilityCatalogNavigation, CapabilityConfigurationSummary, CapabilityDetailHeader, CapabilityEditorStatus } from "./capability-workbench";
+import { GoalAutoNotifyToggle } from "./notification-settings-panel";
+import type { PersonalWorkspaceCallbacks, WorkspaceGoalNotification } from "./personal-workspace-model";
 
 type CapabilityCatalogProps = Readonly<{
+  callbacks: PersonalWorkspaceCallbacks;
   catalog: CapabilityConfigurationCatalog;
   goalId: string;
   onApplied: () => void;
+  notification?: WorkspaceGoalNotification;
+  onNotificationChanged: () => void;
 }>;
 
 type CapabilityMutationState = Readonly<{
@@ -156,8 +161,12 @@ function CapabilityMutationFeedback({ mutationError, onApplied, partialWrite, pr
         <section aria-live="polite" className="personal-capability-recovery">
           <AlertTriangle aria-hidden size={18} />
           <div>
-            <strong>{t("capabilities.partialWrite")}</strong>
-            <p>{t("capabilities.partialWriteDescription")}</p>
+            <strong>{t(partialWrite.host_capacity_pending
+              ? "capabilities.hostCapacityPartialWrite"
+              : "capabilities.partialWrite")}</strong>
+            <p>{t(partialWrite.host_capacity_pending
+              ? "capabilities.hostCapacityPartialWriteDescription"
+              : "capabilities.partialWriteDescription")}</p>
             <small>{partialWrite.recommended_action}</small>
           </div>
           <button onClick={onApplied} type="button"><RefreshCw aria-hidden size={15} />{t("capabilities.refreshSource")}</button>
@@ -167,6 +176,15 @@ function CapabilityMutationFeedback({ mutationError, onApplied, partialWrite, pr
         <section className="personal-capability-preview" aria-label={t("capabilities.preview") }>
           <strong>{t("capabilities.preview")}</strong>
           <span>{t(`machine.action.${preview.action}`)}</span>
+          {preview.codex_host_capacity ? <span>{t(
+            preview.codex_host_capacity.write_required
+              ? "drawer.subagentHostCapacityRaise"
+              : "drawer.subagentHostCapacityReady",
+            {
+              configured: preview.codex_host_capacity.configured_children ?? t("drawer.subagentHostCapacityImplicit"),
+              required: preview.codex_host_capacity.required_children,
+            },
+          )}</span> : null}
           <small>{t("capabilities.previewLocked")}</small>
         </section>
       ) : null}
@@ -174,7 +192,7 @@ function CapabilityMutationFeedback({ mutationError, onApplied, partialWrite, pr
   );
 }
 
-function CapabilityCatalog({ catalog, goalId, onApplied }: CapabilityCatalogProps) {
+function CapabilityCatalog({ callbacks, catalog, goalId, notification, onApplied, onNotificationChanged }: CapabilityCatalogProps) {
   const { locale, t } = useWorkspaceI18n();
   const orderedCapabilities = useMemo(
     () => orderCapabilitiesForPresentation(catalog.capabilities, locale),
@@ -237,6 +255,21 @@ function CapabilityCatalog({ catalog, goalId, onApplied }: CapabilityCatalogProp
         <CapabilityEditorStatus available={editorAvailable} t={t}
           description={readOnlyReason} />
 
+        {localizedSelected.capability_id === "lark_event_inbox" ? (
+          <section className="personal-capability-linked-setting">
+            <div>
+              <strong>{t("capabilities.larkInboxNotificationSetting")}</strong>
+              <p>{t("capabilities.larkInboxNotificationDescription")}</p>
+            </div>
+            <GoalAutoNotifyToggle
+              callbacks={callbacks}
+              goalId={goalId}
+              notification={notification}
+              onChanged={onNotificationChanged}
+            />
+          </section>
+        ) : null}
+
         {editorAvailable ? <>
           {editorMode === "json" || !localizedSelected.configuration_editor.fields.some((field) => field.key === "enabled" && field.input_kind === "boolean") ? (
             <div className="personal-capability-editor-mode">
@@ -284,7 +317,12 @@ function CapabilityCatalog({ catalog, goalId, onApplied }: CapabilityCatalogProp
   );
 }
 
-export function GoalCapabilitySettings({ goalId }: Readonly<{ goalId?: string | null }>) {
+export function GoalCapabilitySettings({ callbacks, goalId, notification, onChanged }: Readonly<{
+  callbacks: PersonalWorkspaceCallbacks;
+  goalId?: string | null;
+  notification?: WorkspaceGoalNotification;
+  onChanged: () => void;
+}>) {
   const { t } = useWorkspaceI18n();
   const [inspection, setInspection] = useState<GoalConfigurationInspection | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -325,7 +363,14 @@ export function GoalCapabilitySettings({ goalId }: Readonly<{ goalId?: string | 
         <summary><ShieldCheck aria-hidden size={17} />{t("capabilities.atomicOverride")}</summary>
         <p>{t("capabilities.atomicOverrideDescription")}</p>
       </details>
-      <CapabilityCatalog catalog={inspection.capability_catalog} goalId={goalId} onApplied={load} />
+      <CapabilityCatalog
+        callbacks={callbacks}
+        catalog={inspection.capability_catalog}
+        goalId={goalId}
+        notification={notification}
+        onApplied={load}
+        onNotificationChanged={onChanged}
+      />
     </section>
   );
 }

@@ -221,14 +221,12 @@ def _build_selected_parser(command: str) -> LoopXArgumentParser:
 	return parser
 
 
-def dispatch_common_command(
+def _dispatch_common_command(
 	args: argparse.Namespace,
 	*,
 	registry_path: Path,
 	allow_missing_registry: bool,
 ) -> int | None:
-	"""Dispatch one selected command through the shared canonical wiring."""
-
 	if args.command == "change-window":
 		from .capabilities.repository_change_window.cli import handle_repository_change_window_command
 
@@ -323,6 +321,22 @@ def dispatch_common_command(
 			append_cli_rollout_event=append_cli_rollout_event,
 		)
 	return None
+
+
+def dispatch_common_command(
+	args: argparse.Namespace,
+	*,
+	registry_path: Path,
+	allow_missing_registry: bool,
+) -> int | None:
+	from .control_plane.effect_runtime import effect_runtime_request_scope
+
+	with effect_runtime_request_scope():
+		return _dispatch_common_command(
+			args,
+			registry_path=registry_path,
+			allow_missing_registry=allow_missing_registry,
+		)
 
 
 def _dispatch_selected(args: argparse.Namespace, raw_argv: list[str]) -> int:

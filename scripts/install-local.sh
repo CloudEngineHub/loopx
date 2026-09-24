@@ -12,7 +12,7 @@ Options:
   -h, --help  Show this help and exit.
 
 Common environment variables:
-  LOOPX_PYTHON=/path/to/python3.11  Use this supported Python for the release.
+  LOOPX_PYTHON=/path/to/python    Use a Python 3.11+ executable for the release.
   LOOPX_PROMOTE_DEFAULT=1          Promote this checkout as the default loopx.
   LOOPX_INSTALL_CANARY=0           Skip the loopx-canary executable.
   LOOPX_INSTALL_SKILL=0            Skip packaged workflow skills.
@@ -315,12 +315,40 @@ install_workflow_skills() {
   local skills_source="$1"
   local source_root="$2"
   local entry_cli_bin="$3"
-  local skill_source skill_name skill_scope_file skill_target skill_tmp entry_status
+  local skill_source skill_name skill_scope skill_target skill_tmp entry_status skill_plan
   local installed_skill_ids_text=""
   local -a installed_skill_ids=()
   skill_line="- skill: skipped"
   if [[ "$install_skill" == "0" || ! -d "$skills_source" ]]; then
     return 0
+  fi
+
+  # Delivery scope is a product rule, not an installer convention: ask the
+  # owning capability which sources this host install may materialize instead
+  # of re-reading the scope marker here. ``repo_only`` sources have no marker
+  # on purpose and must never be copied onto a host.
+  skill_plan="$(mktemp "${TMPDIR:-/tmp}/loopx-skill-plan.XXXXXX")" || return 1
+  if ! LOOPX_SKILL_SCOPE_ROOT="$skills_source" \
+      PYTHONSAFEPATH=1 \
+      PYTHONPATH="$source_root${PYTHONPATH:+:$PYTHONPATH}" \
+      "${LOOPX_PYTHON:-python3}" - >"$skill_plan" <<'PY'
+import os
+from pathlib import Path
+
+from loopx.capabilities.project_skill_delivery import classify_host_skill_sources
+
+projection = classify_host_skill_sources(Path(os.environ["LOOPX_SKILL_SCOPE_ROOT"]))
+for skill_id, scope in (
+    [(skill_id, "deliverable") for skill_id in projection["deliverable_skill_ids"]]
+    + [(skill_id, "project") for skill_id in projection["project_skill_ids"]]
+    + [(skill_id, "repo_only") for skill_id in projection["repo_only_skill_ids"]]
+):
+    print(f"{skill_id}\t{scope}")
+PY
+  then
+    rm -f "$skill_plan"
+    echo "loopx installer error: cannot classify workflow skill sources under $skills_source" >&2
+    return 1
   fi
 
   mkdir -p "$skills_dir"
@@ -349,11 +377,15 @@ install_workflow_skills() {
   printf '%s\n' "$$" >"$skill_install_lock/pid"
 
   skill_line=""
-  while IFS= read -r skill_source; do
-    skill_name="$(basename "$skill_source")"
-    skill_scope_file="$skill_source/.loopx-skill-scope"
-    if [[ -f "$skill_scope_file" ]] && [[ "$(tr -d '[:space:]' <"$skill_scope_file")" == "project" ]]; then
+  while IFS=$'\t' read -r skill_name skill_scope; do
+    [[ -n "$skill_name" ]] || continue
+    skill_source="$skills_source/$skill_name"
+    if [[ "$skill_scope" == "project" ]]; then
       skill_line="${skill_line}- project skill source: $skill_source (install explicitly per project)"$'\n'
+      continue
+    fi
+    if [[ "$skill_scope" == "repo_only" ]]; then
+      skill_line="${skill_line}- repo-only skill source: $skill_source (kept in the checkout; never delivered by an install)"$'\n'
       continue
     fi
     skill_target="$skills_dir/$skill_name"
@@ -366,7 +398,8 @@ install_workflow_skills() {
     mv "$skill_tmp" "$skill_target"
     installed_skill_ids+=("$skill_name")
     skill_line="${skill_line}- skill: $skill_target"$'\n'
-  done < <(find "$skills_source" -mindepth 1 -maxdepth 1 -type d -print | sort)
+  done <"$skill_plan"
+  rm -f "$skill_plan"
 
   # The generated `$loopx` entry is the core LoopX route and must be
   # materialized independently of the rich workflow selection.
@@ -637,6 +670,19 @@ if [[ -z "$shell_profile" ]]; then
 fi
 
 configure_python_runtime
+chat_bundle_args=(ensure)
+if [[ -L "$bin_dir/loopx" ]]; then
+  previous_chat_assets="$("${LOOPX_PYTHON:-python3}" - "$bin_dir/loopx" <<'PYTHON'
+from pathlib import Path
+import sys
+print(Path(sys.argv[1]).resolve().parents[1] / "loopx/web/chat")
+PYTHON
+)"
+  if [[ -f "$previous_chat_assets/index.html" ]]; then
+    chat_bundle_args+=(--previous "$previous_chat_assets")
+  fi
+fi
+"${LOOPX_PYTHON:-python3}" "$repo_root/scripts/chat_bundle.py" "${chat_bundle_args[@]}"
 
 promote_default=0
 if resolve_default_promotion; then
@@ -697,13 +743,15 @@ copy_path "$repo_root/.github" "$release_tmp/.github"
 copy_path "$repo_root/README.md" "$release_tmp/README.md"
 copy_path "$repo_root/LICENSE" "$release_tmp/LICENSE"
 copy_path "$repo_root/pyproject.toml" "$release_tmp/pyproject.toml"
+copy_path "$repo_root/setup.py" "$release_tmp/setup.py"
+copy_path "$repo_root/MANIFEST.in" "$release_tmp/MANIFEST.in"
 printf '%s\n' "$LOOPX_PYTHON" >"$release_tmp/.loopx-python"
 find "$release_tmp" -name __pycache__ -type d -prune -exec rm -rf {} +
 find "$release_tmp" -name '*.pyc' -type f -delete
 if [[ -d "$release_tmp/apps" ]]; then
   find "$release_tmp/apps" \
     \( -name node_modules -o -name .next -o -name dist -o -name build -o -name coverage \) \
-    -type d -prune -exec rm -rf {} +
+    \( -type d -o -type l \) -prune -exec rm -rf {} +
 fi
 PYTHONPATH="$release_tmp" "${LOOPX_PYTHON:-python3}" \
   "$release_tmp/scripts/render-manpage.py" \
@@ -891,7 +939,7 @@ $skill_line
 $slash_line
 $claude_line
 $opencode_line
-- first-run feedback (optional): https://github.com/huangruiteng/loopx/issues/new?template=first_run.yml
+- first-run feedback (optional): https://github.com/loopx-project/loopx/issues/new?template=first_run.yml
 
 Current shell can use it with:
   export PATH="$bin_dir:\$PATH"

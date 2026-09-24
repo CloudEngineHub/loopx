@@ -44,6 +44,7 @@ export const controlPlaneSchema = z.object({
 
 export const orchestrationPolicySchema = z.object({
   model_config: z.object({ model: z.string(), reasoning_effort: z.string().optional() }).optional(),
+  execution_config: z.string().optional(),
 
   mode: z.string().optional().default("default"),
   orchestration_mode: z.string().optional().nullable(),
@@ -84,6 +85,16 @@ export const todoItemSchema = z.object({
   note: z.string().optional().nullable(),
   evidence: z.string().optional().nullable(),
   updated_at: z.string().optional().nullable(),
+  completion_validation_required: z.boolean().optional().nullable(),
+  completion_validation_sha256: z.string().optional().nullable(),
+  completion_validation_revision: z.number().int().nonnegative().optional().nullable(),
+  completion_validation_revision_history: z.array(z.object({
+    revision: z.number().int().positive(),
+    previous_declaration_sha256: z.string(),
+    declaration_sha256: z.string(),
+    actor_agent_id: z.string(),
+    revised_at: z.string(),
+  }).passthrough()).optional().default([]),
   review_materials: z.array(reviewMaterialSchema).optional().default([]),
 }).passthrough();
 

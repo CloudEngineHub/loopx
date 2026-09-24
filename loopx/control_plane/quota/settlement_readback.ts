@@ -2,6 +2,11 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
 import {
+  readGoalRolloutEventSnapshot,
+  strictGoalRolloutEvents,
+  type GoalRolloutEventSnapshot,
+} from "../rollout_receipt_log.ts";
+import {
   effectIdsMatch,
   settlementBindReduce,
   settlementFailed,
@@ -25,6 +30,7 @@ import {
   type DeliveryWorkspaceCausality,
 } from "./settlement_workspace_causality.ts";
 import {
+  isCommittedMonitorPollEffect,
   receiptBoundMonitorPhase,
   receiptBoundReplayPhase,
 } from "./settlement_phase.ts";
@@ -35,6 +41,15 @@ import {
   refreshRecovery,
   type RefreshRetryRequest,
 } from "./refresh_recovery.ts";
+import {
+  heartbeatReceiptDetails as details,
+  heartbeatReceiptFactFromEvent,
+  normalizeHeartbeatReplanObligationId as normalizeReplanObligationId,
+  normalizeHeartbeatTodoId as normalizeTodoId,
+  optionalHeartbeatString as optionalString,
+  selectEffectiveHeartbeatReceipt,
+  type HeartbeatReceiptFact,
+} from "./heartbeat_receipt_identity.ts";
 
 import { refreshExternalDelivery } from "./refresh_external_delivery.ts";
 
@@ -44,11 +59,8 @@ export const QUOTA_SETTLEMENT_READBACK_RESULT_SCHEMA =
   "loopx_quota_settlement_readback_result_v0";
 export const SEMANTIC_REPLAN_GUARD_SCHEMA = "semantic_replan_guard_v0";
 
-const ROLLOUT_EVENT_SCHEMA_VERSION = "loopx_rollout_event_v0";
 const TURN_INSTANCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const TODO_ID_PATTERN = /^todo_[a-z0-9_-]{3,64}$/;
 const AGENT_ID_PATTERN = /^[a-z][a-z0-9_.:@-]{0,79}$/;
-const REPLAN_OBLIGATION_ID_PATTERN = /^replan-[a-f0-9]{16}$/;
 
 interface ReadbackRequest {
   runtime_root: string;
@@ -62,14 +74,60 @@ interface ReadbackRequest {
   refresh_retry: RefreshRetryRequest | null;
 }
 
+export interface QuotaSettlementReadbackSnapshot {
+  readonly runtimeRoot: string;
+  readonly goalId: string;
+  readonly events: readonly JsonObject[];
+  readonly runs: readonly JsonObject[];
+  readonly eventsByTurn: ReadonlyMap<string, readonly JsonObject[]>;
+  readonly runsByTurn: ReadonlyMap<string, readonly JsonObject[]>;
+  readonly runsByEffectRef: ReadonlyMap<string, readonly JsonObject[]>;
+  readonly runPositions: ReadonlyMap<JsonObject, number>;
+}
+
 interface ResultBundle extends JsonObject {
   result: SettlementResult;
   payload: JsonObject;
 }
 
-function optionalString(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  return String(value).trim() || null;
+type SettlementProgressState = "identity_required" | "writeback_required" |
+  "writeback_receipt_required" | "spend_required" | "spend_receipt_required" | "settled";
+
+function settlementScope(
+  runtimeRootValue: unknown,
+  goalIdValue: unknown,
+): { runtimeRoot: string; goalId: string } {
+  const runtimeRoot = requireNonEmptyString(runtimeRootValue, "runtime_root");
+  if (!isAbsolute(runtimeRoot)) {
+    throw new EffectRuntimeRequestError("runtime_root must be absolute");
+  }
+  const goalId = requireNonEmptyString(goalIdValue, "goal_id");
+  if (goalId === "." || goalId === ".." || goalId.includes("/") || goalId.includes("\\")) {
+    throw new EffectRuntimeRequestError("goal_id must be a single path segment");
+  }
+  return {runtimeRoot, goalId};
+}
+
+/** Receipt verification owns progress; a durable debit alone is not settlement. */
+function settlementProgress(
+  identity: SettlementResult, writeback: SettlementResult, spend: SettlementResult,
+  writebackRun: JsonObject | null, spendRun: JsonObject | null,
+  spendSource: unknown = "heartbeat",
+): JsonObject {
+  const source = spendSource ?? "heartbeat";
+  if (source !== "heartbeat" && source !== "visible-goal") {
+    throw new EffectRuntimeRequestError("settlement spend source is invalid", "malformed_settlement_state");
+  }
+  const state: SettlementProgressState = identity.failure ? "identity_required"
+    : writeback.failure ? (writebackRun ? "writeback_receipt_required" : "writeback_required")
+    : spend.failure ? (spendRun ? "spend_receipt_required" : "spend_required")
+    : "settled";
+  return {
+    schema_version: "quota_settlement_progress_v0", state,
+    next_step: identity.failure ? "validation" : writeback.failure ? "durable_writeback"
+      : spend.failure ? "quota_spend" : null,
+    quota_spend_source: source,
+  };
 }
 
 function optionalRequestString(value: unknown, label: string): string | null {
@@ -85,18 +143,6 @@ function normalizeAgentId(value: unknown): string | null {
   return candidate && AGENT_ID_PATTERN.test(candidate) ? candidate : null;
 }
 
-function normalizeTodoId(value: unknown): string | null {
-  const candidate = String(value ?? "").trim().toLowerCase();
-  return candidate && TODO_ID_PATTERN.test(candidate) ? candidate : null;
-}
-
-function normalizeReplanObligationId(value: unknown): string | null {
-  const candidate = String(value ?? "").trim();
-  return candidate && REPLAN_OBLIGATION_ID_PATTERN.test(candidate)
-    ? candidate
-    : null;
-}
-
 function decodeRequest(value: unknown): ReadbackRequest {
   const request = requireJsonObject(value, "quota settlement readback request");
   if (request.schema_version !== QUOTA_SETTLEMENT_READBACK_REQUEST_SCHEMA) {
@@ -104,14 +150,10 @@ function decodeRequest(value: unknown): ReadbackRequest {
       "Quota settlement readback request schema mismatch",
     );
   }
-  const runtimeRoot = requireNonEmptyString(request.runtime_root, "runtime_root");
-  if (!isAbsolute(runtimeRoot)) {
-    throw new EffectRuntimeRequestError("runtime_root must be absolute");
-  }
-  const goalId = requireNonEmptyString(request.goal_id, "goal_id");
-  if (goalId === "." || goalId === ".." || goalId.includes("/") || goalId.includes("\\")) {
-    throw new EffectRuntimeRequestError("goal_id must be a single path segment");
-  }
+  const {runtimeRoot, goalId} = settlementScope(
+    request.runtime_root,
+    request.goal_id,
+  );
   if (typeof request.infer_turn_instance_id !== "boolean") {
     throw new EffectRuntimeRequestError("infer_turn_instance_id must be a boolean");
   }
@@ -173,6 +215,144 @@ async function readJsonLines(path: string, schemaVersion?: string): Promise<Json
   return records;
 }
 
+function turnKey(
+  goalId: string | null,
+  agentId: string | null,
+  turnInstanceId: string | null,
+): string | null {
+  return goalId && agentId && turnInstanceId
+    ? `${goalId}\u0000${agentId}\u0000${turnInstanceId}`
+    : null;
+}
+
+function appendIndexed(
+  index: Map<string, JsonObject[]>,
+  key: string | null,
+  record: JsonObject,
+): void {
+  if (key === null) return;
+  const existing = index.get(key);
+  if (existing) existing.push(record);
+  else index.set(key, [record]);
+}
+
+function indexSettlementSnapshot(
+  runtimeRoot: string,
+  goalId: string,
+  events: readonly JsonObject[],
+  runs: readonly JsonObject[],
+): QuotaSettlementReadbackSnapshot {
+  const eventsByTurn = new Map<string, JsonObject[]>();
+  const runsByTurn = new Map<string, JsonObject[]>();
+  const runsByEffectRef = new Map<string, JsonObject[]>();
+  const runPositions = new Map<JsonObject, number>();
+  for (const event of events) {
+    appendIndexed(
+      eventsByTurn,
+      turnKey(
+        optionalString(event.goal_id),
+        optionalString(event.agent_id),
+        optionalString(event.run_id),
+      ),
+      event,
+    );
+  }
+  for (const [position, run] of runs.entries()) {
+    runPositions.set(run, position);
+    appendIndexed(
+      runsByTurn,
+      turnKey(
+        optionalString(run.goal_id),
+        normalizeAgentId(run.agent_id),
+        optionalString(run.turn_instance_id),
+      ),
+      run,
+    );
+    appendIndexed(runsByEffectRef, optionalString(run.effect_ref), run);
+  }
+  return {
+    runtimeRoot,
+    goalId,
+    events,
+    runs,
+    eventsByTurn,
+    runsByTurn,
+    runsByEffectRef,
+    runPositions,
+  };
+}
+
+/** Load one immutable settlement snapshot for one or many readbacks. */
+export async function readQuotaSettlementSnapshot(
+  runtimeRoot: string,
+  goalId: string,
+  rolloutSnapshot?: GoalRolloutEventSnapshot | null,
+): Promise<QuotaSettlementReadbackSnapshot> {
+  settlementScope(runtimeRoot, goalId);
+  if (
+    rolloutSnapshot !== undefined &&
+    rolloutSnapshot !== null &&
+    (
+      rolloutSnapshot.runtimeRoot !== runtimeRoot ||
+      rolloutSnapshot.goalId !== goalId
+    )
+  ) {
+    throw new EffectRuntimeRequestError(
+      "rollout event snapshot does not match the settlement scope",
+      "settlement_snapshot_scope_mismatch",
+    );
+  }
+  const goalRoot = join(runtimeRoot, "goals", goalId);
+  const [snapshot, runs] = await Promise.all([
+    rolloutSnapshot === undefined
+      ? readGoalRolloutEventSnapshot(runtimeRoot, goalId)
+      : Promise.resolve(rolloutSnapshot),
+    readJsonLines(join(goalRoot, "runs", "index.jsonl")),
+  ]);
+  return indexSettlementSnapshot(
+    runtimeRoot,
+    goalId,
+    strictGoalRolloutEvents(snapshot),
+    runs,
+  );
+}
+
+function indexedEvents(
+  snapshot: QuotaSettlementReadbackSnapshot,
+  goalId: string,
+  agentId: string,
+  turnInstanceId: string,
+): readonly JsonObject[] {
+  return snapshot.eventsByTurn.get(
+    turnKey(goalId, agentId, turnInstanceId)!,
+  ) ?? [];
+}
+
+function indexedRuns(
+  snapshot: QuotaSettlementReadbackSnapshot,
+  identity: SettlementIdentity,
+): readonly JsonObject[] {
+  return snapshot.runsByTurn.get(
+    turnKey(identity.goal_id, identity.agent_id, identity.turn_instance_id)!,
+  ) ?? [];
+}
+
+function spendCandidateRuns(
+  snapshot: QuotaSettlementReadbackSnapshot,
+  identity: SettlementIdentity,
+  turnRuns: readonly JsonObject[],
+): readonly JsonObject[] {
+  const effectRuns = snapshot.runsByEffectRef.get(
+    `${identity.effect_id}#quota_spend`,
+  ) ?? [];
+  if (effectRuns.length === 0) return turnRuns;
+  return [...new Set([...turnRuns, ...effectRuns])].sort(
+    (left, right) =>
+      (snapshot.runPositions.get(left) ?? -1) -
+      (snapshot.runPositions.get(right) ?? -1),
+  );
+}
+
 function persistedIdentityMatches(
   rawIdentity: unknown,
   expectedEffectId: string,
@@ -209,10 +389,6 @@ function runEffectMatches(
       quotaSpendMetadataMatches(run.quota_spend_commit, effectRef, expectedEffectRef));
 }
 
-function details(event: JsonObject | null): JsonObject {
-  return jsonObject(event?.details) ?? {};
-}
-
 export function projectSemanticReplanGuard(
   receiptDetails: JsonObject,
 ): JsonObject {
@@ -243,63 +419,6 @@ export function projectSemanticReplanGuard(
     scope: "turn_guard",
     selected_obligation_id: selectedObligationId,
   };
-}
-
-function receiptIdentity(
-  event: JsonObject,
-): { key: string; event: JsonObject } | null {
-  const eventDetails = details(event);
-  const todoId = normalizeTodoId(eventDetails.todo_id);
-  const replanObligationId = normalizeReplanObligationId(
-    eventDetails.replan_obligation_id,
-  );
-  const effectId = optionalString(eventDetails.settlement_effect_id);
-  if (todoId && replanObligationId) {
-    throw new EffectRuntimeRequestError(
-      "heartbeat receipt has conflicting Todo and autonomous replan bindings",
-    );
-  }
-  if (effectId && !todoId && !replanObligationId) {
-    throw new EffectRuntimeRequestError(
-      "heartbeat receipt has an effect identity without a Todo or autonomous replan binding; refuse to infer or upgrade it",
-    );
-  }
-  if (!todoId && !replanObligationId) return null;
-  const identity = settlementIdentity({
-    goal_id: optionalString(event.goal_id) ?? "",
-    agent_id: optionalString(event.agent_id) ?? "",
-    todo_id: todoId,
-    turn_instance_id: optionalString(event.run_id) ?? "",
-    replan_obligation_id: replanObligationId,
-  });
-  return {
-    key: `${identity.binding_kind}\u0000${identity.binding_id}\u0000${effectId ?? identity.effect_id}`,
-    event,
-  };
-}
-
-function effectiveHeartbeatReceipt(
-  events: readonly JsonObject[],
-  identity: Pick<SettlementIdentity, "goal_id" | "agent_id" | "turn_instance_id">,
-): JsonObject | null {
-  const matching = events.filter((event) =>
-    event.event_kind === "quota_should_run" &&
-    optionalString(event.goal_id) === identity.goal_id &&
-    optionalString(event.agent_id) === identity.agent_id &&
-    optionalString(event.run_id) === identity.turn_instance_id
-  );
-  if (matching.length === 0) return null;
-  const identities = new Map<string, JsonObject>();
-  for (const event of matching) {
-    const resolved = receiptIdentity(event);
-    if (resolved) identities.set(resolved.key, resolved.event);
-  }
-  if (identities.size > 1) {
-    throw new EffectRuntimeRequestError(
-      "heartbeat receipt has conflicting settlement identities for the same goal, agent, and turn",
-    );
-  }
-  return identities.size === 1 ? [...identities.values()][0] : matching.at(-1)!;
 }
 
 function runMatchesBinding(run: JsonObject, identity: SettlementIdentity): boolean {
@@ -358,6 +477,29 @@ function findStepEvent(
     optionalString(event.run_id) === identity.turn_instance_id &&
     optionalString(details(event).settlement_effect_id) === identity.effect_id
   ) ?? null;
+}
+
+/**
+ * Resolve the Turn's effective receipt, or null when it persisted no guard.
+ *
+ * The identity rule lives in one module, so the readback resolves the effective
+ * receipt through the same reduction the closeout selector uses.
+ */
+function effectiveHeartbeatReceipt(
+  events: readonly JsonObject[],
+  identity: Pick<SettlementIdentity, "goal_id" | "agent_id" | "turn_instance_id">,
+): JsonObject | null {
+  const entries: { fact: HeartbeatReceiptFact; value: JsonObject }[] = [];
+  for (const event of events) {
+    if (event.event_kind !== "quota_should_run") continue;
+    if (optionalString(event.goal_id) !== identity.goal_id) continue;
+    if (optionalString(event.agent_id) !== identity.agent_id) continue;
+    if (optionalString(event.run_id) !== identity.turn_instance_id) continue;
+    entries.push({ fact: heartbeatReceiptFactFromEvent(event), value: event });
+  }
+  return entries.length === 0
+    ? null
+    : selectEffectiveHeartbeatReceipt(identity.goal_id, identity.agent_id, entries);
 }
 
 function writebackResult(
@@ -546,8 +688,21 @@ function inferPersistedIdentity(
   return null;
 }
 
-function failedIdentity(reason: string, kind: "invalid_identity" | "identity_mismatch" | "receipt_missing") {
-  return settlementFailed<JsonObject>({ kind, step_kind: "validation", reason });
+function failedIdentity(
+  reason: string,
+  kind:
+    | "invalid_identity"
+    | "identity_mismatch"
+    | "receipt_missing"
+    | "receipt_unbound",
+  details?: JsonObject,
+) {
+  return settlementFailed<JsonObject>({
+    kind,
+    step_kind: "validation",
+    reason,
+    ...(details ? { details } : {}),
+  });
 }
 
 function resolveIdentity(
@@ -618,6 +773,48 @@ function resolveIdentity(
   const receiptReplanObligationId = normalizeReplanObligationId(
     receiptDetails.replan_obligation_id,
   );
+  if (receiptTodoId === null && receiptReplanObligationId === null) {
+    // A same-turn guard that ran before any work item was chosen commits a
+    // receipt with no settlement binding, and the documented wake order (guard,
+    // then select) produces exactly that state. This read model never binds --
+    // the guard's own same-turn reconciliation owns that, so there is one
+    // binder rather than two -- which means the caller has to be told the state
+    // and the exact repair instead of being handed a binding mismatch it cannot
+    // act on. The state also gets its own failure kind, so a consumer can branch
+    // on the missing binding without reading details.binding_kind: the receipt
+    // exists and is well-formed here, which is not what identity_mismatch means.
+    //
+    // A Turn whose explicit choice the guard already deferred is a different
+    // state with a different repair: rebinding through `--todo-id` re-enters the
+    // same preemption and defers again, while the guard's argument-less reentry
+    // binds the preemption it is actually holding. Naming the wrong command
+    // costs the caller a turn, so the repair is chosen from the retained
+    // selection the guard recorded.
+    const deferredSelectionTodoId = normalizeTodoId(
+      receiptDetails.pending_action_selection_todo_id,
+    );
+    const repair = deferredSelectionTodoId === null
+      ? "rebind it through the guard's same-turn reconciliation, then settle: " +
+        "quota should-run --turn-instance-id " +
+        `${turnInstanceId} --todo-id ${identity.todo_id ?? "<todo_id>"}`
+      : "the guard deferred this turn's explicit selection instead of binding " +
+        "it, so rerun the guard for the same turn without --todo-id (which " +
+        "binds the preemption it is holding), then settle with the identity it " +
+        `returns: quota should-run --turn-instance-id ${turnInstanceId}`;
+    return failedIdentity(
+      "the quota should-run receipt for this turn carries no settlement binding " +
+        `yet (turn_instance_id ${turnInstanceId}); ${repair}`,
+      "receipt_unbound",
+      {
+        binding_kind: "unbound",
+        requested_binding_kind: identity.binding_kind,
+        turn_instance_id: turnInstanceId,
+        ...(deferredSelectionTodoId === null
+          ? {}
+          : { deferred_selection_todo_id: deferredSelectionTodoId }),
+      },
+    );
+  }
   if (
     receiptTodoId !== identity.todo_id ||
     receiptReplanObligationId !== identity.replan_obligation_id
@@ -681,6 +878,7 @@ function failedReadback(
     settlement: bundle(downstreamFailure),
     terminal_closeout: bundle(terminalFailure),
     terminal_settlement: bundle(downstreamFailure),
+    progress: settlementProgress(identityResult, downstreamFailure, downstreamFailure, null, null),
     workspace_causality: null,
     semantic_replan_guard: null,
     writeback_run: null,
@@ -695,14 +893,34 @@ function failedReadback(
   };
 }
 
-export async function readQuotaSettlement(value: unknown): Promise<JsonObject> {
-  const request = decodeRequest(value);
-  const goalRoot = join(request.runtime_root, "goals", request.goal_id);
-  const [events, runs] = await Promise.all([
-    readJsonLines(join(goalRoot, "rollout-event-log.jsonl"), ROLLOUT_EVENT_SCHEMA_VERSION),
-    readJsonLines(join(goalRoot, "runs", "index.jsonl")),
-  ]);
-  const identityResult = resolveIdentity(request, events, runs);
+function readQuotaSettlementFromRequest(
+  request: ReadbackRequest,
+  snapshot: QuotaSettlementReadbackSnapshot,
+): JsonObject {
+  if (
+    snapshot.runtimeRoot !== request.runtime_root ||
+    snapshot.goalId !== request.goal_id
+  ) {
+    throw new EffectRuntimeRequestError(
+      "settlement snapshot does not match the readback request",
+      "settlement_snapshot_scope_mismatch",
+    );
+  }
+  const explicitAgentId = normalizeAgentId(request.agent_id);
+  const explicitEvents = !request.infer_turn_instance_id &&
+      explicitAgentId !== null && request.turn_instance_id !== null
+    ? indexedEvents(
+      snapshot,
+      request.goal_id,
+      explicitAgentId,
+      request.turn_instance_id,
+    )
+    : snapshot.events;
+  const identityResult = resolveIdentity(
+    request,
+    explicitEvents,
+    snapshot.runs,
+  );
   if (identityResult === null) {
     return {
       schema_version: QUOTA_SETTLEMENT_READBACK_RESULT_SCHEMA,
@@ -720,6 +938,13 @@ export async function readQuotaSettlement(value: unknown): Promise<JsonObject> {
     turn_instance_id: String(identityResult.value.turn_instance_id),
     replan_obligation_id: optionalString(identityResult.value.replan_obligation_id),
   });
+  const events = indexedEvents(
+    snapshot,
+    identity.goal_id,
+    identity.agent_id,
+    identity.turn_instance_id,
+  );
+  const runs = indexedRuns(snapshot, identity);
   const heartbeatReceipt = effectiveHeartbeatReceipt(events, identity);
   if (heartbeatReceipt === null) {
     return failedReadback(
@@ -732,7 +957,10 @@ export async function readQuotaSettlement(value: unknown): Promise<JsonObject> {
   const receiptDetails = details(heartbeatReceipt);
   const writebackRun = findWriteback(runs, identity);
   const writebackEvent = findStepEvent(events, identity, "refresh_state");
-  const spendRun = findSpend(runs, identity);
+  const spendRun = findSpend(
+    spendCandidateRuns(snapshot, identity, runs),
+    identity,
+  );
   const spendEvent = findStepEvent(events, identity, "quota_spend");
   const completionEvent = findStepEvent(events, identity, "todo_complete");
 
@@ -747,7 +975,8 @@ export async function readQuotaSettlement(value: unknown): Promise<JsonObject> {
     optionalString(run.goal_id) === identity.goal_id &&
     optionalString(run.agent_id) === identity.agent_id &&
     optionalString(run.turn_instance_id) === identity.turn_instance_id &&
-    (!identity.todo_id || normalizeTodoId(run.todo_id) === identity.todo_id)
+    normalizeTodoId(run.todo_id) === identity.todo_id &&
+    isCommittedMonitorPollEffect(jsonObject(run.quota_monitor_poll_commit)?.effect_id, identity)
   ) ?? null;
   const nestedCausality = typeof receiptDetails.delivery_workspace_causality === "object" &&
       receiptDetails.delivery_workspace_causality !== null &&
@@ -764,11 +993,17 @@ export async function readQuotaSettlement(value: unknown): Promise<JsonObject> {
   const workspaceCausality: DeliveryWorkspaceCausality | null =
     normalizeDeliveryWorkspaceCausality(nestedCausality, identity.todo_id) ??
     normalizeDeliveryWorkspaceCausality(flatCausality, identity.todo_id);
+  const semanticReplanGuard = projectSemanticReplanGuard(receiptDetails);
+  const todoBoundReplan = identity.binding_kind === "todo" &&
+    semanticReplanGuard.scope === "turn_guard" &&
+    semanticReplanGuard.selected_obligation_id !== null;
 
   const recovery = request.refresh_retry === null ? null : refreshRecovery(
     request.refresh_retry, writebackRun, writeback.failure === null,
     workspaceCausality?.requirement,
-    writebackRun !== null && runs.slice(runs.indexOf(writebackRun) + 1).some((run) =>
+    writebackRun !== null && snapshot.runs.slice(
+      (snapshot.runPositions.get(writebackRun) ?? -1) + 1,
+    ).some((run) =>
       run.goal_id === identity.goal_id && run.agent_id === identity.agent_id &&
       (jsonObject(run.agent_vision) !== null || jsonObject(run.vision_checkpoint)?.required === true)
     ),
@@ -784,8 +1019,10 @@ export async function readQuotaSettlement(value: unknown): Promise<JsonObject> {
     settlement: bundle(settled),
     terminal_closeout: bundle(terminalCloseout),
     terminal_settlement: bundle(terminalSettlement),
+    progress: settlementProgress(identityResult, writeback, spend, writebackRun, spendRun,
+      receiptDetails.quota_spend_source ?? spendRun?.source),
     workspace_causality: workspaceCausality,
-    semantic_replan_guard: projectSemanticReplanGuard(receiptDetails),
+    semantic_replan_guard: semanticReplanGuard,
     writeback_run: writebackRun,
     refresh_recovery: recovery,
     external_delivery: request.refresh_retry === null ? null : refreshExternalDelivery(
@@ -805,9 +1042,25 @@ export async function readQuotaSettlement(value: unknown): Promise<JsonObject> {
     }),
     replay_phase: receiptBoundReplayPhase({
       binding_kind: identity.binding_kind,
+      writeback_completes_binding: todoBoundReplan,
       completion_receipt_present: completionEvent !== null,
       durable_writeback_present: writeback.failure === null,
       quota_spend_present: spend.failure === null,
     }),
   };
+}
+
+export function readQuotaSettlementFromSnapshot(
+  value: unknown,
+  snapshot: QuotaSettlementReadbackSnapshot,
+): JsonObject {
+  return readQuotaSettlementFromRequest(decodeRequest(value), snapshot);
+}
+
+export async function readQuotaSettlement(value: unknown): Promise<JsonObject> {
+  const request = decodeRequest(value);
+  return readQuotaSettlementFromRequest(
+    request,
+    await readQuotaSettlementSnapshot(request.runtime_root, request.goal_id),
+  );
 }

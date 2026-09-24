@@ -14,6 +14,7 @@ from loopx.capabilities.manager_context import (
     register_ingress,
     turn_start_hook,
 )
+from loopx.capabilities.manager_context.tracking import query
 from loopx.control_plane.capability_hooks import dispatch_turn_start_hooks
 
 
@@ -51,6 +52,88 @@ def fixture(tmp_path):
         turn,
         {"goal_id": "research", "agent_id": "worker"},
     )
+
+
+def test_project_conversation_delivers_only_to_its_registered_goal(fixture):
+    root, registry, session, turn, request = fixture
+    session = {**session, "channel_id": "goal.research", "goal_id": "research"}
+    before = registry.read_bytes()
+    grant = authority(root, registry, session, turn)
+    assert grant["targets"] == [request]
+    receipt = deliver(root, registry, session=session, turn=turn, request=request)
+    assert receipt["status"] == "delivered"
+    with pytest.raises(ValueError, match="not authorized"):
+        deliver(root, registry, session=session, turn=turn,
+                request={"goal_id": "other", "agent_id": "peer"})
+    assert registry.read_bytes() == before
+    assert not pending(root, "other", "peer")["items"]
+
+
+def test_stopped_goal_is_not_a_context_recipient_and_revokes_replay(fixture):
+    root, registry, session, turn, request = fixture
+    assert request in authority(root, registry, session, turn)["targets"]
+    first = deliver(root, registry, session=session, turn=turn, request=request)
+
+    data = json.loads(registry.read_text())
+    data["goals"][0]["activation_state"] = "stopped"
+    registry.write_text(json.dumps(data))
+    assert authority(root, registry, session, turn)["targets"] == [
+        {"goal_id": "other", "agent_id": "peer"}
+    ]
+    with pytest.raises(ValueError, match="not authorized"):
+        deliver(root, registry, session=session, turn=turn, request=request)
+    assert len(pending(root, "research", "worker")["items"]) == 1
+
+    data["goals"][0]["activation_state"] = "active"
+    registry.write_text(json.dumps(data))
+    assert deliver(root, registry, session=session, turn=turn, request=request) == {
+        **first, "replayed": True
+    }
+
+
+def test_stopped_or_invalid_goal_is_excluded_from_lark_and_goal_chat(fixture):
+    root, registry, session, turn, request = fixture
+    data = json.loads(registry.read_text())
+    data["goals"][0]["activation"] = {
+        "schema_version": "loopx_goal_activation_v1", "state": "stopped"
+    }
+    registry.write_text(json.dumps(data))
+
+    goal_session = {**session, "channel_id": "goal.research", "goal_id": "research"}
+    assert authority(root, registry, goal_session, turn)["targets"] == []
+    with pytest.raises(ValueError, match="not authorized"):
+        deliver(root, registry, session=goal_session, turn=turn, request=request)
+
+    lark_session = {**session, "channel_id": "manager.external.group"}
+    lark_turn = {**turn, "origin": "lark"}
+    _write(_root(root) / "policy.json", {
+        "schema_version": POLICY_SCHEMA,
+        "sources": {lark_session["channel_id"]: {
+            "sender_ids": ["owner"], "targets": [request]
+        }},
+    })
+    register_ingress(root, session_id=session["session_id"],
+                     client_turn_id=turn["client_turn_id"],
+                     channel=lark_session["channel_id"], sender_id="owner",
+                     message=turn["message"], source_id="lark:original")
+    assert authority(root, registry, lark_session, lark_turn)["targets"] == []
+    with pytest.raises(ValueError, match="not authorized"):
+        deliver(root, registry, session=lark_session, turn=lark_turn, request=request)
+
+    data["goals"][0]["activation"]["state"] = "unreadable"
+    registry.write_text(json.dumps(data))
+    assert authority(root, registry, session, turn)["targets"] == [
+        {"goal_id": "other", "agent_id": "peer"}
+    ]
+
+
+@pytest.mark.parametrize("changes", [
+    {"channel_id": "goal.other"}, {"goal_id": "other"}, {"goal_id": ""},
+])
+def test_project_channel_cannot_supply_a_different_goal_identity(fixture, changes):
+    root, registry, session, turn, _ = fixture
+    session = {**session, "channel_id": "goal.research", "goal_id": "research", **changes}
+    assert authority(root, registry, session, turn)["targets"] == []
 
 
 def test_original_context_delivery_is_idempotent_without_priority_or_todo_writes(
@@ -143,8 +226,80 @@ def test_external_authority_requires_exact_sender_source_and_recipient(fixture):
     assert receipt["status"] == "delivered"
 
 
+def test_same_goal_recipients_keep_inboxes_and_decisions_separate(fixture):
+    root, registry, session, turn, request = fixture
+    data = json.loads(registry.read_text())
+    data["goals"][0]["coordination"]["registered_agents"].append("peer")
+    registry.write_text(json.dumps(data))
+    peer = {**request, "agent_id": "peer"}
+
+    worker_receipt = deliver(
+        root, registry, session=session, turn=turn, request=request
+    )
+    worker_id = worker_receipt["request_id"]
+    assert pending(root, "research", "peer")["items"] == []
+    with pytest.raises((OSError, ValueError)):
+        acknowledge(root, "research", "peer", worker_id, "adopt", "Wrong recipient")
+
+    peer_receipt = deliver(root, registry, session=session, turn=turn, request=peer)
+    peer_id = peer_receipt["request_id"]
+    assert peer_id != worker_id
+    acknowledge(root, "research", "worker", worker_id, "adopt", "Worker decision")
+    assert not pending(root, "research", "peer")["items"][0].get(
+        "receiver_decision_recorded", False
+    )
+    acknowledge(root, "research", "peer", peer_id, "reject", "Peer decision")
+
+    rows = query(root, registry, goal_ids=["research"], owner_scope=True)["rows"]
+    assert {row["agent_id"]: row["decision"]["status"] for row in rows} == {
+        "worker": "adopt",
+        "peer": "reject",
+    }
+    for agent_id, request_id in (("worker", worker_id), ("peer", peer_id)):
+        assert [
+            row["request_id"] for row in pending(root, "research", agent_id)["items"]
+        ] == [request_id]
+
+
+def test_new_request_round_preserves_the_previous_receiver_decision(fixture):
+    root, registry, session, turn, request = fixture
+    first = deliver(root, registry, session=session, turn=turn, request=request)
+    acknowledge(
+        root, "research", "worker", first["request_id"], "adopt", "First round"
+    )
+    corrected_turn = {
+        **turn,
+        "client_turn_id": "request-two",
+        "message": "Reconsider the method with this corrected acceptance criterion.",
+    }
+    second = deliver(
+        root, registry, session=session, turn=corrected_turn, request=request
+    )
+    assert second["request_id"] != first["request_id"]
+    items = {
+        row["request_id"]: row
+        for row in pending(root, "research", "worker")["items"]
+    }
+    assert set(items) == {first["request_id"], second["request_id"]}
+    assert items[first["request_id"]]["receiver_decision_recorded"] is True
+    assert items[second["request_id"]]["message"] == corrected_turn["message"]
+    assert not items[second["request_id"]].get("receiver_decision_recorded", False)
+    acknowledge(
+        root, "research", "worker", second["request_id"], "defer", "Assess correction"
+    )
+    replay = deliver(root, registry, session=session, turn=turn, request=request)
+    assert replay["request_id"] == first["request_id"] and replay["replayed"]
+
+    rows = query(root, registry, goal_ids=["research"], owner_scope=True)["rows"]
+    assert {row["request_id"]: row["decision"]["status"] for row in rows} == {
+        first["request_id"]: "adopt",
+        second["request_id"]: "defer",
+    }
+
+
+@pytest.mark.parametrize("decision", ["no_change", "adopt"])
 def test_hook_keeps_decided_requests_open_until_receiver_returns_conclusion(
-    fixture,
+    fixture, decision
 ):
     root, registry, session, turn, request = fixture
     receipt = deliver(root, registry, session=session, turn=turn, request=request)
@@ -161,7 +316,7 @@ def test_hook_keeps_decided_requests_open_until_receiver_returns_conclusion(
         "research",
         "worker",
         receipt["request_id"],
-        "no_change",
+        decision,
         "Current experiment still has stronger evidence; retain its order.",
     )
     assert pending(root, "research", "worker")["items"][0]["receiver_decision_recorded"]
@@ -230,7 +385,7 @@ def test_actual_manager_turn_delivers_and_reports_host_receipt(fixture, monkeypa
     monkeypatch.setattr(
         manager_context,
         "collect_manager_turn_context",
-        lambda *a: {"coverage": {}, "goals": []},
+        lambda *a, **_: {"coverage": {}, "goals": []},
     )
     try:
         session, _ = controller.open_session(

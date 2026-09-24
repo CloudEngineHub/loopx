@@ -50,6 +50,7 @@ from .authority_e2e_rows_stage2c import (
     row_migration_seeds_new_lineage,
 )
 from .authority_e2e_rows_stage2c2 import (
+    row_archive_after_leased_completion_parity,
     row_drain_idempotent,
     row_event_only_todo_source_holds,
     row_growth_measurement_gate,
@@ -139,8 +140,14 @@ NOKV_QUALIFICATION_SCRIPT = Path("examples") / "nokv-authority-store" / "live-qu
 NOKV_HELPER = Path("loopx") / "control_plane" / "coordination" / "nokv_jsonl_helper.py"
 NOKV_QUALIFICATION_REPORT_SCHEMA = "loopx_nokv_authority_live_qualification_v0"
 NOKV_QUALIFICATION_SCOPE = "stage_2a_single_node_store_conformance"
-QUALIFIED_NOKV_SDK_VERSION = "0.11.0"
+QUALIFIED_NOKV_SDK_VERSION = "0.11.1"
 QUALIFIED_NOKV_API_VERSION = 1
+# NoKV 0.11.1 refuses a publication fenced on a stale workbench incarnation
+# before any durable row or object exists; the live probe must prove it.
+NOKV_INCARNATION_FENCE_CHECKS: tuple[str, ...] = (
+    "stale_incarnation_fence_rejected",
+    "stale_incarnation_fence_left_generation_unchanged",
+)
 PROBE_SOURCES: tuple[Path, ...] = (
     LIVE_E2E_SCRIPT,
     TS_READBACK_PROBE,
@@ -245,7 +252,7 @@ def _run_live_matrix_script(environ: Mapping[str, str], *, live: bool) -> JsonOb
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         timeout=900,
         check=False,
     )
@@ -436,7 +443,7 @@ def _row_nokv_live_qualification(context: RowContext) -> RowOutcome:
         cwd=REPO_ROOT,
         env=dict(context.environ),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         timeout=600,
         check=False,
     )
@@ -470,6 +477,10 @@ def _row_nokv_live_qualification(context: RowContext) -> RowOutcome:
         "every qualification check must have passed",
     )
     expect(
+        all(check_id in check_ids for check_id in NOKV_INCARNATION_FENCE_CHECKS),
+        "qualification must prove the stale-incarnation publication fence",
+    )
+    expect(
         report.get("nokv_sdk_version") == QUALIFIED_NOKV_SDK_VERSION
         and report.get("nokv_api_version") == QUALIFIED_NOKV_API_VERSION,
         "qualification must name the qualified NoKV SDK and API versions",
@@ -483,6 +494,7 @@ def _row_nokv_live_qualification(context: RowContext) -> RowOutcome:
         qualification_scope=NOKV_QUALIFICATION_SCOPE,
         check_count=len(check_ids),
         check_ids=check_ids,
+        incarnation_fence_checks=list(NOKV_INCARNATION_FENCE_CHECKS),
         final_generation=report.get("final_generation"),
         final_cursor=report.get("final_cursor"),
         nokv_sdk_version=report.get("nokv_sdk_version"),
@@ -750,16 +762,18 @@ LADDER_ROWS: tuple[LadderRow, ...] = (
         posix_only=False,
         run=row_growth_measurement_gate,
     ),
+    LadderRow(
+        id="s2c2.archive_after_leased_completion_parity",
+        stage="2c2",
+        title="archiving a Todo whose released lease stays on disk keeps the candidate head matched and qualifiable",
+        product_path="real_cli",
+        gate="deterministic",
+        posix_only=False,
+        run=row_archive_after_leased_completion_parity,
+    ),
 )
 
 PENDING_ROWS: tuple[PendingRow, ...] = (
-    PendingRow(
-        "s2c2.archive_after_leased_completion_parity",
-        "2c2",
-        "the archive-completed writer captures the released lease it orphans: archiving a Todo "
-        "that holds a released lease record leaves that lease in the candidate head while the "
-        "source projection drops it, so bounded qualification reports shadow_projection_drift",
-    ),
     PendingRow(
         "s2c2.sustained_parity_soak",
         "2c2",
@@ -913,7 +927,7 @@ def _git_output(*arguments: str) -> str | None:
             ["git", *arguments],
             cwd=REPO_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=30,
             check=False,
         )

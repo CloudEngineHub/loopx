@@ -290,15 +290,25 @@ def main() -> int:
         assert set(features) == {
             "todo_replan_cadence",
             "local_authority_shadow",
+            "coordination_runtime_shadow",
             "multi_subagent",
             "peer_task_coordination",
+            "progress_review",
             "explore_graph",
             "explore_harness",
             "change_quality_qualification",
             "reward_memory",
             "lark_event_inbox",
             "lark_kanban_heartbeat_sync",
+            "pull_request_review",
             "periodic_report",
+        }
+        assert features["pull_request_review"]["availability"] == "supported"
+        assert features["progress_review"]["availability"] == "supported_opt_in"
+        assert features["progress_review"]["default"]["mode"] == "off"
+        assert features["pull_request_review"]["default"] == {
+            "wait_for_ci": True,
+            "review_priority": "other-developers-first",
         }
         assert features["todo_replan_cadence"]["availability"] == "supported_opt_in"
         assert features["todo_replan_cadence"]["default"] == {"completed_todos": 5}

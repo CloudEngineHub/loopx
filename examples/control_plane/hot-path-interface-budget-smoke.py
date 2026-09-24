@@ -68,8 +68,12 @@ SURFACE_BUDGETS = {
         "owner": "quota guard",
         "consumer": "decide whether the selected goal may spend compute",
         "cold_path": "status, history, or active state",
-        "max_json_chars": 13_000,
-        "max_nested_keys": 330,
+        # Codex keeps a lossless codex_app compatibility alias while the
+        # provider-neutral app_automation packet becomes canonical.
+        # Pre-limit work counts add useful scope/completeness evidence; allow
+        # modest headroom after removing the redundant observed-row count.
+        "max_json_chars": 14_500,
+        "max_nested_keys": 360,
         "max_top_level_keys": 52,
     },
     "dashboard_status_json": {
@@ -384,8 +388,12 @@ def main() -> int:
         assert "presentation_surfaces" not in status_payload, status_payload
         status_items = status_payload["attention_queue"]["items"]
         assert status_items, status_payload
+        # Internal graph evaluations must not expand public status payloads.
+        assert "succession_evaluation" not in json.dumps(status_items)
         assert "task_graph_projection" not in status_items[0], status_items[0]
-        assert status_payload["runtime_projection_routes"] == {"healthy": True}
+        route_health = status_payload["runtime_projection_routes"]
+        assert route_health["healthy"] is True, route_health
+        assert route_health["goal_count"] >= 1, route_health
         quota_payload = build_quota_should_run(
             status_payload,
             goal_id=GOAL_ID,
@@ -416,7 +424,7 @@ def main() -> int:
         assert quota_payload["should_run"] is True, quota_payload
         reset_policy = quota_payload["scheduler_hint"]["reset_policy"]
         assert reset_policy["reset_token"], reset_policy
-        assert reset_policy["codex_app_initial_rrule"], reset_policy
+        assert reset_policy["app_automation_initial_rrule"], reset_policy
         assert reset_policy["host_state_key"] == "scheduler_hint.reset_policy.reset_token", reset_policy
         assert "identity_snapshot" not in reset_policy, reset_policy
         assert "profile_snapshot" not in reset_policy, reset_policy

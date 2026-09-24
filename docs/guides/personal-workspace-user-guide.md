@@ -6,9 +6,9 @@ LoopX 控制台是为工程师与 Agent 深度协作打造的统一本地工作�
 
 ## 🎬 30 秒产品发布演示视频
 
-<video controls width="100%" poster="https://huangruiteng.github.io/loopx/docs/assets/personal-workspace/guide_manager_overview.png" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.12);">
-  <source src="https://huangruiteng.github.io/loopx/docs/assets/personal-workspace/loopx-dashboard-launch.mp4" type="video/mp4">
-  您的浏览器暂不支持直接播放视频，可下载 <a href="https://huangruiteng.github.io/loopx/docs/assets/personal-workspace/loopx-dashboard-launch.mp4">MP4 视频文件</a> 进行查看。
+<video controls width="100%" poster="https://loopx-project.github.io/loopx/docs/assets/personal-workspace/guide_manager_overview.png" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.12);">
+  <source src="https://loopx-project.github.io/loopx/docs/assets/personal-workspace/loopx-dashboard-launch.mp4" type="video/mp4">
+  您的浏览器暂不支持直接播放视频，可下载 <a href="https://loopx-project.github.io/loopx/docs/assets/personal-workspace/loopx-dashboard-launch.mp4">MP4 视频文件</a> 进行查看。
 </video>
 
 > 💡 **视频高光**：终端一键启动 ➔ 管家 4 泳道任务流 ➔ 快捷指令浮动托盘 ➔ 4 列看板与智能「转为 Task」清洗 ➔ 飞书话题直连 ➔ Brutal 野兽派主题切换。
@@ -108,12 +108,15 @@ CLI 提供同一套可预览、可验证的生命周期操作：
 loopx goal-lifecycle --goal-id <goal-id> --operation stop
 
 # 确认执行，再读取 quota 验证自动推进已暂停
-loopx goal-lifecycle --goal-id <goal-id> --operation stop --execute
+loopx goal-lifecycle --goal-id <goal-id> --operation stop --actor-kind owner --execute
 loopx quota status --goal-id <goal-id>
 
 # 恢复；不会绕过其他运行门禁
-loopx goal-lifecycle --goal-id <goal-id> --operation resume --execute
+loopx goal-lifecycle --goal-id <goal-id> --operation resume --actor-kind owner --execute
 ```
+
+`--execute` 必须显式声明 `--actor-kind owner` 或 `controller`；不带 actor 的
+预览仍保持只读。写入的 activation receipt 会保留该 actor kind。
 
 执行时，LoopX 会写入权威 source registry、同步全局 registry，并验证两端 readback；任一端未验证成功时不会宣称操作完成。
 
@@ -150,6 +153,81 @@ loopx goal-lifecycle --goal-id <goal-id> --operation resume --execute
 
 ---
 
+### 4.2 Goal 概览与交付依据 / Goal overview
+
+Goal 顶部直接提供 **概览、任务、对话、成果**，分别用于判断进展、推进工作、
+与 Agent 沟通和查看产出。选择一个 Goal 后仍默认进入四列任务看板；
+看板与列表保持原有任务范围。切换页面后，任务筛选、已加载历史和各页滚动位置保留。
+右上角设置直接打开既有能力配置；返回后保留工作区。切换 Goal 或数据源则重新建立页面上下文。
+
+点击一次 **概览**，即可查看当前进展、需要处理的决定、执行记录和用量。
+决定与执行记录直接打开原有详情；「查看任务」「查看成果」前往对应页面。
+低频仓库、连接和运行信息保留在「Goal 信息」中，不再充当查看进展的必经路径。
+
+**交付与依据：**概览直接展示当前交付链、责任、关联关系和验收观察，
+不需要额外打开复盘弹窗。可按标题、负责人或引用搜索，选择节点沿关系追溯，
+并打开当前工作区中的任务、决定或执行记录。桌面支持关系图，手机默认列表。
+
+**范围与刷新：**交付链覆盖当前选中工作及有限前序，不是完整 Goal 依赖图。
+缺失前序、来源裁剪与未展开决定可展开查看；任务完成或缺口列表为空都不代表通过验收。
+仅进入概览或点击「刷新快照」时读取交付链；离开概览取消未完成请求，
+不增加普通状态读取的图计算。状态变化后旧快照的来源跳转和导出暂停，刷新后继续。
+读取失败保留其他概览内容并显示重试提示，不将失败视为工作已完成。
+
+**导出：**「导出交付快照」下载包含读取时间、完整当前链、关系、证据引用和验收观察的
+Markdown。搜索筛选不会裁剪导出；不包含原始日志、文件正文或对话正文。
+成果与报告继续由成果页统一展示，不在概览建立第二份成果清单。
+
+**显式验收合同：**若本地所有者已为使用 canonical authority 的 Goal 启用合同，
+交付链下方可展开「Goal 验收合同」，查看条件、任务关联与独立的产物检查结果。
+「任务关联已确认」不等于「产物检查通过」，后者也不自动批准或完成 Goal。
+缺失、停用保持原界面；旧检查显示其原版本，刷新失败不会作为最新结果导出。
+配置入口是本地所有者 CLI：先 `loopx goal-acceptance inspect --goal-id example-goal`，
+再按[配置与回滚指南（v0）](../reference/goal-acceptance-observations.md#owner-authorized-contract-v0)
+使用 `configure --document --expected-provider-revision`、`verify` 或 `disable`；
+变更与执行检查需要 `--execute`。不新增网页配置入口，不自动提升 provider。
+
+**边界：**原有交付链观察无需模型调用或新配置。远端只读来源可查看同步的概览和验收观察，
+不回退查询本机同名 Goal 的交付链。所有阅读、筛选与导出均不改变任务、租约、预算或
+审批；来源操作仍使用既有预览和权限检查。本次没有状态迁移，回滚沿用原安装流程。
+
+English: Use the direct **Overview / Tasks / Chat / Files** navigation. Goal
+selection still opens Tasks. Switching views or returning from settings retains
+task filters, loaded history and scroll; a different Goal or source starts a new
+view session. Settings opens the existing capability editor directly.
+
+Overview brings progress, pending decisions, execution and usage into one page.
+Its delivery section reads the bounded current chain and acceptance observations
+on entry or explicit refresh, with search, map/list layouts, source navigation
+and Markdown export. Leaving Overview aborts pending reads. Export retains the
+entire validated delivery snapshot regardless of filtering, excluding raw logs
+and conversation/file bodies. Outputs remain in Files. Missing observations
+never certify acceptance. Remote sources show their synchronized observations
+without querying the local delivery API. The baseline delivery-chain read
+requires no model call or configuration and adds no write authority or migration.
+
+When a local owner explicitly enables an acceptance contract on an already
+canonical Goal, expand **Goal acceptance contract** below the delivery chain.
+It separates confirmed task associations from artifact checks and shows both
+the current contract basis and recorded verification basis. Neither approves
+or completes the Goal. Missing or disabled contracts preserve the baseline view.
+Start with `loopx goal-acceptance inspect --goal-id example-goal`; the
+[owner guide (v0)](../reference/goal-acceptance-observations.md#owner-authorized-contract-v0)
+covers exact configure, verify and disable commands. Authoring stays in the
+explicit local-owner CLI; it does not automatically promote a provider or add a
+web configuration surface. Refresh the snapshot after a CLI operation.
+
+CLI readback uses the same existing owners:
+
+```bash
+loopx --format json status --goal-id example-goal --include-task-graph
+loopx --format json review-packet --goal-id example-goal
+```
+
+The local Chat HTTP read is `GET /api/chat/delivery-review?goal_id=example-goal`.
+Lark continues using its existing Goal Channel projection; this slice adds no
+Lark card or notification and does not qualify cross-channel presentation parity.
+
 ## 💬 5. 悬浮会话托盘（ManagerConversationTray）
 
 无论你在浏览总览还是在处理看板，只要点击带有 **`立即发送`** 标识的快捷指令，页面右下角都会弹出抽屉式的轻量对话托盘：
@@ -163,7 +241,7 @@ loopx goal-lifecycle --goal-id <goal-id> --operation resume --execute
 
 ## 🔍 6. Goal 诊断与 Lark / 飞书话题连接抽屉
 
-点击页面右上角的 **`[Goal 详情]`** 按钮，可从右侧滑出元数据诊断抽屉：
+进入 **概览**，点击 **Goal 信息**，可从右侧滑出元数据诊断抽屉：
 
 ![Goal 诊断与 Lark 连接状态抽屉](../assets/personal-workspace/guide_goal_context_drawer.png)
 
@@ -194,7 +272,7 @@ loopx dashboard --enable-goal-subagent-configuration
 
 然后要为一个 Goal 开启运行时能力：
 
-1. 进入该 Goal，点击 **`Goal 详情`**；
+1. 进入该 Goal 的 **概览**，点击 **Goal 信息**；
 2. 在「自适应子代理执行」中选择最多子代理数。任务领域限制是可选项：全部不选表示
    不按领域过滤；需要进一步收窄时，再从当前 Goal 开放 advancement Todo 已声明的
    `task_domain` 中多选。每个选项会显示当前匹配的开放 Todo 数量。控制台优先读取

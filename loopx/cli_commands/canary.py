@@ -40,8 +40,8 @@ from ..canary.smoke_health import (
 from ..control_plane.testing.release_commit_qualification import (
     render_exact_release_commit_qualification_markdown,
 )
+from ..history import load_registry
 from ..paths import resolve_runtime_root
-from ..registry import read_json
 from .canary_release_qualification import (
     build_canary_release_qualification_payload,
     register_canary_release_qualification_command,
@@ -73,7 +73,7 @@ def _run_git_name_only(repo_root: Path, args: list[str]) -> dict[str, object]:
     completed = subprocess.run(
         command,
         check=False,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -95,7 +95,7 @@ def _resolve_git_repo_root(candidate: Path) -> Path:
     completed = subprocess.run(
         ["git", "-C", str(candidate), "rev-parse", "--show-toplevel"],
         check=False,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -678,7 +678,7 @@ def handle_canary_command(
         if goal_id:
             if registry_path is None:
                 raise ValueError("--goal-id receipt verification requires a registry path")
-            registry = read_json(registry_path)
+            registry = load_registry(registry_path)
             runtime_root = resolve_runtime_root(
                 registry,
                 runtime_root_arg,

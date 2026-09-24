@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loopx"
-version = "1.0.3"
+version = "1.1.0"
 description = "A lightweight Loop Engineering control plane for long-running agent goals."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,15 +14,15 @@ authors = [{ name = "LoopX contributors" }]
 dependencies = []
 
 [project.urls]
-Homepage = "https://huangruiteng.github.io/loopx/"
-Documentation = "https://huangruiteng.github.io/loopx/docs/"
-Repository = "https://github.com/huangruiteng/loopx"
-Issues = "https://github.com/huangruiteng/loopx/issues"
-Changelog = "https://github.com/huangruiteng/loopx/releases"
+Homepage = "https://loopx-project.github.io/loopx/"
+Documentation = "https://loopx-project.github.io/loopx/docs/"
+Repository = "https://github.com/loopx-project/loopx"
+Issues = "https://github.com/loopx-project/loopx/issues"
+Changelog = "https://github.com/loopx-project/loopx/releases"
 
 [project.optional-dependencies]
 deepseek-harness = [
-  "deepseek-harness-sdk==0.1.2a3",
+  "deepseek-harness-sdk==0.1.5rc1",
 ]
 test = [
   "jsonschema>=4.23,<5",
@@ -48,9 +48,12 @@ loopx-openviking-semantic-preference = "loopx.extensions.openviking_semantic_pre
 include = ["loopx*"]
 
 [tool.setuptools.package-data]
-"loopx" = ["web/chat/*.html", "web/chat/assets/*", "web/chat/manifest.webmanifest", "web/chat/pwa/*"]
-"loopx.control_plane" = ["*.json", "*.ts"]
+"loopx" = ["web/chat/*.html", "web/chat/*.json", "web/chat/assets/*", "web/chat/manifest.webmanifest", "web/chat/pwa/*"]
+"loopx.control_plane" = ["*.json", "*.ts", "presentation/*.ts"]
+"loopx.semantics" = ["*.json"]
 "loopx.control_plane.agents" = ["*.ts"]
+"loopx.control_plane.capabilities" = ["*.ts"]
+"loopx.control_plane.collaboration" = ["*.ts"]
 "loopx.control_plane.coordination" = ["*.ts", "*.json"]
 "loopx.control_plane.goals" = ["*.ts"]
 "loopx.control_plane.quota" = ["*.ts"]
@@ -126,7 +129,8 @@ include = ["loopx*"]
 
 [tool.pytest.ini_options]
 markers = ["stage2c_e2e: real process Stage 2C correctness and recovery acceptance"]
-norecursedirs = ["deprecate"]
+# Optional provider tests run explicitly in ark-turn.yml with their own SDK.
+norecursedirs = ["deprecate", "packages/loopx-ark-turn"]
 
 [tool.coverage.run]
 source = ["loopx"]
@@ -137,6 +141,7 @@ python_version = "3.11"
 strict = true
 files = [
   "loopx/control_plane/__init__.py",
+  "loopx/control_plane/coordination/canonical_snapshot.py",
   "loopx/control_plane/coordination/executor.py",
   "loopx/control_plane/coordination/file_provider.py",
   "loopx/control_plane/coordination/head.py",

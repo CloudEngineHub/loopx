@@ -12,6 +12,12 @@ second control plane. LoopX remains authoritative for goal state, todos,
 claims, gates, quota, scheduler hints, and compact evidence. The host owns
 model execution, tools, and an opaque resumable session handle.
 
+The `turn run-once` dry-run response also carries a compact planned `route`:
+`kind`, `selected_todo_id` and `would_invoke_host`. This additive field lets delegation
+preflight distinguish a successful preview from task admission while using the
+same executor/model arguments as execution. It grants no host invocation and
+changes no executing-Turn receipt; the four effect flags remain false.
+
 The protocol is host-neutral. A Codex CLI adapter is the first target, but the
 driver lifecycle must not depend on Codex-specific session files, transcript
 formats, or benchmark task schemas.
@@ -96,6 +102,100 @@ Prefer the built-in `loopx turn run-once --host dsh` surface so structured SDK
 terminal failures reach the Turn Journal. The module/subprocess invocation with
 `--host generic-cli` remains the compatibility and rollback path.
 See [DeepSeek Harness connector](../../integrations/deepseek-harness-connector.md).
+
+### Host Selection
+
+The Turn host is **selected, never inferred from an incidental environment**. An
+explicit `--host` or `LOOPX_TURN_HOST` always wins; only when the operator
+configured neither is the shipped default resolved from the operator's own
+credential facts:
+
+- operator credential configured: the default host is the managed `dsh`
+  executor, which that credential authenticates;
+- no operator credential configured: the default host is the individual
+  `codex-cli` executor, because a managed host nothing can authenticate would
+  otherwise refuse to run at all.
+
+| surface | value |
+| --- | --- |
+| shipped default host, credential configured | `dsh` (managed executor) |
+| shipped default host, no credential | `codex-cli` (individual executor) |
+| explicit default selector | `LOOPX_TURN_HOST` |
+| per-command override | `--host codex-cli\|claude-code\|dsh\|generic-cli` (plan), `codex-cli\|dsh\|generic-cli` (run-once) |
+| authenticating credential | `DEEPSEEK_API_KEY`, optional endpoint `DEEPSEEK_BASE_URL` |
+
+Selecting the host is not the same as choosing *what runs on it*. The managed
+host resolves one **managed execution profile** — provider, model, and reasoning
+effort — with explicit precedence: an explicit argument (for example
+`--dsh-model`, `--dsh-reasoning-effort`) wins, then the operator's environment,
+then the product default.
+
+| execution profile field | product default | operator override | legacy lower-precedence override |
+| --- | --- | --- | --- |
+| provider | `deepseek-official` | `LOOPX_TURN_PROVIDER` | `DSH_PROVIDER` |
+| model | `deepseek-v4-flash` | `LOOPX_TURN_MODEL` | `DSH_MODEL` |
+| reasoning effort | `high` | `LOOPX_TURN_REASONING_EFFORT` | — |
+
+The managed `managed_executor` readback reports the resolved profile as one line,
+`<model>@<reasoning_effort>` (the shipped shape is `deepseek-v4-flash@high`).
+The provider is prepended as `<provider>/…` only when the resolved provider is
+not the shipped one, because dropping it for a deviating provider would make the
+line claim a profile the Turn would not use. Whichever values the line names are
+the values that run, so an owner-set model appears as itself rather than as the
+shipped default. The line stays one line because every plan and execution payload
+carries it and the agent-facing output budget is a contract; the field-by-field
+form, with each value's source and the variable that set it, belongs to the
+configuration readbacks a person reads.
+
+An explicit argument the adapter cannot honour fails closed as
+`invalid_reasoning_effort` rather than being silently coerced, and the refused
+effort is named in the same line. Credentials authenticate the selected profile;
+discovering `DEEPSEEK_API_KEY` never changes provider, model, or effort on its
+own.
+
+This is a default behavior change for the affected lanes. Both `plan` and
+`run-once` previously defaulted to `dsh` regardless of the credential, so a lane
+without one failed closed on `operator_credential_unconfigured`; the default is
+now credential-resolved and a lane without a credential keeps running on the
+individual CLI host. `--host dsh` remains the explicit managed path and still
+fails closed with the same typed reason when nothing can authenticate it,
+`--host generic-cli` remains the compatibility path, and a machine that wants
+one fixed host should set `LOOPX_TURN_HOST` once instead of relying on the
+ambient environment.
+
+`plan` and `run-once` payloads carry the executor readback `managed_executor`
+(`managed_executor_binding_v0`): the executor and its kind (`managed`,
+`individual`, `generic`), the credential env var *name* (never its value), the
+endpoint env var name, whether the executor is operator-credential-bound, and
+whether it can launch here. When it cannot, `available` is `false`,
+`unavailable_reason` names the missing fact:
+
+| `unavailable_reason` | meaning | remediation |
+| --- | --- | --- |
+| `dsh_runtime_unavailable` | the DeepSeek Harness runtime is not importable and no explicit runner hook was supplied | install the released runtime, pass its runner hook, or select `--host codex-cli` |
+| `operator_credential_unconfigured` | the managed host is selected but no operator credential or runner hook would authenticate it | set `DEEPSEEK_API_KEY`, or select `--host codex-cli` explicitly; the shipped default already resolves to `codex-cli` until a credential exists |
+| `invalid_reasoning_effort` | the resolved execution profile names a reasoning effort the host adapter does not support | pass a supported `--dsh-reasoning-effort`, or clear the overriding environment variable |
+
+The same readback also carries `unavailable_remediation`, which names those
+exits as typed codes so a caller does not have to parse the reason string:
+
+| `unavailable_remediation` | exit it names |
+| --- | --- |
+| `configure_operator_credential` | set the credential env var this readback reports as `credential_env` |
+| `configure_dsh_runtime` | install the released runtime, or pass its runner hook |
+| `correct_execution_profile` | pass a supported `--dsh-reasoning-effort`, or clear the overriding environment variable |
+| `select_individual_host` | select the individual host instead of the managed one |
+
+The list is empty for every launchable or non-managed executor, and naming an
+exit selects nothing: acting on it is still an explicit credential, profile, or
+`--host` change. The refusal `run-once --execute` returns on that verdict
+repeats the exits as `remediation` and adds the concrete `remediation_host` and
+`remediation_env_vars`.
+
+`run-once --execute` fails closed on that verdict: status `unavailable`, no host
+invocation, no Journal write, and no quota slot spend. An explicitly selected
+individual host (`--host codex-cli`, `--host claude-code`) is billed to that
+individual CLI login and makes no launchability claim (`available: null`).
 
 ### Five Questions For Any Agent CLI
 
@@ -235,6 +335,33 @@ One driver tick has exactly these ordered phases:
 
 The driver may stop after any phase. A stop must return a typed result and must
 not silently continue with a different execution mode.
+
+### One Executor Per Turn Lane
+
+A **Turn lane** is one agent working one goal. Phase 5 launches exactly one
+executing Turn per lane: while an executing Turn holds the lane, a second
+executing Turn for the same goal and agent stops before the journal, the host,
+and quota, and returns the typed refusal instead:
+
+```json
+{
+  "status": "unavailable",
+  "reason": "turn_lane_in_flight",
+  "remediation": ["wait_for_in_flight_turn"],
+  "in_flight": {"agent_id": "...", "operation": "loopx_turn_lane", "pid": 1234, "acquired_at": "..."}
+}
+```
+
+`in_flight` names the holder so the operator can see what to wait for; the
+runtime path, the lock id, and the lock policy stay out of it. The fence is a
+kernel lock held by the executing process, so a crashed or killed Turn releases
+the lane instead of leaving a stale claim that no later Turn can enter, and a
+settled Turn releases it for the next Turn, including an idempotent replay.
+
+Only an executing Turn takes the fence. A non-executing decision — a preview, or
+a route that stops before the host — invokes no host and spends nothing, so it
+always answers. Lanes stay independent: one agent on two goals, or two agents on
+one goal, do not contend.
 
 ### Read-Only Journal Inspection
 

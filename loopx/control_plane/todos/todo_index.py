@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from ...rollout_event_log import load_rollout_events, rollout_event_log_path
 from .contract import normalize_todo_id, normalize_todo_status, todo_done_for_status
@@ -15,6 +15,15 @@ MAX_TODO_INDEX_ITEMS = 240
 MAX_TODO_INDEX_ROLLOUT_EVENTS_PER_GOAL = 500
 
 CompactText = Callable[..., Any]
+
+
+class EventsForGoal(Protocol):
+    def __call__(
+        self,
+        goal_id: str,
+        *,
+        limit: int,
+    ) -> Sequence[Mapping[str, Any]]: ...
 
 
 def compact_agent_lane_todo_index_for_status_display(
@@ -72,7 +81,7 @@ def _indexed_status_todo(
     return item
 
 
-def _rollout_event_todo_status(event: dict[str, Any]) -> str:
+def _rollout_event_todo_status(event: Mapping[str, Any]) -> str:
     status = normalize_todo_status(event.get("status"))
     if status:
         return status
@@ -85,7 +94,7 @@ def _rollout_event_todo_status(event: dict[str, Any]) -> str:
 
 
 def _indexed_rollout_todo_event(
-    event: dict[str, Any],
+    event: Mapping[str, Any],
     *,
     public_safe_compact_text: CompactText,
 ) -> dict[str, Any] | None:
@@ -137,6 +146,7 @@ def build_todo_index(
     public_safe_compact_text: CompactText,
     limit: int = MAX_TODO_INDEX_ITEMS,
     max_rollout_events_per_goal: int = MAX_TODO_INDEX_ROLLOUT_EVENTS_PER_GOAL,
+    events_for_goal: EventsForGoal | None = None,
 ) -> dict[str, Any]:
     indexed: dict[tuple[str, str], dict[str, Any]] = {}
     current_count = 0
@@ -172,12 +182,19 @@ def build_todo_index(
         if isinstance(goal, dict) and str(goal.get("id") or "")
     ]
     for goal_id in sorted(set(goal_ids)):
-        events = load_rollout_events(
-            rollout_event_log_path(runtime_root, goal_id),
-            limit=max_rollout_events_per_goal,
+        events = (
+            events_for_goal(
+                goal_id,
+                limit=max_rollout_events_per_goal,
+            )
+            if events_for_goal is not None
+            else load_rollout_events(
+                rollout_event_log_path(runtime_root, goal_id),
+                limit=max_rollout_events_per_goal,
+            )
         )
         for event in events:
-            if not isinstance(event, dict) or not str(event.get("event_kind") or "").startswith("todo_"):
+            if not isinstance(event, Mapping) or not str(event.get("event_kind") or "").startswith("todo_"):
                 continue
             rollout_event_count += 1
             event_item = _indexed_rollout_todo_event(

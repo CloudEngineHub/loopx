@@ -129,6 +129,26 @@ an outer caller still owns repeated execution. A completed-Todo threshold, a
 per-Turn path declaration, and a same-Todo continuation budget are different
 controls.
 
+### Receipt-backed settlement progress
+
+Turn-scoped `refresh-state` and `quota spend-slot` expose
+`settlement_progress` from the TypeScript receipt readback. The states are
+`identity_required`, `writeback_required`, `writeback_receipt_required`,
+`spend_required`, `spend_receipt_required`, and `settled`. A durable run without
+its matching receipt is incomplete. `settled` certifies this writeback/spend
+chain; Todo completion and Goal acceptance retain their separate checks.
+
+After verified writeback, `settlement_owed.command` carries the original Goal,
+Agent, Todo or replan obligation, Turn, registry/runtime route and spend source.
+Execute it unchanged. In `spend_receipt_required`, the same idempotent spend
+writer restores the receipt without another debit. Refresh and recovery never
+spend automatically. JSON and normal/recovery Markdown expose the same step.
+Rejected recovery reports observed progress without offering a spend command.
+The raw Python refresh API returns `writeback_receipt_required` until its CLI
+caller appends the refresh receipt and rereads the chain; it must not offer a
+spend command before that point. Older guards without a persisted spend source
+retain the existing heartbeat default.
+
 ## Minimal Contract
 
 The compact status shape can start with a small object:
@@ -486,7 +506,23 @@ bounded suggestions. That request is only a pending selection: the second guard
 re-runs current lane arbitration and eligibility checks before upgrading the
 receipt. A newly due hard-priority monitor, blocking user gate, or other current
 preemption defers the request and leaves the receipt identity-less. Delivery and
-quota spend remain disabled until binding succeeds. A single-candidate response
+quota spend remain disabled until binding succeeds. Deferred/rejected selections
+return the TS-owned `recovery_action=reenter_guard_without_selection`: execute
+the single command in `interaction_contract.cli_channel.next_cli_actions`, with
+the same turn id and no Todo/replan argument. That guard either binds the current
+hard lane or returns a refreshed portfolio. No settlement plan is exposed before
+reentry, and a previously bound receipt cannot be retargeted. `recommended_action`
+retains the human-readable rejection or deferral guidance; the executable recovery
+command lives in `next_cli_actions` and `agent_channel.primary_action`.
+Fresh explicit selection reads the complete Todo source through the same reader
+as `todo list`, before display or Agent-lane compaction. Before shared-authority
+promotion, that reader retains Markdown plus the existing event overlay. After
+promotion, it reads the selected canonical provider, including authoritative
+empty results; missing/stale display and provider failure never authorize a
+Markdown fallback. The guard does not append a second Markdown candidate list.
+Historical receipt-bound recovery remains separate from new work admission.
+
+A single-candidate response
 keeps the direct execution path and does not add an extra selection round trip.
 
 When the selected Todo has meaningful strategic context, the same default
@@ -717,6 +753,14 @@ gap, autonomy blocker, or replan obligation fail closed. This keeps recurring
 controllers alive during ordinary waits while honoring an explicit completed
 goal shutdown without another quota-spending turn.
 
+An explicit `peer_coordination_blocked` decision is a recoverable typed wait,
+not a terminal host stop. It keeps the recurring heartbeat alive without
+spending quota and uses the existing TypeScript-owned stateful backoff
+transition with a 10/20/30/60 minute progression. Peer activation capability,
+peer runtime readiness, coordinator configuration, or newly projected local
+work changes the reset identity and restores the initial cadence. Goal stopped,
+quota paused, and validated terminal no-follow-up remain the stop cases.
+
 An individual registered peer can instead be put in `monitor_only` work mode:
 
 ```bash
@@ -726,10 +770,15 @@ loopx configure-goal --goal-id <goal-id> \
 
 This suppresses that peer's advancement, autonomous replan, repair, fallback,
 and new-topic lanes while preserving due `continuous_monitor` todos and verified
-direct operator replies. A future or unchanged monitor stays quiet and no-spend;
-a due monitor may spend only after a validated material transition. Other peers
-remain active. Use `--clear-agent-work-mode <agent-id>` (or set `=active`) to
-resume ordinary advancement.
+direct operator replies. A future monitor stays quiet; a committed monitor poll
+is the Turn's no-spend closeout whether unchanged or material. A material poll
+may atomically release an independent advancement successor, whose later
+delivery has its own quota identity. Same-Turn readback and prior-Turn recovery
+accept the same exact committed effect, including the shipped turn-only receipt;
+a preview or a row with missing or mismatched commit metadata cannot close the
+Turn. Other peers remain active. Use
+`--clear-agent-work-mode <agent-id>` (or set `=active`) to resume ordinary
+advancement.
 
 The read model exposes that derivation as
 `goal_frontier_projection.terminal_state={kind:no_followup, derived:true,
@@ -883,7 +932,7 @@ of an error string.
       "execution_required": false,
       "request": "loopx quota should-run --include-detail scheduler",
       "hot_path_runtime_fields": [
-        "codex_app",
+        "app_automation",
         "unchanged_poll",
         "reset_policy"
       ],
@@ -900,8 +949,8 @@ of an error string.
     "reset_policy": {
       "reset_token": "0123456789abcdef",
       "host_state_key": "scheduler_hint.reset_policy.reset_token",
-      "codex_app_initial_interval_minutes": 30,
-      "codex_app_initial_rrule": "FREQ=MINUTELY;INTERVAL=30",
+      "app_automation_initial_interval_minutes": 30,
+      "app_automation_initial_rrule": "FREQ=MINUTELY;INTERVAL=30",
       "identity_signature": "123456789abc"
     }
   },
@@ -1088,19 +1137,19 @@ agent-to-agent handoff cadence too quickly;
 `backoff_until_fresh_evidence` handles mapped or post-handoff no-op waits.
 For Codex App and local schedulers, `recommended_interval_minutes` is the next
 target interval. For Codex App heartbeats, `recommended_rrule` is emitted only
-when `codex_app.stateful_backoff.apply_needed=true`; if the desired RRULE is
+when `app_automation.stateful_backoff.apply_needed=true`; if the desired RRULE is
 already applied, it is omitted so the agent does not call a host tool again.
 If that match still needs a reset-token/identity binding,
 `stateful_backoff.ack_needed=true` and the bound ack runs without a host update.
 When an apply is required but `automation_update` is unavailable in the
-session, `codex_app.fallback_hint` carries the bounded `loopx-apply-rrule`
+session, `app_automation.fallback_hint` carries the bounded `loopx-apply-rrule`
 command for the resolved automation (backup `codex-dev.db`, sync TOML+SQLite,
 run the bound ACK). Direct SQLite edits bypass the app API, so the fallback is
 projected only for this gap and never as the routine path; an unresolved
 automation id projects `available=false` and requires the pasteable heartbeat
 gate instead of guessing.
 After a successful host RRULE update, the agent records that fact with
-`loopx` plus `codex_app.ack_hint.cli_args`; current payloads use
+`loopx` plus `app_automation.ack_hint.cli_args`; current payloads use
 `quota scheduler-ack-current` to re-read the latest scheduler hint before LoopX
 advances the per goal/agent scheduler state without spending quota. Human gates
 can move Codex App heartbeats through `[30, 60]` after the concrete user todo
@@ -1131,7 +1180,7 @@ Agent-scope waits use a more conservative adjustment curve such as
 agent-to-agent interaction cadence before cooling further.
 The compact hot path carries only the reset fields hosts need to act:
 `reset_policy.reset_token`, `host_state_key`,
-`codex_app_initial_interval_minutes`, `codex_app_initial_rrule`, and the short
+`app_automation_initial_interval_minutes`, `app_automation_initial_rrule`, and the short
 `identity_signature`. Hosts should cache and compare `reset_token` across
 unchanged polls and reset the unchanged streak whenever the token changes. The
 token is derived from scheduler action plus the current identity/profile inputs;
@@ -1140,13 +1189,13 @@ stateful-backoff policy live in `scheduler_hint.cold_path_detail` when callers
 request `loopx quota should-run --include-detail scheduler`. Hosts should also
 reset when an external event makes the goal actionable again, such as user
 feedback in the thread, a new or reassigned todo, a resolved gate, or material
-evidence transition. A reset applies `codex_app_initial_interval_minutes` (and
+evidence transition. A reset applies `app_automation_initial_interval_minutes` (and
 the matching local scheduler initial interval) before starting unchanged
 backoff again; it never spends quota.
 For Codex App heartbeats, hosts and agents should use `automation_update` only
-when `codex_app.stateful_backoff.apply_needed=true` and
-`codex_app.recommended_rrule` is present. After `automation_update` succeeds,
-the agent must run `codex_app.ack_hint.cli_args`. Current payloads use
+when `app_automation.stateful_backoff.apply_needed=true` and
+`app_automation.recommended_rrule` is present. After `automation_update` succeeds,
+the agent must run `app_automation.ack_hint.cli_args`. Current payloads use
 `quota scheduler-ack-current`, so LoopX then persists `reset_token`,
 `identity_signature`, `progression_index`, and
 `last_applied_rrule` under the runtime root. Repeated unchanged identity
@@ -1160,7 +1209,7 @@ quota state. If `apply_needed=false` and `ack_needed=true`, the same command
 records an exact matching host readback without calling `automation_update`.
 If `automation_update` fails or times out, the agent must not ACK. LoopX keeps
 the observed host RRULE authoritative. The agent runs
-`codex_app.failure_hint.cli_args` once to persist the failed target/observed-host
+`app_automation.failure_hint.cli_args` once to persist the failed target/observed-host
 pair without quota spend. LoopX retains up to four distinct pairs for 24 hours,
 so active-work and monitor-wait targets cannot overwrite one another while the
 host RRULE remains unchanged. Later heartbeats expose `apply_needed=false` and

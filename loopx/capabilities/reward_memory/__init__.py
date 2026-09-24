@@ -6,6 +6,7 @@ from .architecture import (
     pr_3237_regression_observation,
 )
 from .application import (
+    RewardMemoryFilteredRecallItem,
     RewardMemoryRecallItem,
     RewardMemoryRecallSession,
     apply_reward_memory_recall,
@@ -64,6 +65,7 @@ from .outcome_lifecycle import (
 
 __all__ = [
     "build_reward_memory_architecture_packet",
+    "RewardMemoryFilteredRecallItem",
     "RewardMemoryRecallItem",
     "RewardMemoryRecallSession",
     "apply_reward_memory_recall",

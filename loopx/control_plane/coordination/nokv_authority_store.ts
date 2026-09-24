@@ -54,6 +54,12 @@ export interface NoKVBlobCasRequest {
   bytes: Uint8Array;
   operation_id: string;
   artifact_revision_id: string;
+  /**
+   * The workbench incarnation this publication is bound to. NoKV evaluates it
+   * atomically with `expected_generation` before any durable row or object
+   * exists; a stale value is refused as `failed/store_identity_mismatch`.
+   */
+  expected_workspace_incarnation_id: string;
 }
 
 export type NoKVBlobCasResult =
@@ -186,6 +192,11 @@ function readFailure(error: unknown): AuthorityStoreReadFailure {
   };
 }
 
+/** The incarnation half of a validated `nokv:{workbench}:{incarnation}` identity. */
+function boundIncarnation(storeIdentity: string, workbench: string): string {
+  return storeIdentity.slice(`nokv:${workbench}:`.length);
+}
+
 function validStoreIdentity(value: string, workbench: string): boolean {
   const prefix = `nokv:${workbench}:`;
   return value.startsWith(prefix) && HEX_128_PATTERN.test(value.slice(prefix.length));
@@ -193,6 +204,7 @@ function validStoreIdentity(value: string, workbench: string): boolean {
 
 /** Stage 2A candidate. No runtime constructs this provider by default. */
 export class NoKVAuthorityStore implements AuthorityStore {
+  readonly providerKind = "nokv" as const;
   readonly transport: NoKVBlobTransport;
   readonly tenantId: string;
   readonly goalId: string;
@@ -401,6 +413,10 @@ export class NoKVAuthorityStore implements AuthorityStore {
     // attempt. Keep the LoopX operation id stable in the authority envelope,
     // while giving each physical retry a fresh pair of lower-layer ids. A
     // response-lost success is still settled only by reading that envelope.
+    // The request also names the incarnation the envelope was read from, so a
+    // workbench restored to a new incarnation between this read and the
+    // publish refuses the write instead of accepting it at a restarted
+    // generation.
     const attemptNonce = randomUUID();
     let result: NoKVBlobCasResult;
     try {
@@ -408,6 +424,7 @@ export class NoKVAuthorityStore implements AuthorityStore {
         workbench: this.workbench,
         path: this.path,
         expected_generation: expectedGeneration,
+        expected_workspace_incarnation_id: boundIncarnation(current.identity, this.workbench),
         bytes: payload,
         operation_id: physicalAttemptIdentity(
           "operation",
@@ -432,11 +449,11 @@ export class NoKVAuthorityStore implements AuthorityStore {
       };
     }
     if (result.status === "applied" && result.generation === generation) {
-      // Generation is not a workbench-incarnation fence: NoKV may restart it
-      // after remove/recreate. Never expose success until a fresh read proves
-      // this exact transaction in the current incarnation. Preventing the
-      // stale-incarnation write itself still requires an atomic provider
-      // primitive that accepts the expected incarnation.
+      // The incarnation fence removes the stale write, not the readback
+      // obligation: success is exposed only after a fresh read proves this
+      // exact transaction in the current incarnation (RFC §6.2), so an owner
+      // that ignored the fence still cannot make a restarted generation look
+      // like a LoopX commit.
       return await this.settleCommitFromReadback(
         normalized.expected_provider_revision,
         transaction,

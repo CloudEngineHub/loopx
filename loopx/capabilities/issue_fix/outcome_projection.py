@@ -8,6 +8,7 @@ from typing import Any
 
 from ...control_plane.runtime.public_safety import public_safe_compact_text
 from .metadata_preview import normalise_github_issue_link_reference
+from .pr_lifecycle import BRANCH_REPLAN_MERGE_STATES
 from .repository_commit_evidence import (
     ISSUE_FIX_REPOSITORY_COMMIT_EVIDENCE_SCHEMA_VERSION,
 )
@@ -30,7 +31,6 @@ ISSUE_FIX_REPOSITORY_LEARNING_CARD_INPUT_SCHEMA_VERSION = (
 
 DELIVERY_VALIDATION_STATUSES = {"passed", "failed", "partial", "not_run"}
 DELIVERY_OUTCOME_STATUSES = {"in_progress", "completed", "blocked"}
-BRANCH_REPLAN_MERGE_STATES = {"BEHIND", "DIRTY"}
 _REPOSITORY_FINGERPRINT_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
 _COMMIT_OID_PATTERN = re.compile(r"[0-9a-fA-F]{40,64}")
 _RECOVERY_REF_PATTERN = re.compile(

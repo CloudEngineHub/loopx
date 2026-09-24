@@ -1,7 +1,7 @@
 # LoopX Public Website
 
 This directory owns the React/Vite, public-safe
-[LoopX homepage](https://huangruiteng.github.io/loopx/) published at the root
+[LoopX homepage](https://loopx-project.github.io/loopx/) published at the root
 of the GitHub Pages site. The frontstage exporter builds this application into
 the Pages root, publishes contributor tools at `/developers/projections/`, and
 redirects legacy `/frontstage/` links to the public case directory.
@@ -19,6 +19,26 @@ alternate-language metadata, and the complete article in HTML. Reading and
 navigation work without JavaScript. Vite copies these pages into both the local
 build and the existing Pages export; no separate hosting or content service is
 needed. Relative navigation supports both root and repository base paths.
+Both locale indexes list every article. The focused bilingual Blog smoke and
+the frontstage share-bundle smoke discover article directories rather than
+relying on a hand-maintained allowlist. They fail when a translation, index
+entry, language alternate, counterpart link, or paired article section is
+missing.
+
+The Chinese DeepSWE × Sol research brief is a static page at
+`public/benchmarks/deepswe-sol/`, linked from the homepage research collection.
+It uses the shared editorial tokens and ships through the same public-directory
+copy as the Blog. Its historical results and mechanism explanations cite the
+immutable v1 archive; editing the brief must not rewrite that archive or restore
+withdrawn scores. The article works without JavaScript and has stable section
+anchors for other articles to cite.
+
+The Chinese application-scenarios article at `public/blog/zh/application-scenarios/`
+links the three research briefs with comparable summaries. Its full text and
+initial PR-state example are static HTML; `presentation.js` progressively adds
+presentation typography, section navigation, and the synthetic state selector.
+These controls stay hidden when JavaScript is unavailable. No real repository
+state or write APIs are involved.
 
 Edit the paired HTML editions together, including their index summaries and
 metadata. Preserve matching section anchors and public source attribution.

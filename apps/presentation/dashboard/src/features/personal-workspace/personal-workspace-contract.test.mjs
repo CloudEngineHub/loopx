@@ -10,10 +10,12 @@ const page = source("./personal-workspace-page.tsx");
 const router = source("./personal-workspace-router.ts");
 const shell = source("./workspace-shell.tsx");
 const timeline = source("./channel-timeline.tsx");
+const returnDelivery = source("./return-delivery-status.tsx");
 const runRow = source("./cards/run-row.tsx");
 const larkSettings = source("./lark-settings-page.tsx");
 const machineSettings = source("./machine-configuration-settings.tsx");
 const goalCapabilitySettings = source("./goal-capability-settings.tsx");
+const notificationSettings = source("./notification-settings-panel.tsx");
 const capabilityFields = source("./capability-configuration-fields.tsx");
 const capabilityLocalization = source("./capability-localization.ts");
 const capabilityWorkbench = source("./capability-workbench.tsx");
@@ -26,7 +28,7 @@ const dashboard = source("../../views/dashboard-page.tsx");
 const tasks = source("./goal-tasks-view.tsx");
 const status = source("../../data/status.ts");
 const chatData = source("../../data/chat.ts");
-const actionReview = source("./action-review-plan.ts");
+const actionReview = source("../../../../../../loopx/control_plane/presentation/action_review_plan.ts");
 
 assert.match(model, /kind: "todo"/, "Todo has its own drawer selection");
 for (const field of ["dependencies", "nextTransition", "ownerLabel", "todoId", "taskClass"]) {
@@ -65,6 +67,9 @@ assert.doesNotMatch(drawer, /agentLabel\} · \{selection\.item\.status\}/, "Run 
 assert.match(page, /activeSessionRun/, "Opening a Session preserves the selected run in Goal state");
 assert.match(page, /personal-session-record/, "Goal chat visibly identifies the loaded Session record");
 assert.match(header, /personal-goal-tabs/, "Goal Chat, Tasks, and Files stay one click away in the header");
+assert.match(chatData, /output_token_budget:[\s\S]*scope: z\.literal\("per_model_request"\)/, "Manager binding keeps the typed per-request output budget");
+assert.match(header, /managerOutputTokenBudgetLabel/, "Manager header renders the shared output-budget projection");
+assert.equal((i18n.match(/"header\.managerOutputTokenBudget"/g) ?? []).length, 2, "Output budget has English and Simplified Chinese product copy");
 for (const view of ["Chat", "Tasks", "Files"]) {
   assert.match(header, new RegExp(`\"${view.toLowerCase()}\"|>${view}<`), `Goal header exposes ${view}`);
 }
@@ -97,7 +102,15 @@ assert.match(page, /function operationProposalFields/, "Operation details have a
 assert.doesNotMatch(page.match(/function operationProposalFields[\s\S]*?\n\}/)?.[0] ?? "", /authorized_principals|payload_digest|parameters\.payload/, "Operation details do not expose private authority or inline payloads");
 assert.match(page, /t\("proposal\.primary\.operationGroup"\)/, "Operation confirmation routes users to the bound group");
 assert.match(chatData, /result_delivery:/, "Dashboard retains operation result-delivery readback");
-assert.match(actionReview, /operation\.execute" \|\| proposal\.operation\?\.result_delivery != null/, "An operation is not complete in the Dashboard until result delivery is verified");
+assert.match(chatData, /return_delivery\??:/, "Chat messages retain manager return-delivery readback");
+assert.match(dashboard, /deliveryByMessage/, "Manager return polling refreshes delivery state after the message arrives");
+assert.match(timeline + page, /ReturnDeliveryStatus/, "Both manager conversation surfaces render return delivery state");
+for (const state of ["delivered", "verification_required", "explicit_unverified"]) {
+  assert.match(returnDelivery, new RegExp(state), `Return delivery renders ${state}`);
+}
+assert.doesNotMatch(returnDelivery, /message_ref|provider_receipt|intent_digest/, "Provider-private locator facts never enter the return status badge");
+assert.match(actionReview, /proposal\.action_kind !== "operation\.execute" \|\| objectValue\(objectValue\(proposal\.operation\)\?\.result_delivery\) !== null/, "An operation is not complete in the Dashboard until result delivery is verified");
+assert.match(page, /reviewPlan\.operationFrame/, "Dashboard operation details consume the shared TS review frame");
 assert.match(page, /operation\.execute" && proposal\.status === "applied"/, "Dashboard restores terminal operation receipts from the canonical action store");
 assert.match(page, /proposal\.action_kind !== "operation\.execute"[\s\S]*reviewPlan\.interaction !== "completed"/, "Pending operation result-card readback remains visible instead of becoming a generic apply error");
 assert.match(drawer, /selection\.item\.actionKind !== "operation\.execute"/, "Dashboard hides generic local controls for authenticated group operations");
@@ -115,10 +128,11 @@ assert.match(dashboard, /NEXT_ACTION[\s\S]*下一步：/, "Session next actions 
 assert.match(tasks, /t\("tasks\.viewResult"\)/, "Tasks expose a direct result entry when a Session has answered");
 assert.match(tasks, /t\("tasks\.pendingAndRunning"\)/, "Tasks do not imply that every uncompleted Todo already has an active Run");
 assert.match(tasks, /t\("tasks\.chatRecent"\)/, "Tasks surface the latest Goal conversation without forcing a tab switch");
-assert.match(tasks, /t\("tasks\.chatUnchangedDescription"\)/, "Tasks explain that ordinary Chat does not silently mutate Todo state");
+// The browser journey verifies that ordinary Chat is read-only and the
+// explicit draft action changes only the composer, before any confirmed apply.
 assert.doesNotMatch(tasks, /personal-task-capability-callout|tab: "capabilities"/, "Goal Tasks does not spend a full-width row on capability settings");
-assert.match(header, /personal-goal-tools-trigger/, "Goal details and capability settings share one compact header entry");
-assert.match(header, /onOpenGoalDetail[\s\S]*onOpenGoalCapabilities/, "The unified Goal entry preserves both existing details and capability settings");
+assert.match(header, /aria-label=\{t\("header\.goalSettings"\)\}/, "The Goal settings entry has an accessible label");
+assert.match(header, /onClick=\{onOpenGoalCapabilities\}/, "The Goal settings entry opens the existing capability owner directly");
 assert.match(page, /onOpenGoalCapabilities=.*tab: "capabilities"/, "The unified Goal entry opens the selected Goal capability settings directly");
 assert.match(goalCapabilitySettings, /fetchGoalConfiguration\(goalId\)/, "Goal capability settings inspect the selected Goal through the path-free API");
 assert.match(capabilityWorkbench, /personal-capability-editor-status/, "Shared capability details distinguish editable contracts from read-only capabilities");
@@ -142,8 +156,8 @@ assert.match(page, /t\("proposal\.primary\.goalCreate"\)/, "Goal creation names 
 assert.match(router, /const asksForMutation/, "Execution routing remains explicit inside the Router contract");
 assert.match(timeline, /t\("timeline\.waitingConfirmation"\)/, "Historical gated proposals are grouped into a compact summary");
 assert.match(timeline, /gatedItems\.length/, "The compact Gate summary exposes the pending count");
-assert.match(page, /Boolean\(item\.run\.sessionId\)/, "Running count requires a discovered execution Session");
-assert.match(page, /Boolean\(item\.run\.canInterrupt\)/, "Running count requires an active interruptible turn");
+assert.match(timeline, /Boolean\(item\.run\.sessionId\)/, "Running count requires a discovered execution Session");
+assert.match(timeline, /Boolean\(item\.run\.canInterrupt\)/, "Running count requires an active interruptible turn");
 assert.match(page, /accept="image\/png,image\/jpeg,image\/webp,image\/gif"/, "Composer accepts bounded image types");
 assert.match(page, /imageInputRef\.current\?\.click\(\)/, "Attachment button explicitly opens the native file chooser");
 assert.match(page, /onDrop=\{\(event\)/, "Composer accepts dragged image files");
@@ -155,13 +169,14 @@ assert.match(timeline, /personal-message-images/, "Sent images remain visible in
 assert.match(dashboard, /attachments: route\?\.attachments/, "Image attachments enter the selected Agent Session");
 assert.match(page, /sendMessage\(t\("composer\.agentProgressPrompt"\)\)/, "Progress report shortcut sends a scoped read-only request immediately");
 assert.match(page, /t\("composer\.agentProgress"\)/, "Progress report shortcut makes its immediate-send behavior explicit");
-assert.match(page, /t\("composer\.nextAction"\)[\s\S]*t\("composer\.prepareDraft"\)/, "Advice shortcut explains that it only prepares a draft");
-assert.match(page, /t\("composer\.monitor"\)[\s\S]*t\("composer\.monitorHint"\)/, "Monitor shortcut explains its editable-draft boundary");
+assert.match(page, /t\("composer\.nextAction"\)[\s\S]*sendMessage\(t\("composer\.nextActionPrompt"\)\)/, "Advice shortcut sends its scoped question immediately");
+assert.match(page, /t\("composer\.monitor"\)[\s\S]*sendMessage\(t\("composer\.monitorShortcutTemplate", \{ target: t\("schedule\.defaultTarget"\) \}\)\)/, "Monitor shortcut sends its bounded template with a named check target immediately");
 assert.match(page, /goalDraftActive[\s\S]*t\("composer\.createGoalDraft"\)[\s\S]*t\("composer\.createGoal"/, "Create Goal mode is visibly distinct from a normal chat draft");
 assert.match(page, /setComposerDraft\(`manager:\$\{selectedAgentId\}`,\s*t\("composer\.createGoalTemplate"\)\)/, "Create Goal writes the localized template to the manager draft even when invoked from a Goal");
 assert.match(page, /personal-action-feedback/, "Typed actions surface a persistent visible receipt");
 assert.match(page, /visibleTimelineItems[\s\S]*item\.run\.runId === activeSessionRun\.runId/, "Session record mode filters unrelated Goal activity");
-assert.match(page, /if \(tab === "chat"\) setActiveSessionRun\(null\)/, "The top Chat view exits the nested Session record filter");
+assert.match(page, /function openGoalConversation\(\)[\s\S]*setActiveSessionRun\(null\)[\s\S]*scrollIntoView\(\{ block: "start" \}\)/, "Opening a Goal reply exits a nested Session and reveals the latest answer");
+assert.match(page, /onOpenChat=\{openGoalConversation\}/, "The task reply button uses the same conversation navigation as other Goal entries");
 assert.match(header, /header\.refreshing[\s\S]*header\.refreshDone[\s\S]*header\.refreshFailed/, "Refresh exposes localized loading, success, and failure feedback");
 assert.match(drawer, /t\("drawer\.proposalExplainer"\)/, "Preview explains what confirmation will do");
 assert.match(drawer, /t\("drawer\.proposalApplyFailed"\)/, "Failed preview communicates its no-write result clearly");
@@ -180,15 +195,15 @@ assert.match(page, /\.map\(\(\[key, value\]\) => \(\{[\s\S]*key,[\s\S]*label: fi
 assert.match(page, /field\.key === "cadence"[\s\S]*field\.key === "stop_condition"[\s\S]*field\.key === "timezone"/, "Applied Heartbeat readback consumes stable semantic keys");
 assert.doesNotMatch(page, /field\.label === "cadence"|field\.label === "stop condition"/, "Schedule semantics never depend on localized display labels");
 assert.match(page, /defaultTimeline\(model, managerProjectionId, t\)/, "Default schedule projection uses the active locale authority");
-assert.match(page, /onOpenGoal: \(goalId\)[\s\S]*selectGoal\(goalId\);[\s\S]*Promise\.resolve\(\)\.then\(\(\) => reconcile\?\.\(\)\)/, "Applied-action Goal navigation is immediate and reconciles state in the background");
+assert.match(page, /onOpenGoal: \(goalId\) => \{\s*selectGoal\(goalId\);\s*void reconcileStatus\(\[goalId\]\)/, "Applied-action Goal navigation is immediate and reconciles that Goal in the background");
 assert.match(drawer, /onClose\(\); void callbacks\.onOpenGoal\?\.\(goalId\)/, "Applied-action Goal navigation closes its result drawer before asynchronous reconciliation");
 assert.match(tasks, /aria-busy=\{quickCompletingTodoIds\?\.has\(todo\.todoId\)/, "Quick Todo completion exposes accessible pending state while its typed preview is prepared");
 assert.match(tasks, /disabled=\{quickCompletingTodoIds\?\.has\(todo\.todoId\)\}/, "Quick Todo completion rejects duplicate clicks while preview creation is pending");
 assert.match(page, /callbacks\.onGoalActivationStateChange\?\.\(lifecycleChange\.goalId, lifecycleChange\.next\)/, "Goal lifecycle apply projects the requested state before the server responds");
 assert.match(page, /model\.goals\.find\(\(goal\) => goal\.goalId === proposal\.goalId\)\?\.activationState/, "Goal lifecycle rollback captures the rendered state instead of assuming the operation inverse");
 assert.match(page, /callbacks\.onGoalActivationStateChange\?\.\(lifecycleChange\.goalId, lifecycleChange\.previous\)/, "Rejected Goal lifecycle apply rolls back the optimistic projection");
-assert.match(page, /Promise\.resolve\(\)\.then\(\(\) => reconcile\?\.\(\)\)/, "Successful Goal lifecycle apply reconciles the full status payload without blocking the sidebar");
-assert.match(dashboard, /onReconcileStatus=\{\(\) => loadFromUrl\([\s\S]*\{ background: true \}/, "Lifecycle reconciliation uses the non-fatal background status path");
+assert.match(page, /if \(applied\.actionKind === "goal\.lifecycle"\) \{\s*void reconcileStatus\(applied\.goalId \? \[applied\.goalId\] : undefined\)/, "Successful Goal lifecycle apply reconciles the affected Goal without blocking the sidebar");
+assert.match(dashboard, /onReconcileStatus=\{\(options\) => loadFromUrl\([\s\S]*\{ background: true, invalidateGoalIds: options\?\.invalidateGoalIds, reuseSnapshots: true \}/, "Lifecycle reconciliation uses the non-fatal background status path");
 assert.match(dashboard, /statusRequestCanCommit\(statusRequestFenceRef\.current, request\)/, "A stale background response cannot overwrite a newer optimistic transition");
 assert.match(sidebar, /Trash2/, "Stopped Goals expose a delete icon");
 assert.match(sidebar, /onRequestGoalLifecycle\(goal, "delete"\)/, "Goal deletion stays behind the lifecycle request boundary");
@@ -234,6 +249,7 @@ assert.match(drawer, /t\("drawer\.repository"\)/, "Goal settings display the loc
 assert.match(drawer, /t\("common\.readOnly"\)/, "Repository is visibly read-only");
 assert.doesNotMatch(drawer, /Add repository/, "Goal settings do not imply repository binding controls");
 assert.match(model, /subagentExecution\??:\s*WorkspaceGoalSubagentConfiguration/, "Goal exposes the projected sub-agent execution boundary");
+assert.match(model, /executionConfig\??:\s*string/, "Goal sub-agent settings expose the shared delegation binding pointer");
 for (const callback of ["onPreviewGoalSubagentConfiguration", "onApplyGoalSubagentConfiguration"]) {
   assert.match(model, new RegExp(`${callback}\\??:`), `Goal sub-agent settings expose ${callback}`);
   assert.match(drawer, new RegExp(`callbacks\\.${callback}`), `Goal drawer calls ${callback}`);
@@ -248,6 +264,8 @@ assert.match(drawer, /normalize.*SubagentDomains|normalizedSubagentDomains/, "Go
 assert.match(chatData, /\/api\/chat\/goal-subagents\/dry-run/, "Dashboard uses the local preview-locked Goal sub-agent API");
 assert.match(chatData, /\/api\/chat\/goal-subagents\/apply/, "Dashboard applies Goal sub-agent settings through the same local API");
 assert.match(chatData, /global_sync\.readback\.verified/, "Goal sub-agent success requires shared-state readback verification");
+assert.match(chatData, /execution_config:\s*request\.executionConfig/, "Goal sub-agent writes use the canonical execution-config field");
+assert.match(drawer, /subagentExecutionConfigHint/, "Goal sub-agent settings explain the local-private delegation binding boundary");
 assert.match(dashboard, /goal\.spawn_policy\?\.mode === "multi_subagent"/, "Rendered switch state comes from the status spawn-policy projection");
 assert.match(dashboard, /capabilities\.goal_subagent_configuration === "preview_locked"/, "Goal sub-agent UI requires the authoritative Chat capability opt-in");
 assert.match(dashboard, /goalSubagentConfigurationEnabled \? \{[\s\S]*subagentExecution:/, "Capability-off models omit the Goal sub-agent UI contract");
@@ -259,6 +277,10 @@ assert.doesNotMatch(drawer, /localStorage[\s\S]{0,120}subagent|subagent[\s\S]{0,
 assert.match(drawer, /authoritativeSupersedesReceipt/, "A newer authoritative status supersedes an apply receipt without closing the drawer");
 assert.match(drawer, /!subagentConfigurationsMatch\([\s\S]*baseline,[\s\S]*authoritativeSubagentConfiguration/, "Status changes away from the pre-apply baseline supersede the receipt even when they do not echo it");
 assert.match(i18n, /drawer\.subagentDescription/, "Sub-agent authority boundaries are localized in the Goal drawer");
+assert.match(chatData, /align_codex_host_capacity/, "Goal sub-agent confirmation carries the explicit Codex host-capacity request");
+assert.match(chatData, /codexHostCapacitySchema/, "Codex host-capacity receipts are schema validated before UI projection");
+assert.match(drawer, /subagentHostCapacityRaise/, "Goal sub-agent preview discloses a required Codex capacity raise");
+assert.match(drawer, /subagentAppliedRestart/, "Applied host capacity tells the operator that a new Session is required");
 
 for (const lane of ["needs_you", "running", "observing", "scheduled", "history"]) {
   assert.match(model, new RegExp(`"${lane}"`), `Manager home models the ${lane} lane`);
@@ -273,8 +295,8 @@ assert.match(page, /personal-home-board/, "Manager home uses the four-lane works
 assert.doesNotMatch(page, /personal-worker-strip/, "Manager home omits the redundant Agent worker strip");
 assert.doesNotMatch(header, /切换到野兽主题|切换到默认主题/, "Workspace header does not expose theme switching");
 assert.match(workspaceTheme, /workspaceThemeStorageKey = "loopx-pw-theme"/, "Theme preference persists across reloads");
-assert.match(dashboard, /function isManagerProjectionQuestion[\s\S]*我现在该做什么[\s\S]*哪些 Goal 在等我[\s\S]*Agent 在做什么/, "Manager projection questions use stable intent phrases instead of exact button copy");
-assert.match(dashboard, /targetContextId === "manager" && isManagerProjectionQuestion\(question\)/, "Manager projection questions remain on the cross-Goal manager route when the user adds a read-only boundary");
+assert.doesNotMatch(dashboard, /isManagerProjectionQuestion/, "Ordinary manager questions do not silently bypass the selected model by matching phrases");
+assert.match(dashboard, /if \(selectedRoute\.agentId === "status-only" \|\| \(!targetGoal && targetContextId !== "manager"\)\)/, "Projection answers require the explicit status-only route or a missing Goal fallback");
 assert.match(dashboard, /const asksForNextAction[\s\S]*if \(asksForNextAction\)[\s\S]*personalManagerMatches\(question, \["状态"/, "A next-step question outranks a read-only boundary that mentions state");
 assert.match(dashboard, /先处理「\$\{personalGoalTitle\(nextTodo\.goalId\)\}」：\$\{nextTodo\.text\}/, "The compact manager answer names the Goal and concrete blocking action");
 assert.match(drawer, /t\("drawer\.decisionReview"\)/, "Blocked items preview their decision boundary before any write");
@@ -293,7 +315,7 @@ assert.match(page, /onOpenConversation/, "The compact manager conversation has a
 assert.match(page, /managerChatOpen/, "Manager full conversation uses a dedicated Chat view instead of stretching the home tray");
 assert.match(page, /managerChatItems/, "Manager Chat only renders conversation and confirmation items");
 assert.match(page, /sessionProposalIds\.includes\(item\.proposal\.previewId\)/, "Manager Chat only shows proposals created in the current UI session");
-assert.match(page, /\["ready", "gated", "deferred", "applying"\]\.includes\(proposal\.status\)/, "Restored proposal history excludes stale and failed write cards from the active Chat");
+assert.match(page, /\["preview_ready", "gated", "deferred", "applying"\]\.includes\(proposal\.status\)[\s\S]*compileActionReviewPlan\(proposal\)\.retryOriginal === true/, "Restored proposal history uses wire states and preserves retryable original operations");
 assert.doesNotMatch(page, /proposal\.title, proposal\.status/, "Proposal dedupe does not split one action into duplicate cards by lifecycle status");
 assert.match(header, /header\.managerView/, "Manager Chat exposes explicit overview and Chat navigation");
 assert.match(header, /header\.managerOverview/, "Manager Chat can return to the cross-Goal overview");
@@ -341,7 +363,7 @@ assert.match(dashboard, /function personalGoalHasPendingOperatorGate/, "Pending 
 assert.match(dashboard, /personalGoalHasPendingOperatorGate\(row\)/, "Pending operator gates project into the needs-you state");
 assert.match(dashboard, /explicitUserWait/, "Explicit user-approval language repairs incomplete gate projections");
 assert.match(page, /proposal\.status === "applied"/, "Unconfirmed Heartbeat previews never project as active schedules");
-assert.match(drawer, /actionKind === "goal\.create" \? t\("drawer\.proposalEnterGoal"\) : t\("drawer\.proposalViewGoal"\)/, "Applied actions offer scoped refreshed navigation labels");
+assert.match(drawer, /actionKind === "goal\.create" \? t\("drawer\.proposalEnterGoal"\) : t\(selection\.item\.actionKind === "team\.plan" \? "proposal\.teamPlan\.openGoal" : "drawer\.proposalViewGoal"\)/, "Applied actions offer scoped refreshed navigation labels");
 assert.doesNotMatch(sidebar, /Agent 设置/, "The sidebar omits the read-only Agent settings dead end");
 assert.doesNotMatch(sidebar, /野兽主题|默认主题/, "The sidebar keeps one owner-reviewed visual theme");
 for (const key of ["composer.createGoalTemplate", "composer.monitorTemplate", "composer.heartbeatTemplate", "proposal.primary.goalCreate", "proposal.impact.goalCreate"]) {
@@ -360,7 +382,7 @@ assert.match(
   "Initial real-status loading must not display bundled example tasks; explicit example mode remains available",
 );
 
-assert.match(page, /if \(settingsOpen\)[\s\S]*<WorkspaceSettingsPage/, "Settings replace the whole workspace shell");
+assert.match(page, /const settingsPage = settingsOpen \?[\s\S]*<WorkspaceSettingsPage[\s\S]*<div hidden=\{settingsOpen\}>[\s\S]*<WorkspaceShell/, "Settings hide the workspace while preserving its mounted conversation state");
 assert.match(sidebar, /t\("settings\.open"\)/, "The sidebar exposes one localized Settings entry");
 assert.doesNotMatch(sidebar, /个人工作区/, "The sidebar footer no longer renders a static personal workspace row");
 assert.doesNotMatch(workspaceSettings, /NotificationSettingsPanel/, "Settings do not render the old per-Goal notification binding panel");
@@ -387,6 +409,11 @@ assert.match(machineSettings, /applyMachineConfiguration\([\s\S]*preview\.plan_r
 assert.match(machineSettings, /previewMachineConfigurationRollback\(/, "Machine settings preview rollback before execution");
 assert.match(machineSettings, /liveDefaultDescription/, "Live defaults and Goal overrides are explained together");
 assert.match(machineSettings, /inspection\?\.capability_catalog\.capabilities/, "Machine settings discover capabilities from the shared registry catalog");
+assert.match(machineSettings, /inspection\?\.invalid_namespaces\[0\]/, "Invalid machine state identifies the affected namespace without reading its stored values");
+assert.match(machineSettings, /machine-invalid-repair[\s\S]*role="alert"/, "Invalid machine state exposes a visible guided repair path");
+assert.match(machineSettings, /capability\.machine_namespace === invalidNamespace/, "Invalid machine state opens the affected capability editor first");
+assert.match(chatData, /status: z\.enum\(\["configured", "absent", "invalid"\]\)/, "Machine inspection accepts the safe invalid repair projection");
+assert.match(chatData, /invalid_namespaces: z\.array\(z\.string\(\)\)/, "Machine inspection parses value-free invalid namespace IDs");
 assert.match(machineSettings, /personal-capability-json-editor/, "Every machine-configurable capability keeps an advanced JSON fallback");
 assert.match(machineSettings, /selected\.machine_namespace, desiredConfiguration/, "Preview targets the selected capability namespace");
 assert.match(machineSettings, /previewMachineConfigurationRemoval\(selected\.machine_namespace\)/, "Configured capabilities expose a typed removal preview");
@@ -399,6 +426,9 @@ assert.match(machineSettings, /localizedCapabilityFieldCopy\(locale\)/, "Machine
 assert.match(goalCapabilitySettings, /localizedCapabilityFieldCopy\(locale\)/, "Goal capability fields follow the selected locale");
 assert.match(machineSettings, /<CapabilityCatalogNavigation/, "Machine settings use the shared capability catalog navigation");
 assert.match(goalCapabilitySettings, /<CapabilityCatalogNavigation/, "Goal settings use the shared capability catalog navigation");
+assert.match(goalCapabilitySettings, /capability_id === "lark_event_inbox"[\s\S]*<GoalAutoNotifyToggle/, "Lark inbox capability exposes the independent human-gate notification control");
+assert.match(notificationSettings, /disabled=\{busy \|\| notification\?\.configured !== true/, "Gate notification control stays disabled until a Goal Channel is configured");
+assert.match(workspaceSettings, /goalNotifications\.find\(\(row\) => row\.goalId === initialGoalId\)/, "Goal capability settings receive the live Goal Channel notification state");
 assert.match(machineSettings, /<CapabilityDetailHeader/, "Machine settings use the shared capability detail header");
 assert.match(goalCapabilitySettings, /<CapabilityDetailHeader/, "Goal settings use the shared capability detail header");
 assert.match(capabilityWorkbench, /localizeCapability\(rawCapability, locale\)/, "Shared navigation localizes capability metadata without changing capability ids");
@@ -408,6 +438,7 @@ assert.match(capabilityWorkbench, /configuration_editor\.writable_scopes\.length
 assert.match(capabilityWorkbench, /orderCapabilitiesForPresentation\(capabilities, locale\)/, "Machine and Goal catalogs use one presentation-order policy");
 for (const capabilityId of [
   "change_quality_qualification",
+  "coordination_runtime_shadow",
   "explore_graph",
   "explore_harness",
   "lark_event_inbox",
@@ -418,12 +449,13 @@ for (const capabilityId of [
   "periodic_report",
   "pull_request_review",
   "reward_memory",
+  "steward_executor",
 ]) {
   const matches = capabilityLocalization.match(new RegExp(`${capabilityId}:`, "g")) ?? [];
   assert.equal(matches.length, 2, `${capabilityId} has English and Simplified Chinese metadata`);
 }
-for (const fieldKey of ["allowed_domains", "coordinator_agent_id", "enabled", "max_children", "profile", "profile_preset", "review_priority", "route_ref", "safe_fix", "strict_receipt", "timezone"]) {
-  const matches = capabilityLocalization.match(new RegExp(`${fieldKey}:`, "g")) ?? [];
+for (const fieldKey of ["allowed_domains", "coordinator_agent_id", "eligible_endpoints", "enabled", "executor_endpoint", "executor_model", "executor_reasoning_effort", "max_children", "profile", "profile_preset", "review_priority", "route_ref", "safe_fix", "selection_policy", "strict_receipt", "timezone"]) {
+  const matches = capabilityLocalization.match(new RegExp(`^\\s+${fieldKey}:`, "gm")) ?? [];
   assert.equal(matches.length, 2, `${fieldKey} has English and Simplified Chinese field copy`);
 }
 assert.doesNotMatch(machineSettings, /password|secret|credential/i, "Machine settings do not collect credentials");
@@ -436,6 +468,8 @@ assert.match(chatData, /fetchGoalConfiguration\(goalId: string\)/, "Goal setting
 assert.match(goalCapabilitySettings, /restoreInheritance/, "Goal overrides expose an explicit path back to live machine defaults");
 assert.match(goalCapabilitySettings, /projectEditableCapabilityConfiguration/, "Goal writes project read models onto editor-owned fields");
 assert.match(goalCapabilitySettings, /status === "partial_write"/, "Goal settings preserve partial-write recovery outcomes");
+assert.match(goalCapabilitySettings, /codex_host_capacity\.write_required/, "Generic Goal capability preview shows the same Codex host-capacity adjustment");
+assert.match(goalCapabilitySettings, /host_capacity_pending/, "Generic Goal capability recovery distinguishes a host-capacity partial write from shared-sync failure");
 assert.match(chatData, /namespace_configuration:\s*namespaceConfiguration/, "The browser patches one owned namespace without round-tripping private namespaces");
 assert.match(chatData, /operation:\s*"remove"/, "The browser uses an explicit typed removal operation");
 assert.match(chatData, /z\.enum\(\["create", "update", "delete", "unchanged"\]\)/, "Machine previews recognize deletion as a first-class action");

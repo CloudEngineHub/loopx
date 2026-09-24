@@ -16,6 +16,7 @@ from .control_plane.runtime.promotion_readiness import (
     PROMOTION_READINESS_CLASSIFICATION,
     PROMOTION_READINESS_RUNTIME_INDEX,
 )
+from .control_plane.runtime.time import chronology_key
 from .install_contract import NO_CLONE_INSTALL_URL
 from .paths import DEFAULT_RUNTIME_ROOT, global_registry_path
 from .python_install_owner import PythonInstallOwner, python_distribution_upgrade_command, resolve_python_install_owner
@@ -43,7 +44,8 @@ REQUIRED_INSTALLED_SKILL_PHRASES = {
         "--delivery-outcome <ACTUAL_DELIVERY_OUTCOME>",
     ),
     "loopx-pr-review": (
-        "loopx --format json pr-review --state all",
+        "keeps ordinary queue discovery open-only",
+        "explicit `--state merged|all`",
         "thin host adapter",
         "agent_response_contract.review_execution_contract",
         "pull_requests[review_action_kind!=null].review_plan",
@@ -662,6 +664,8 @@ def latest_promotion_readiness_event(runtime_root: Path, goal_id: str | None = N
                     "markdown_exists": markdown_path.exists() if str(markdown_path) else False,
                 }
             )
+        if runtime_matches:
+            break
 
     matches = runtime_matches or legacy_matches
     if not matches:
@@ -675,7 +679,10 @@ def latest_promotion_readiness_event(runtime_root: Path, goal_id: str | None = N
                 else "no canary promotion readiness run found"
             ),
         }
-    matches.sort(key=lambda item: str(item.get("generated_at") or ""), reverse=True)
+    matches.sort(
+        key=lambda item: chronology_key(item.get("generated_at")),
+        reverse=True,
+    )
     latest = matches[0]
     latest["runtime_root"] = str(runtime_root)
     return latest
@@ -891,6 +898,10 @@ def collect_doctor(
         if default_global_registry.exists()
         else {
             "schema_version": "runtime_projection_route_diagnostics_v0",
+            "registry": str(default_global_registry.resolve()),
+            "runtime_root": str(DEFAULT_RUNTIME_ROOT.resolve()),
+            "goal_filter": None,
+            "activation_state_filter": None,
             "available": False,
             "goal_count": 0,
             "healthy": True,
@@ -1186,7 +1197,10 @@ def render_doctor_markdown(payload: dict[str, Any]) -> str:
         f"- skill_delivery_mode: `{(payload.get('skill_delivery') or {}).get('mode')}`",
         f"- skill_delivery_status: `{(payload.get('skill_delivery') or {}).get('status')}`",
         f"- global_registry_writable: `{(payload.get('global_registry_writability') or {}).get('ok')}`",
-        f"- runtime_projection_routes_healthy: `{(payload.get('runtime_projection_routes') or {}).get('healthy')}`",
+        f"- runtime_projection_routes_healthy: `{(payload.get('runtime_projection_routes') or {}).get('healthy')}`"
+        f" (registry=`{(payload.get('runtime_projection_routes') or {}).get('registry')}`,"
+        f" goals=`{(payload.get('runtime_projection_routes') or {}).get('goal_count')}`,"
+        f" counts=`{json.dumps((payload.get('runtime_projection_routes') or {}).get('counts') or {}, sort_keys=True)}`)",
         f"- user_local_bin_on_path: `{(payload.get('path') or {}).get('user_local_bin_on_path')}`",
         f"- python: `{(payload.get('python') or {}).get('executable')}`",
         f"- typescript_control_plane: `{typescript_control_plane.get('status')}`",
@@ -1300,9 +1314,35 @@ def render_doctor_markdown(payload: dict[str, Any]) -> str:
                 f"- semantic_probe: `{typescript_control_plane.get('semantic_probe')}`",
             ]
         )
+        runtime_identity = typescript_control_plane.get("runtime_identity")
+        if isinstance(runtime_identity, dict):
+            lines.append(
+                "- runtime_identity: "
+                f"node=`{runtime_identity.get('node_version')}`, "
+                f"sqlite=`{runtime_identity.get('sqlite_version')}`, "
+                "sqlite_authority_qualified="
+                f"`{runtime_identity.get('sqlite_authority_qualified')}`"
+            )
         recommended_action = typescript_control_plane.get("recommended_action")
         if recommended_action:
             lines.append(f"- recommended_action: {recommended_action}")
+    restart = payload.get("effect_runtime_restart")
+    if isinstance(restart, dict):
+        previous = restart.get("previous_runtime_identity")
+        previous_text = (
+            f"Node {previous.get('node_version')} / SQLite "
+            f"{previous.get('sqlite_version')}"
+            if isinstance(previous, dict)
+            else "no runtime was serving"
+        )
+        lines.extend(
+            [
+                "",
+                "## Effect Runtime Restart",
+                f"- status: `{restart.get('status')}`",
+                f"- stopped_runtime: {previous_text}",
+            ]
+        )
     if not payload.get("ok"):
         lines.extend(["", "## Fix", str(payload.get("fix"))])
         writable = payload.get("global_registry_writability")

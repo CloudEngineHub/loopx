@@ -10,6 +10,7 @@ import pytest
 
 from loopx.control_plane.turn_driver.codex_cli import (
     CODEX_CLI_SESSION_SCHEMA_VERSION,
+    CODEX_STDIO_MCP_SERVER_SCHEMA_VERSION,
     _diagnostic_failure_category,
     _event_failure_categories,
     _event_failure_category,
@@ -349,9 +350,11 @@ def test_codex_cli_prompt_isolates_subagent_instructions_to_enabled_request() ->
     assert "opaque evidence_refs such as artifact:child-result" in prompt
 
 
+@pytest.mark.parametrize("sandbox", ["read-only", "workspace-write", "danger-full-access"])
 def test_codex_cli_host_starts_then_resumes_opaque_session(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    sandbox: str,
 ) -> None:
     executable, log_path = _fake_codex(tmp_path)
     monkeypatch.setenv("FAKE_CODEX_LOG", str(log_path))
@@ -365,7 +368,9 @@ def test_codex_cli_host_starts_then_resumes_opaque_session(
         runtime_root=runtime_root,
         project=project,
         codex_bin=str(executable),
-        sandbox="workspace-write",
+        sandbox=sandbox,
+        model="gpt-5.6-sol",
+        reasoning_effort="xhigh",
         timeout_seconds=5,
     )
     with pytest.raises(RuntimeError, match="binding changed after planning"):
@@ -385,7 +390,9 @@ def test_codex_cli_host_starts_then_resumes_opaque_session(
         runtime_root=runtime_root,
         project=project,
         codex_bin=str(executable),
-        sandbox="workspace-write",
+        sandbox=sandbox,
+        model="gpt-5.6-sol",
+        reasoning_effort="xhigh",
         timeout_seconds=5,
     )
 
@@ -397,9 +404,17 @@ def test_codex_cli_host_starts_then_resumes_opaque_session(
     assert "resume" not in argv_rows[0]
     assert "resume" in argv_rows[1]
     assert "session-fixture-0001" in argv_rows[1]
+    for argv in argv_rows:
+        assert argv[argv.index("--model") + 1] == "gpt-5.6-sol"
+        config_values = [
+            argv[index + 1]
+            for index, value in enumerate(argv)
+            if value == "-c"
+        ]
+        assert 'model_reasoning_effort="xhigh"' in config_values
     resume_argv = argv_rows[1]
     assert resume_argv[resume_argv.index("-c") + 1] == (
-        'sandbox_mode="workspace-write"'
+        f'sandbox_mode="{sandbox}"'
     )
     assert resume_argv[resume_argv.index("-C") + 1] == str(project)
     assert resume_argv.index("-C") < resume_argv.index("resume")
@@ -431,6 +446,120 @@ def test_codex_cli_host_starts_then_resumes_opaque_session(
     persisted = session_paths[0].read_text(encoding="utf-8")
     assert "raw_trajectory" not in persisted
     assert "private_material" not in persisted
+
+
+def test_codex_cli_host_materializes_bound_mcp_tools_for_fresh_and_resume(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable, log_path = _fake_codex(tmp_path)
+    monkeypatch.setenv("FAKE_CODEX_LOG", str(log_path))
+    runtime_root = tmp_path / "runtime"
+    project = tmp_path / "project"
+    project.mkdir()
+    server = {
+        "schema_version": CODEX_STDIO_MCP_SERVER_SCHEMA_VERSION,
+        "name": "loopx_delegation",
+        "command": [
+            sys.executable,
+            "-m",
+            "loopx.collaboration_mcp",
+            "--agent-id",
+            "reviewer",
+        ],
+    }
+
+    run_codex_cli_host(
+        _request(),
+        runtime_root=runtime_root,
+        project=project,
+        codex_bin=str(executable),
+        mcp_server=server,
+        timeout_seconds=5,
+    )
+    run_codex_cli_host(
+        _request(
+            turn_key="sha256:" + "b" * 64,
+            session_action="resume",
+        ),
+        runtime_root=runtime_root,
+        project=project,
+        codex_bin=str(executable),
+        mcp_server=server,
+        timeout_seconds=5,
+    )
+
+    for argv in map(json.loads, log_path.read_text(encoding="utf-8").splitlines()):
+        config_values = [
+            argv[index + 1]
+            for index, value in enumerate(argv)
+            if value == "-c"
+        ]
+        assert (
+            f'mcp_servers.loopx_delegation.command={json.dumps(sys.executable)}'
+            in config_values
+        )
+        assert (
+            "mcp_servers.loopx_delegation.args="
+            + json.dumps(server["command"][1:])
+            in config_values
+        )
+        assert "mcp_servers.loopx_delegation.enabled=true" in config_values
+        assert "mcp_servers.loopx_delegation.required=true" in config_values
+        assert (
+            'mcp_servers.loopx_delegation.default_tools_approval_mode="approve"'
+            in config_values
+        )
+        assert "mcp_servers.loopx_delegation.startup_timeout_sec=30" in config_values
+        assert "mcp_servers.loopx_delegation.tool_timeout_sec=60" in config_values
+
+
+def test_codex_cli_host_rejects_invalid_mcp_binding_before_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable, log_path = _fake_codex(tmp_path)
+    monkeypatch.setenv("FAKE_CODEX_LOG", str(log_path))
+    project = tmp_path / "project"
+    project.mkdir()
+
+    with pytest.raises(ValueError, match="server name is invalid"):
+        run_codex_cli_host(
+            _request(),
+            runtime_root=tmp_path / "runtime",
+            project=project,
+            codex_bin=str(executable),
+            mcp_server={
+                "schema_version": CODEX_STDIO_MCP_SERVER_SCHEMA_VERSION,
+                "name": "not.a.safe.table",
+                "command": [sys.executable, "-m", "fixture"],
+            },
+            timeout_seconds=5,
+        )
+
+    assert not log_path.exists()
+
+
+def test_codex_cli_host_rejects_unknown_reasoning_effort_before_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable, log_path = _fake_codex(tmp_path)
+    monkeypatch.setenv("FAKE_CODEX_LOG", str(log_path))
+    project = tmp_path / "project"
+    project.mkdir()
+
+    with pytest.raises(ValueError, match="unsupported reasoning effort"):
+        run_codex_cli_host(
+            _request(),
+            runtime_root=tmp_path / "runtime",
+            project=project,
+            codex_bin=str(executable),
+            reasoning_effort="turbo",
+            timeout_seconds=5,
+        )
+
+    assert not log_path.exists()
 
 
 def test_codex_cli_host_fresh_iteration_ignores_stored_session(
@@ -822,3 +951,19 @@ def test_public_e2e_smoke_runs_n_transactions_on_one_session() -> None:
         "scheduler_acknowledged": False,
         "state_written": False,
     }
+
+
+def test_checkpointed_write_approval_is_scoped_and_absent_by_default():
+    request = _request()
+    assert "It satisfies the write approval requirement" not in _prompt(request)
+    request["turn_envelope"]["boundary"] = {
+        "requires_parent_approval": ["write", "publish", "production-action"],
+        "checkpointed_boundary_authority": {
+            "schema_version": "checkpointed_boundary_authority_v0",
+            "active_count": 1,
+            "active_write_scope": ["src/**"],
+        },
+    }
+    prompt = _prompt(request)
+    assert "only within its active_write_scope" in prompt
+    assert "publish, and production actions retain their gates" in prompt

@@ -17,7 +17,7 @@ into a mirror of maintainer scratch state.
 
 | Status | Meaning |
 | --- | --- |
-| Available | Ready for someone to comment on the linked issue or open a small PR. |
+| Available | Ready for a contributor to claim the linked outcome and deliver a cohesive PR. |
 | Claimed | Someone has said they are working on it, or a maintainer assigned it. |
 | Maintainer-owned | Active work is happening in maintainer/local automation; ask before touching. |
 | Needs design | Discussion is welcome, but implementation needs agreement first. |
@@ -34,7 +34,7 @@ preferred review contact is not an exclusive task claim or new merge authority.
 1. Prefer a linked GitHub issue. If there is no issue yet, open one with the
    contributor task template.
 2. Comment that you would like to work on the task. Maintainers will mark it
-   `claimed` or suggest a smaller slice.
+   `claimed` or agree a complete, independently verifiable slice.
 3. For docs-only typo fixes or obviously tiny cleanups, opening a direct PR is
    fine.
 4. If a claimed task has no update for 14 days, maintainers may release it back
@@ -44,21 +44,19 @@ preferred review contact is not an exclusive task claim or new merge authority.
 
 ## Current Technical Directions
 
-The canonical [Technical Directions map](../project/technical-directions.md)
-explains outcomes, maturity, ownership boundaries, and promotion gates. This
-board lists bounded work; it does not redefine those directions.
+The [overall roadmap](../architecture/rfcs/loopx-overall-roadmap-v0.md) and
+[tracking issue #4574](https://github.com/huangruiteng/loopx/issues/4574) own
+cross-domain priorities and G0–G5 acceptance. The [Technical Directions map](../project/technical-directions.md)
+owns contributor routing and current maturity; this board does not keep a second
+copy of those stages. Before claiming a row, reconcile its linked task with
+latest main, related PRs and the roadmap. Historical rows are not proof that a
+missing feature remains unimplemented or a proposed slice is still useful.
 
-| Direction | Current stage | Contributor entry | Boundary |
-| --- | --- | --- | --- |
-| Long-Horizon Benchmarks and Evidence | Active research | [#3243](https://github.com/huangruiteng/loopx/issues/3243) | Work on public-safe fixtures, treatment integrity, reducers, and docs; live cases and scoring remain maintainer-owned. |
-| Operator Surface and IM Integration | Incubating on `frontend-control-plane-im-prototype-rfc` | [#3244](https://github.com/huangruiteng/loopx/issues/3244) | State the target base branch; UI remains a projection and promotion to `main` is staged. |
-| Shared Goal Authority and Cross-host Coordination | Stage 2 slice shipped (aggregate head, file provider, `claim_work` executor); NoKV stays an unpromoted candidate | [#3245](https://github.com/huangruiteng/loopx/issues/3245) | Keep slices provider-neutral and file-backed; no second scheduler or write authority. |
-| Architecture and Research Incubator | Mixed by RFC | [#3246](https://github.com/huangruiteng/loopx/issues/3246) | Read the per-exploration stage; an RFC alone does not make implementation claimable. |
-
-Core control-plane reliability remains the shared shipped foundation. Effect
-Program hardening, verified transitions, recovery, observability,
-maintainability, and contributor experience continue through the focused rows
-below and the existing `control-plane` label.
+A claimable task names the current gap, independently useful outcome, existing
+owner/caller, dependencies and decisive validation. For a staged increment,
+record the remaining gap and next owner/task; do not make a field, fixture or
+PR count the completion target. Preserve existing authoritative Todo/issue
+identity rather than copying the whole plan here.
 
 ## Priority Queue
 
@@ -66,12 +64,12 @@ below and the existing `control-plane` label.
 | --- | --- | --- | --- | --- |
 | P0 | Core hardening | Exact-head review of remote execution and terminal writeback fencing: fenced journal recovery absorbed into TypeScript | #3074 | Done |
 | P0 | Core hardening | Wire caller-approved `validation_command` into the remaining self-report entry points | #3082 / #3142 #3291 #3343 | Done |
-| P1 | Benchmark evidence | Split one deterministic adapter-fidelity or treatment-integrity fixture | #3243 | Needs design |
-| P1 | Operator surface / IM | Split one projection or session-contract characterization unit from the incubation branch | #3244 | Needs design |
-| P1 | Shared coordination | Characterize the shipped file-backed `claim_work` executor with a provider-neutral parity fixture | #3700 / #3245 | Needs design |
+| P1 | Benchmark evidence | Qualify a reproducible adapter-fidelity or treatment-integrity gap with existing focused fixtures | #3243 | Needs design |
+| P0 | Operator surface / IM | Close the R1 confirmed-team commitment/readback gap, then qualify R2 real peer dependency handoff | #4574 / #4339 | Needs design |
+| P1 | Shared coordination | Qualify the selected local authority durability and crash/replay boundary against existing D2 acceptance | #4224 / #3245 | Needs design |
 | P1 | Core hardening | One budget-aware CLI output ergonomics slice | #2881 | Needs design |
-| P2 | Project docs | Release docs install, activation, and recovery guidance through v0.5.4 | GH-C04 | Available |
-| P2 | Maintainability | CLI ownership and hot-module extraction | GH-C06 | Available |
+| P2 | Project docs | Release docs install, activation, and recovery guidance through v0.5.4 | GH-C04 | Landed via #3982 |
+| P2 | Maintainability | CLI ownership and hot-module extraction | GH-C06 / #4659 #4803 #4818 | Done |
 
 ## Product Manager Cut
 
@@ -142,8 +140,8 @@ points for contributors who are still learning the repository.
 
 | ID | Area | Task | Validation |
 | --- | --- | --- | --- |
-| GH-C02 | tests | Claimed: a PR is open (#3623) extending the todo-lifecycle smoke with archive-completed coverage. Review it at exact head or add the omit/archive negative the review finds missing. | `python3 examples/control_plane/todo-lifecycle-cli-smoke.py` and `python3 -m py_compile loopx/*.py` |
-| GH-C04 | docs | Claimed: branch `docs/release-readiness-v0.5.4` corrects six public-timeline dates to tagged evidence (`v0.2.7`, `v0.2.12`, `v0.4.0`, `v0.4.2`, `v0.4.3`, `v0.4.5`) and adds the restart-host activation note beside the first-time PyPI install block; the #3301/#3566/#3556 install, ownership, activation-recovery, and extension-doctor alignment landed earlier via #3810 and was re-verified against the guide at this head. | `python3 examples/fresh-clone-quickstart-smoke.py`, `python3 examples/loopx-update-smoke.py`, `python3 examples/release/release-readiness-doc-smoke.py`, `python3 examples/release/release-version-contract-smoke.py`, and `loopx check --scan-path docs/product/release-readiness.md --scan-path CONTRIBUTING.md` |
+| GH-C02 | tests | Claimed: PR #4436 (open) extends the owning `todo-archive-completed` smoke with the archive invariant no CLI-level coverage exercised: a durable standing decision survives the archive as active standing authority, and `todo archive-completed --role user` leaves the Agent Todo section untouched. The earlier #3623 attempt (closed unmerged 2026-08-31) was rejected because it repeated assertions the owning smoke already carried; prefer a new durable invariant over a second same-shape smoke. | `python3 examples/control_plane/todo-archive-completed-smoke.py`, `python3 examples/control_plane/todo-lifecycle-cli-smoke.py`, and `python3 -m py_compile loopx/*.py` |
+| GH-C04 | docs | Landed: #3982 (merged 2026-09-06) synced the public timeline to tagged v0.5.4 evidence and completed the restart-host activation note beside the first-time PyPI install block; the #3301/#3566/#3556 install, ownership, activation-recovery, and extension-doctor alignment landed earlier via #3810. The `docs/release-readiness-v0.5.4` branch is absent from the remote because its work merged, so this row is history rather than an open claim. | `python3 examples/fresh-clone-quickstart-smoke.py`, `python3 examples/loopx-update-smoke.py`, `python3 examples/release/release-readiness-doc-smoke.py`, `python3 examples/release/release-version-contract-smoke.py`, and `loopx check --scan-path docs/product/release-readiness.md --scan-path CONTRIBUTING.md` |
 ### Focused Implementation
 
 Small-to-medium code changes with a clear validation surface. These are good
@@ -151,10 +149,10 @@ for contributors who can run local CLI smokes and keep changes scoped.
 
 | ID | Area | Task | Validation |
 | --- | --- | --- | --- |
-| GH-C06 | cli | Characterize one remaining oversized CLI ownership seam after the recent quota, status, todo, history, and scheduler command-plumbing extractions, then move only a cohesive command or rule group into its bounded module. Preserve public invocations, avoid compatibility wrappers without a real caller, and keep the module-size/import budget honest. A focused issue tracks the Goal Channel runtime slice (#3710). | Command-specific smoke, `python3 examples/cli-command-module-size-ownership-command-modularization-smoke.py`, `python3 regression/cli-command-module-contract.py`, and focused pytest if rules move |
+| GH-C06 | cli | Landed: #4659 owns `update` registration and dispatch, #4803 owns `goal-channel prepare-operation` and `deliver-operation`, and #4818 owns quota action selection. The public commands remain unchanged, each parent and extracted owner stays below its module budget, and no compatibility wrapper was added. | Command-specific smoke, `python3 examples/cli-command-module-size-ownership-command-modularization-smoke.py`, `python3 regression/cli-command-module-contract.py`, and focused pytest if rules move |
 | GH-C88 | cli | Implement one budget-aware CLI output ergonomics slice for #2881: shorter default summaries with a typed `--json` escape hatch on one command family, keeping hot-path payload budgets and differential allowances intact. | `python3 examples/control_plane/cli-output-budget-regression-smoke.py`, focused command smoke, and `loopx check --scan-path docs/status-data-contract.md --scan-path docs/development/contributor-tasks.md` |
 | GH-C70 | runtime | Claimed: PR #3664 narrows host-loop parity to one producer-generated bounded-wait scheduler-hint contract between the external scheduler worker and Pi: both real consumers must produce the same provider-neutral stop/wait plan, including the final quota/replan recheck triggered by the third unchanged poll. | `python3 -m pytest -q tests/test_host_loop_runtime_parity.py tests/test_external_scheduler_worker.py tests/test_pi_goal_mode.py`, `node --test tests/pi_goal_loop_runtime.test.mjs`, `python3 examples/external-scheduler-worker-smoke.py`, and `loopx check --scan-path docs/integrations/runtime-connector-catalog.md --scan-path docs/development/contributor-tasks.md` |
-| GH-C100 | state | Characterize the shipped file-backed `claim_work` executor with a provider-neutral parity fixture (#3700): same-target competition has exactly one winner, independent targets rebase, replay returns the original receipt, same-operation-id with different command semantics is rejected with no mutation, and stale provider generation does not duplicate transitions. Keep fixtures synthetic and public-safe. | `python3 -m pytest -q tests/control_plane/test_coordination_executor.py tests/control_plane/test_coordination_file_provider.py`, the new parity fixture, and `loopx check --scan-path loopx/control_plane/coordination --scan-path docs/architecture/rfcs/shared-goal-authority-state-provider-v0.md --scan-path docs/development/contributor-tasks.md` |
+| GH-C100 | state | Landed via #4422: the provider-neutral parity fixture drives the shipped file-backed `claim_work` executor through same-target competition, independent-target rebase, exact replay, operation-identity mismatch, and stale-generation rejection. The fixtures remain synthetic and public-safe. | `python3 -m pytest -q tests/control_plane/test_coordination_executor.py tests/control_plane/test_coordination_file_provider.py tests/control_plane/test_coordination_provider_parity.py` and `loopx check --scan-path loopx/control_plane/coordination --scan-path docs/architecture/rfcs/shared-goal-authority-state-provider-v0.md --scan-path docs/development/contributor-tasks.md` |
 | GH-C102 | state / tests | Extend the shared production-scale coordination fixture with one accepted RFC invariant or reproduced public regression that its current envelope does not cover. Update the checked-in envelope, shared generator, and an independent negative or mutation-style assertion; run the same dimension through every affected provider conformance arm. Keep the data deterministic and public-safe, do not copy a production snapshot, and do not weaken an existing dimension merely to make a provider pass. | `npm run test:control-plane`; when a provider-backed arm changes, run its isolated real integration suite (for PostgreSQL, `LOOPX_TEST_POSTGRES_URL="$DISPOSABLE_POSTGRES_URL" npm run test:postgresql-authority-store`); `loopx check --scan-path tests/fixtures/control_plane --scan-path tests/control_plane_ts --scan-path docs/development/testing-and-quality.md` |
 
 ### Advanced Implementation

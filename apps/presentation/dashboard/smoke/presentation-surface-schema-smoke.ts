@@ -5,6 +5,7 @@ import {
   parsePresentationSurfaceCollectionResponse,
   presentationSurfaceCollectionSchema,
   presentationSurfaceSchema,
+  todoItemSchema,
   withGoalActivationState,
 } from "../src/data/status.js";
 import {
@@ -22,6 +23,29 @@ function assert(condition: boolean, message: string) {
 
 const PAYLOAD_SHA256 =
   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+const revisedTodo = todoItemSchema.parse({
+  index: 0,
+  text: "Verify the replacement validator",
+  done: false,
+  todo_id: "todo_validator_revision",
+  role: "agent",
+  completion_validation_required: true,
+  completion_validation_sha256: PAYLOAD_SHA256,
+  completion_validation_revision: 1,
+  completion_validation_revision_history: [{
+    revision: 1,
+    previous_declaration_sha256: "1".repeat(64),
+    declaration_sha256: PAYLOAD_SHA256,
+    actor_agent_id: "agent-a",
+    revised_at: "2026-09-20T00:00:00Z",
+  }],
+});
+assert(
+  revisedTodo.completion_validation_revision_history.at(-1)?.actor_agent_id ===
+    "agent-a",
+  "Todo validator revision readback must survive status parsing",
+);
 
 function detailRef() {
   return {

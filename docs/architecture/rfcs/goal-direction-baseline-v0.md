@@ -28,6 +28,11 @@ RFC maturity and delivery maturity are independent. This proposal does not
 claim that `goal_direction_baseline_v0`, its declaration, or a runtime
 consumer exists on `main`.
 
+The separate [acceptance contract v0](../../reference/goal-acceptance-observations.md#owner-authorized-contract-v0)
+does not implement this RFC's material declarations or usage receipts.
+#2831's next slice is **direction-material revision to acceptance basis linkage**,
+qualified by the same-Agent/current-revision fixtures below.
+
 ---
 
 ## 1. Decision summary

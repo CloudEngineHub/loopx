@@ -295,10 +295,19 @@ whose capabilities are known when the automation is installed.
   `closeout_required=true`. A fresh heartbeat checks the immediately preceding
   flagged guard against its exact writeback/spend receipts and typed Todo
   lifecycle. If neither is present, `unsettled_host_turn_recovery_v0` preempts
-  ordinary work selection. The host must repair the prior closeout, rerun the
-  same current Turn, and then continue an eligible successor. Recovery is
-  idempotent and no-spend; receipts created before this explicit flag are not
-  retroactively treated as unsettled;
+  ordinary work selection. For an open advancement Todo without a resume gate,
+  the typed `resume_prior_turn` route re-enters the original Turn guard: inspect
+  existing effects first, follow its current eligibility and settlement contract,
+  and account only verified work under that original identity. Missing receipts
+  are not evidence of an external wait; never invent `monitor_changed` or a
+  successor to clear recovery. After legal closeout, rerun the same current Turn
+  and continue eligible work. Recovery selection itself is idempotent and
+  no-spend; actual validated delivery retains normal accounting. Genuine external
+  waits and monitor observations retain their existing typed closeouts. Receipts
+  created before the explicit flag are not retroactively treated as unsettled.
+  Exact-ID lifecycle reads include retained
+  `Completed Work Archive` rows, while ordinary Todo lists remain active-only;
+  an archived terminal fact closes recovery without rewriting archive history;
 - use `user_gate` only for an exact authority boundary such as approval to merge
   an aggregate branch into `main`, release, launch a benchmark, or perform a
   protected action;
@@ -631,23 +640,23 @@ When creating a heartbeat in Codex App, keep the visible instruction short and
 put the lifecycle in the automation task body. The default onboarding cadence
 starts at 3 minutes; after the first guard, follow
 `quota should-run.scheduler_hint` to back off long waits and stop external loops
-after a final quota/replan check confirms repeated unchanged polls. Codex App
+after a final quota/replan check confirms repeated unchanged polls. App-hosted
 heartbeats should search/use `automation_update` when available. If
 `scheduler_hint.action=stop_until_explicit_resume` and
-`scheduler_hint.codex_app.host_action=pause_or_delete_current_heartbeat`: in
+`scheduler_hint.app_automation.host_action=pause_or_delete_current_heartbeat`: in
 that terminal case, call `automation_update` once to pause the current
 heartbeat (delete only if pause is unavailable), verify the host result, spend
 no quota, and end the turn without a scheduler ACK. Otherwise call it only when
-`scheduler_hint.codex_app.stateful_backoff.apply_needed=true` and
-`scheduler_hint.codex_app.recommended_rrule` is present. After a successful
+`scheduler_hint.app_automation.stateful_backoff.apply_needed=true` and
+`scheduler_hint.app_automation.recommended_rrule` is present. After a successful
 RRULE update, run `loopx` with
-`scheduler_hint.codex_app.ack_hint.cli_args`; current payloads use
+`scheduler_hint.app_automation.ack_hint.cli_args`; current payloads use
 `quota scheduler-ack-current` so LoopX re-reads the latest hint and owns the
 progression/reset state. The ACK settles that RRULE; an immediate final guard
 may verify the same target but must not be treated as another elapsed poll.
 Attempt the host update at most once per hint and
 turn. If it fails or times out, do not retry or ACK; run
-`scheduler_hint.codex_app.failure_hint.cli_args` once to persist the failed
+`scheduler_hint.app_automation.failure_hint.cli_args` once to persist the failed
 target and observed host RRULE without spending quota. Exact repeats are then
 suppressed until either value changes. Continue any allowed delivery under the
 observed host cadence. When the desired RRULE is already applied, skip
@@ -657,8 +666,10 @@ hint directly, otherwise do nothing. For the uniquely matched current heartbeat,
 `host_observation.status=drift_detected` result reopens `apply_needed`:
 
 If `automation_update` is unavailable in the session and
-`scheduler_hint.codex_app.fallback_hint.available=true`, run the bound
-`fallback_hint.cli_args` (`loopx-apply-rrule`) once instead. It backs up
+`scheduler_hint.app_automation.fallback_hint.available=true`, run the bound
+`fallback_hint.cli_args` (`loopx-apply-rrule`) once instead. The fallback
+requires the projected registered `--agent-id`; there is no implicit Agent
+default. It backs up
 `codex-dev.db`, syncs the automation TOML and SQLite row, and runs the bound
 ACK; direct SQLite edits bypass the app API, so this is a bounded fallback and
 never the routine path. The bridge reuses the provided parent Turn for its
@@ -802,8 +813,11 @@ For every automatic heartbeat turn, the agent-facing checklist is:
 15. Work bounded when `should_run=true`; a coherent implementation/test/doc/state
     batch is preferred over a tiny substep when scope and validation are clear.
 16. Validate before reporting.
-17. After validation/writeback, refresh accountable progress with explicit
-    delivery scale/outcome hints, then spend exactly once against that record.
+17. After validation/writeback, follow the current typed settlement plan. An
+    exact committed receipt-bound monitor poll already closes that Turn with no
+    accountable refresh or quota spend, including a material poll that releases
+    an independent successor. Other accountable delivery refreshes use explicit
+    scale/outcome hints and spend exactly once against that record.
 18. Refresh state-only metadata after spend only when needed; never emit another
     accountable progress refresh after accounting.
 19. Report compactly.
@@ -813,10 +827,10 @@ This prompt is intentionally a lifecycle template. Scheduling policy lives in
 controller loop, Codex CLI TUI, Claude Code loop, or future Codex goal-mode
 automations can all share the same LoopX quota guard without hard-coding
 different wait loops. Host implementations should first honor a terminal
-`codex_app.host_action=pause_or_delete_current_heartbeat` by stopping the
+`app_automation.host_action=pause_or_delete_current_heartbeat` by stopping the
 current heartbeat once, verifying the result, and ending without scheduler ACK
 or quota spend. Otherwise they should read the compact
-`codex_app.stateful_backoff` packet, call `automation_update` only when
+`app_automation.stateful_backoff` packet, call `automation_update` only when
 `apply_needed=true`, and then let `quota scheduler-ack-current` persist the
 applied RRULE state from the latest scheduler hint without spending quota. A
 matching reset readback may instead set `ack_needed=true`; in that case skip the

@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from loopx.cli_commands import goal_channel as goal_channel_cli
+from loopx.cli_commands import goal_channel_operation as goal_channel_operation_cli
 from loopx.extensions.lark import goal_channel_contracts
 from loopx.extensions.lark.goal_channel import (
     GOAL_CHANNEL_BINDING_SCHEMA_VERSION,
@@ -19,6 +20,9 @@ from loopx.extensions.lark.goal_channel import (
     read_goal_channel_binding,
     setup_lark_goal_channel,
     sync_lark_goal_channel,
+)
+from loopx.extensions.lark.goal_channel_message_delivery import (
+    GoalChannelDeliveryStageError,
 )
 from loopx.extensions.lark.goal_channel_runtime import (
     auto_notify_lark_goal_channel_gate,
@@ -2139,7 +2143,6 @@ def test_cli_deliver_operation_uses_source_registry_runtime(
         "resolve_extension_activation",
         lambda *args, **kwargs: {"ok": True},
     )
-    monkeypatch.setattr(goal_channel_cli, "_binding_target_name", lambda *args: "")
 
     def capture_delivery(**kwargs: Any) -> dict[str, Any]:
         captured.update(kwargs)
@@ -2156,7 +2159,9 @@ def test_cli_deliver_operation_uses_source_registry_runtime(
         }
 
     monkeypatch.setattr(
-        goal_channel_cli, "deliver_goal_channel_operation_card", capture_delivery
+        goal_channel_operation_cli,
+        "deliver_goal_channel_operation_card",
+        capture_delivery,
     )
     result = goal_channel_cli.handle_goal_channel_command(
         argparse.Namespace(
@@ -2178,6 +2183,7 @@ def test_cli_deliver_operation_uses_source_registry_runtime(
 
     assert result == 0
     assert printed["ok"] is True
+    assert printed["extension_activation"] == {"ok": True}
     assert captured["proposal_id"] == "proposal-public-fixture"
     assert captured["action_store_root"] == source_runtime / "chat" / "actions"
     assert captured["runtime_root"] == source_runtime
@@ -2312,3 +2318,136 @@ def test_sync_preserves_provider_failure_blocker(
     assert payload["readback_verified"] is False
     assert payload["details"]["successful_write_count"] == 1
     _assert_public_packet(payload)
+
+
+def test_cli_deliver_operation_projects_typed_stage_blockers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI keeps the typed blocker, stage, and honest write state."""
+
+    project = tmp_path / "typed-stage-project"
+    source_registry_path = project / ".loopx" / "registry.json"
+    source_registry_path.parent.mkdir(parents=True)
+    source_registry = _registry(project)
+    source_registry["goals"][0]["repo"] = str(project)
+    source_registry_path.write_text(json.dumps(source_registry), encoding="utf-8")
+
+    monkeypatch.setattr(
+        goal_channel_cli,
+        "resolve_extension_activation",
+        lambda *args, **kwargs: {"ok": True},
+    )
+
+    def deliver_raises(**kwargs: object) -> object:
+        raise GoalChannelDeliveryStageError(
+            "Goal Channel delivery send failed",
+            blocker="provider_send_rejected",
+            failure_stage="send_operation_card",
+            external_write_performed=False,
+        )
+
+    monkeypatch.setattr(
+        goal_channel_operation_cli,
+        "deliver_goal_channel_operation_card",
+        deliver_raises,
+    )
+    printed: dict[str, Any] = {}
+    result = goal_channel_cli.handle_goal_channel_command(
+        argparse.Namespace(
+            command="goal-channel",
+            goal_channel_command="deliver-operation",
+            goal_id=GOAL_ID,
+            proposal_id="proposal-typed-stage",
+            binding_path=None,
+            target_path=None,
+            execute=True,
+            subcommand_format="json",
+            format=None,
+        ),
+        registry_path=source_registry_path,
+        runtime_root_arg=None,
+        print_payload=lambda payload, fmt, renderer: printed.update(payload),
+        output_format=lambda args: "json",
+    )
+
+    assert result == 1
+    assert printed["ok"] is False
+    assert printed["blocker"] == "provider_send_rejected"
+    assert printed["failure_stage"] == "send_operation_card"
+    assert printed["external_write_performed"] is False
+    assert "extension_activation" not in printed
+    assert "provider rejected" not in json.dumps(printed)
+    _assert_public_packet(printed)
+
+
+@pytest.mark.parametrize(
+    ("failure_stage", "blocker"),
+    [
+        # A send with no provider answer may already be live in the chat.
+        ("send_operation_card", "delivery_outcome_unknown"),
+        # The readback proved the write; only the local receipt failed.
+        ("record_delivery_receipt", "delivery_receipt_write_failed"),
+    ],
+)
+def test_cli_deliver_operation_treats_unknown_write_as_performed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+    blocker: str,
+) -> None:
+    """An unknown provider outcome is never projected as a clean receipt."""
+
+    project = tmp_path / "unknown-outcome-project"
+    source_registry_path = project / ".loopx" / "registry.json"
+    source_registry_path.parent.mkdir(parents=True)
+    source_registry = _registry(project)
+    source_registry["goals"][0]["repo"] = str(project)
+    source_registry_path.write_text(json.dumps(source_registry), encoding="utf-8")
+
+    monkeypatch.setattr(
+        goal_channel_cli,
+        "resolve_extension_activation",
+        lambda *args, **kwargs: {"ok": True},
+    )
+
+    def deliver_unknown(**kwargs: object) -> object:
+        raise GoalChannelDeliveryStageError(
+            "Goal Channel delivery outcome is unknown",
+            blocker=blocker,
+            failure_stage=failure_stage,
+            external_write_performed=None,
+        )
+
+    monkeypatch.setattr(
+        goal_channel_operation_cli,
+        "deliver_goal_channel_operation_card",
+        deliver_unknown,
+    )
+    printed: dict[str, Any] = {}
+    result = goal_channel_cli.handle_goal_channel_command(
+        argparse.Namespace(
+            command="goal-channel",
+            goal_channel_command="deliver-operation",
+            goal_id=GOAL_ID,
+            proposal_id="proposal-unknown-outcome",
+            binding_path=None,
+            target_path=None,
+            execute=True,
+            subcommand_format="json",
+            format=None,
+        ),
+        registry_path=source_registry_path,
+        runtime_root_arg=None,
+        print_payload=lambda payload, fmt, renderer: printed.update(payload),
+        output_format=lambda args: "json",
+    )
+
+    assert result == 1
+    assert printed["ok"] is False
+    assert printed["blocker"] == blocker
+    assert printed["failure_stage"] == failure_stage
+    assert printed["external_write_performed"] is True
+    assert printed["details"]["external_write_outcome"] == "unknown"
+    assert "extension_activation" not in printed
+    _assert_public_packet(printed)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ import loopx.file_lock as file_lock
 from loopx.file_lock import (
     LOCK_ACQUIRE_TIMEOUT_ERROR_CODE,
     LockAcquireTimeoutError,
+    _safe_label,
     exclusive_cross_runtime_file_lock,
     exclusive_file_lock,
     fcntl,
@@ -91,6 +93,9 @@ def test_exclusive_lock_persists_public_safe_holder_metadata(tmp_path: Path) -> 
         holder_path = lock_holder_path(target)
         holder = json.loads(holder_path.read_text(encoding="utf-8"))
         assert holder["pid"] > 0
+        # The record names its own machine, so a reader on another host that
+        # shares this runtime root never treats the pid as local.
+        assert holder["host"] == _safe_label(socket.gethostname(), fallback="unknown")
         assert holder["agent_id"] == "agent-a"
         assert holder["operation"] == "todo-update"
         assert holder["acquired_at"].endswith("Z")
@@ -122,9 +127,18 @@ def test_stalled_holder_times_out_and_records_independent_incident(tmp_path: Pat
         assert payload["incident_recorded"] is True
         incident = payload["lock_timeout"]
         assert incident["holder"]["pid"] == process.pid
+        assert incident["holder"]["host"] == _safe_label(
+            socket.gethostname(), fallback="unknown"
+        )
         assert incident["holder"]["agent_id"] == "holder-agent"
         assert incident["waiter"]["agent_id"] == "waiter-agent"
         assert incident["waiter"]["waited_seconds"] >= 0.1
+        # The refused waiter learns which machine holds the pid, so the operator
+        # looks for it on the right host instead of assuming it is local.
+        assert (
+            incident["operator_action"]["holder_host"]
+            == incident["holder"]["host"]
+        )
         assert incident["operator_action"]["retry_mode"] == (
             "manual_after_holder_inspection"
         )

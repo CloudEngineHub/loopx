@@ -32,10 +32,14 @@ from .chat_status_api import ChatStatusRequestMixin
 from .chat_runtime import ChatRuntimeController, TERMINAL_TURN_STATES
 from .chat_manager import (
     MANAGER_AGENT_GOAL_ID, MANAGER_AGENT_OBJECTIVE, is_manager_channel,
-    manager_workspace, manager_model_config,
+    manager_capabilities_projection, manager_workspace,
 )
+from .chat_session_open import open_chat_session
 from .chat_ssh_source_api import SshSourceRequestMixin
 from .chat_store import ChatSessionStore
+from .chat_loopx_mode import handle_loopx_request
+from .capabilities.manager_context.roundtrip import project_chat_session_snapshot
+from .control_plane.goals.active_state_metadata import active_state_section_text
 from .control_plane.status.ssh_host_catalog import (
     SSH_HOST_CATALOG_PATH,
     ssh_host_catalog_payload,
@@ -44,6 +48,7 @@ from .chat_lark_api import (
     LarkChatRequestMixin,
     build_goal_repository_contexts as build_goal_repository_contexts,
     build_lark_goal_topic_runtime_snapshot,
+    reconcile_lark_manager_route,
 )
 from .extensions.lark import LARK_EXTENSION_ID, LARK_GOAL_CHANNEL_PERMISSION
 from .extensions.lark.app_setup import LarkAppSetupManager
@@ -63,9 +68,7 @@ from .extensions.lark.goal_channel import (
 from .extensions.lark.goal_topic_connections import list_lark_apps
 from .extensions.lark.goal_topic_runtime import LarkGoalTopicRuntimeService
 from .extensions.lark.manager_routing import authorized_manager_goal_ids
-from .extensions.lark.presentation.kanban import (
-    CommandRunner,
-)
+from .extensions.lark.presentation.kanban import CommandRunner
 from .extensions.runtime import (
     default_extension_state_file,
     resolve_extension_activation,
@@ -123,22 +126,6 @@ def _compact_text(value: Any, *, limit: int = 600) -> str:
     return " ".join(str(value or "").split())[:limit].strip()
 
 
-def _active_state_section(state_text: str, heading: str) -> str:
-    marker = f"## {heading}"
-    start = state_text.find(marker)
-    if start < 0:
-        return ""
-    content_start = start + len(marker)
-    end = state_text.find("\n## ", content_start)
-    section = state_text[content_start : end if end >= 0 else None]
-    lines = [
-        line.strip().removeprefix("- ").strip()
-        for line in section.splitlines()
-        if line.strip() and not line.lstrip().startswith("<!--")
-    ]
-    return _compact_text(" ".join(lines))
-
-
 def _goal_public_context(registry: dict[str, Any], goal: dict[str, Any]) -> dict[str, Any]:
     goal_id = str(goal.get("id") or "")
     project = Path(str(goal.get("repo") or ".")).expanduser().resolve()
@@ -148,7 +135,7 @@ def _goal_public_context(registry: dict[str, Any], goal: dict[str, Any]) -> dict
     if state_path is not None and state_path.exists():
         try:
             state_text = state_path.read_text(encoding="utf-8")
-            objective = _active_state_section(state_text, "Objective")
+            objective = _compact_text(active_state_section_text(state_text, "Objective"))
             title_line = next(
                 (line[2:].strip() for line in state_text.splitlines() if line.startswith("# ")),
                 "",
@@ -560,7 +547,11 @@ class ChatRequestHandler(
             if unknown:
                 raise ValueError("unknown session field")
             goal_id = _compact_text(body.get("goal_id"), limit=160) or self.server.selected_goal_id or ""
-            agent_id = _compact_text(body.get("agent_id"), limit=80) or "codex"
+            # ``agent_id`` is the caller's explicit executor pick and stays empty
+            # when the caller does not make one. Each channel then resolves its
+            # own default through its own owner instead of inheriting whatever
+            # executor this client happens to ship with.
+            requested_endpoint = _compact_text(body.get("agent_id"), limit=80)
             mode = _compact_text(body.get("mode"), limit=40) or "resume_latest"
             context_kind = _compact_text(body.get("context_kind"), limit=40) or "goal"
             if context_kind not in {"goal", "manager"}:
@@ -582,14 +573,14 @@ class ChatRequestHandler(
                         "next_action": "Reconnect the Goal from its project root, then retry.",
                     },
                 )
-            session, resumed = self.server.runtime_controller.open_session(
+            session, resumed = open_chat_session(
+                controller=self.server.runtime_controller,
+                context_kind=context_kind,
                 goal_id=goal_id,
-                agent_id=agent_id,
                 work_dir=project,
                 objective=runtime_objective,
                 mode=mode,
-                channel_id="manager" if context_kind == "manager" else f"goal.{goal_id}",
-                agent_goal_id=MANAGER_AGENT_GOAL_ID if context_kind == "manager" else goal_id,
+                requested_endpoint=requested_endpoint,
             )
         except CodexChatAgentError as exc:
             self._send_error(str(exc), status=424, gate=exc.gate, error_code=exc.error_code)
@@ -604,7 +595,7 @@ class ChatRequestHandler(
                 "schema_version": "loopx_chat_session_v1",
                 "session_id": public["session_id"],
                 "goal_id": public["goal_id"],
-                "agent_id": agent_id,
+                "agent_id": public.get("executor_endpoint_id") or requested_endpoint,
                 "context_kind": context_kind,
                 "resumed": resumed,
                 "session": public,
@@ -757,7 +748,8 @@ class ChatRequestHandler(
 
     def _session_snapshot(self, session_id: str) -> None:
         try:
-            self._send_json(self.server.chat_store.session_snapshot(session_id))
+            self._send_json(project_chat_session_snapshot(
+                self.server.runtime_root, self.server.chat_store, session_id))
         except KeyError:
             self._send_error("chat session was not found", status=404)
 
@@ -1063,6 +1055,13 @@ class ChatRequestHandler(
             status=201,
         )
 
+    def _action_not_found(self) -> None:
+        self._send_error(
+            "typed Chat action proposal was not found",
+            status=404,
+            error_code="action_not_found",
+        )
+
     def _action_snapshot(self, proposal_id: str) -> None:
         try:
             proposal = self.server.action_service.load(proposal_id)
@@ -1070,11 +1069,7 @@ class ChatRequestHandler(
             self._send_error(str(exc), status=400, error_code="invalid_proposal_id")
             return
         if proposal is None:
-            self._send_error(
-                "typed Chat action proposal was not found",
-                status=404,
-                error_code="action_not_found",
-            )
+            self._action_not_found()
             return
         self._send_json(
             {
@@ -1115,11 +1110,7 @@ class ChatRequestHandler(
                 raise ValueError("action cancel request must be empty")
             proposal = self.server.action_service.cancel(proposal_id)
         except KeyError:
-            self._send_error(
-                "typed Chat action proposal was not found",
-                status=404,
-                error_code="action_not_found",
-            )
+            self._action_not_found()
             return
         except ActionConflictError as exc:
             self._send_error(str(exc), status=409, error_code="action_conflict")
@@ -1152,11 +1143,7 @@ class ChatRequestHandler(
             else:
                 raise ValueError("unsupported action transition")
         except KeyError:
-            self._send_error(
-                "typed Chat action proposal was not found",
-                status=404,
-                error_code="action_not_found",
-            )
+            self._action_not_found()
             return
         except ActionConflictError as exc:
             self._send_error(str(exc), status=409, error_code="action_conflict")
@@ -1198,11 +1185,7 @@ class ChatRequestHandler(
             )
             return
         except KeyError:
-            self._send_error(
-                "typed Chat action proposal was not found",
-                status=404,
-                error_code="action_not_found",
-            )
+            self._action_not_found()
             return
         except ActionConflictError as exc:
             self._send_error(str(exc), status=409, error_code="action_conflict")
@@ -1264,10 +1247,15 @@ class ChatRequestHandler(
             self._send_json({"ok": True})
             return
         if path == CHAT_CAPABILITIES_PATH:
+            # The steward section is composed by its own owner so the model
+            # arguments, the availability verdict and the readback cannot
+            # disagree about which executor and credential they describe.
             capabilities = {
                 "ok": True,
                 "schema_version": "loopx_chat_capabilities_v1",
-                "manager": {"scope": "owner_global", **manager_model_config()},
+                "manager": manager_capabilities_projection(
+                    self.server.runtime_controller, self.server.chat_store
+                ),
                 "runtime_identity": release_runtime_identity(),
                 "agent_backend": "multi_adapter",
                 "sandbox": "read-only",
@@ -1296,6 +1284,7 @@ class ChatRequestHandler(
             )
         get_dispatch = {
             "/api/chat/completed-todos": self._completed_todos,
+            "/api/chat/goal-results": self._goal_results,
             CHAT_SESSIONS_PATH: self._list_sessions,
             CHAT_ACTIONS_PATH: self._action_list,
             CHAT_GOAL_CONTEXTS_PATH: self._goal_contexts,
@@ -1305,10 +1294,14 @@ class ChatRequestHandler(
             CHAT_GOAL_CHANNEL_TARGETS_PATH: self._goal_channel_targets,
             **self._configuration_get_routes(),
             DEFAULT_CHAT_STATUS_PATH: self._status,
+            "/api/chat/delivery-review": self._delivery_review,
             SSH_HOST_CATALOG_PATH: self._ssh_hosts,
         }
         if path in get_dispatch:
             return get_dispatch[path]()
+        result_parts = path.strip("/").split("/")
+        if len(result_parts) == 4 and result_parts[:3] == ["api", "chat", "goal-results"]:
+            return self._goal_result(result_parts[3])
         setup_parts = path.strip("/").split("/")
         if len(setup_parts) == 5 and setup_parts[:4] == ["api", "chat", "lark", "app-setups"]:
             return self._lark_setup_snapshot(setup_parts[4])
@@ -1316,6 +1309,8 @@ class ChatRequestHandler(
         if len(action_parts) == 3 and action_parts[:2] == ["api", "actions"]:
             return self._action_snapshot(action_parts[2])
         session_parts = path.strip("/").split("/")
+        if len(session_parts) == 5 and session_parts[:3] == ["api", "chat", "sessions"] and session_parts[4] == "loopx":
+            return handle_loopx_request(self, session_parts[3])
         if len(session_parts) == 4 and session_parts[:3] == ["api", "chat", "sessions"]:
             return self._session_snapshot(session_parts[3])
         if len(session_parts) == 7 and session_parts[:3] == ["api", "chat", "sessions"] and session_parts[4] == "turns" and session_parts[6] == "events":
@@ -1350,6 +1345,8 @@ class ChatRequestHandler(
         if path in post_dispatch:
             return post_dispatch[path]()
         session_action_parts = path.strip("/").split("/")
+        if len(session_action_parts) == 5 and session_action_parts[:3] == ["api", "chat", "sessions"] and session_action_parts[4] == "loopx":
+            return handle_loopx_request(self, session_action_parts[3], apply=True)
         if len(session_action_parts) == 5 and session_action_parts[:3] == ["api", "chat", "sessions"] and session_action_parts[4] == "resume":
             return self._resume_session(session_action_parts[3])
         action_parts = path.strip("/").split("/")
@@ -1418,6 +1415,9 @@ def serve_chat(
     if not is_loopback_host(host):
         raise ValueError("loopx chat requires a loopback --host such as 127.0.0.1")
     resolved_assets = (assets_dir or default_chat_assets_dir()).expanduser().resolve()
+    if assets_dir is None:
+        from .presentation.chat_bundle import validate_bundle
+        validate_bundle(resolved_assets, source_root=Path(__file__).resolve().parents[1])
     if not (resolved_assets / "index.html").is_file():
         raise FileNotFoundError("LoopX Chat web assets are unavailable; reinstall LoopX or rebuild the chat bundle")
     resolved_registry_path = registry_path or (Path.home() / ".loopx" / "registry.json")
@@ -1483,6 +1483,13 @@ def serve_chat(
         runtime_controller=server.runtime_controller,
         workspace_roots=resolved_scan_roots,
     )
+    # An admitted steward team preview is projected into the typed action store,
+    # because that store is what the product surfaces list: the chat action
+    # service owns it, so the channel hands the preview to that owner instead of
+    # teaching the runtime a second place where cards live.
+    server.runtime_controller.team_plan_projector = (
+        server.action_service.project_team_plan_preview
+    )
     server.lark_goal_topic_runtime = LarkGoalTopicRuntimeService(
         snapshot_provider=lambda: build_lark_goal_topic_runtime_snapshot(
             registry_path=server.registry_path,
@@ -1490,6 +1497,13 @@ def serve_chat(
         ),
         runtime_root=runtime_root,
         runtime_controller=server.runtime_controller,
+        action_service=server.action_service,
+        manager_route_reconciler=lambda route: reconcile_lark_manager_route(
+            route=route,
+            registry_path=server.registry_path,
+            runtime_root_override=server.runtime_root_override,
+            runtime_controller=server.runtime_controller,
+        ),
     )
     server.lark_goal_topic_runtime.start()
     from .extensions.lark.manager_returns import start_return_service

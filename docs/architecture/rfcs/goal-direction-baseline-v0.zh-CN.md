@@ -24,6 +24,10 @@
 RFC 成熟度与交付成熟度互相独立。本提案不声称 `goal_direction_baseline_v0`、
 它的声明字段或运行时消费者已经存在于 `main`。
 
+独立的[验收合同 v0](../../reference/goal-acceptance-observations.md#owner-authorized-contract-v0)
+不实现本 RFC 的材料声明或使用回执。#2831 的下一切片是**方向材料版本与验收基线关联**，
+通过下面的同 Agent/当前版本 fixture 验证。
+
 ---
 
 ## 1. 决策摘要

@@ -14,6 +14,7 @@ from .host_loop_activation import (
     render_agent_type_catalog_markdown,
     scheduler_command_binding_for_agent_type,
 )
+from .history import load_registry
 from .install_contract import NO_CLONE_INSTALL_URL
 from .kiro_cli_goal_mode import (
     KIRO_CLI_GOAL_CLEAR_COMMAND,
@@ -30,7 +31,7 @@ from .project_prompt import (
     render_quota_guard_command,
     shell_arg,
 )
-from .registry import read_json, registry_goals
+from .registry import registry_goals
 from .skill_install_readback import (
     ARK_MANAGED_AGENT_REQUIRED_SKILL_IDS,
     configured_host_skills_dir,
@@ -242,7 +243,7 @@ def _skill_delivery_contract(
                 else {}
             )
         ),
-        "source_repository": "https://github.com/huangruiteng/loopx",
+        "source_repository": "https://github.com/loopx-project/loopx",
         "source_directories": [
             f"skills/{skill_id}"
             for skill_id in required_skill_ids
@@ -282,6 +283,7 @@ def _bootstrap_pack_command(
 ) -> str:
     surface_by_type = {
         "codex-app": "codex-app",
+        "trae_app": "trae_app",
         "codex-app-ssh": "codex-app-ssh",
         "codex-ide-plugin": "codex-ide-plugin",
         "codex-cli": "codex-cli-tui",
@@ -322,6 +324,8 @@ def _bootstrap_pack_command(
 def _start_instruction(agent_type: str) -> str:
     if agent_type == "codex-app":
         return "Use `$loopx <task>` or select the LoopX skill from `/skills`; Codex App should then create/update the heartbeat automation."
+    if agent_type == "trae_app":
+        return "Use `$loopx <task>` or select the LoopX skill from `/skills`; Trae App should then create/update the heartbeat automation."
     if agent_type == "codex-app-ssh":
         return "Use `$loopx <task>` or select the LoopX skill from `/skills`; after todos are written, set `/goal <task_body>` in the visible Codex App task."
     if agent_type == "codex-ide-plugin":
@@ -425,7 +429,7 @@ def build_agent_onboarding_packet(
     resolved_project = str(inspection["project"])
     resolved_goal_id = str(inspection["goal_id"])
     registry_path = Path(str(inspection["registry"]))
-    registry = read_json(registry_path) if registry_path.exists() else {}
+    registry = load_registry(registry_path) if registry_path.exists() else {}
     goal = next(
         (
             item

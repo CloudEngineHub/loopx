@@ -10,7 +10,7 @@ and size/count budgets.
 | --- | --- | --- | --- | --- | --- | --- |
 | `heartbeat_prompt_json` | heartbeat automation | wake and route one bounded turn | `quota should-run`, `status`, or `review-packet --handoff-only` | `json_chars <= 4800` plus `interface_budget.within_budget=true` | `nested_keys <= 40` | `top_level_keys <= 30` |
 | `review_packet_handoff_only_json` | project-agent handoff | forward the smallest sufficient task packet | full `review-packet` or run-history artifact | `json_chars <= 3000` plus `handoff_interface_budget.within_budget=true` | `nested_keys <= 40` | `top_level_keys <= 18` |
-| `quota_should_run_json` | quota guard | decide whether the selected goal may spend compute | `status`, `history`, or active state | `json_chars <= 13000` | `nested_keys <= 330` | `top_level_keys <= 52` |
+| `quota_should_run_json` | quota guard | decide whether the selected goal may spend compute | `status`, `history`, or active state | `json_chars <= 14500` | `nested_keys <= 360` | `top_level_keys <= 52` |
 | `dashboard_status_json` | operator dashboard | render first-screen operator state | `history`, run artifacts, or project-local adapter output | `json_chars <= 19500` | `nested_keys <= 260` | `top_level_keys <= 25` |
 
 These four budgets measure compact machine payloads. For
@@ -52,6 +52,19 @@ route, pending-selection qualification, and hard-lane preemption evidence. The
 budget retains modest headroom for those enforceable semantics; repeated action
 details and command prefixes still belong in compact references or cold paths.
 
+The work-count projection adds scope and completeness facts that a bounded Todo
+list cannot supply. Its observed-row count is derived from `open - hidden`,
+rather than repeated in the wire object. The quota ceiling moves from 14,000
+to 14,500 characters and from 350 to 360 nested keys to retain modest headroom
+for this useful semantic growth; the top-level ceiling stays 52. Existing
+repeated Todo bodies across named lanes have distinct consumers and cannot be
+removed without a separately validated caller migration.
+
+工作计数增加了展示列表无法提供的完整性与作用域信息；已观察行数由 `open - hidden`
+推导，不重复传输。quota 字符预算从 14,000 调至 14,500，嵌套键从 350 调至 360，
+保留适量余量；顶层键上限仍为 52。不同 lane 重复携带的 Todo 有既有消费者，后续
+去重应配合调用方迁移，不能仅为通过尺寸测试而删除。
+
 | Emitted Surface | Default Qualification | Scale / Limit Contract | Cold Path |
 | --- | --- | --- | --- |
 | `start-goal --guided` | baseline and growth | small, crowded, and multi-agent goals; objective/command duplication | `packet_summary.detail_refs` and `bootstrap-command-pack` |
@@ -74,8 +87,8 @@ status collection.
 
 The canonical emitted-output inventory and current characterization ceilings
 live in `loopx.control_plane.testing.cli_output_budget`. Those ceilings are
-regression baselines, not target sizes: preserving a large current value makes
-unreviewed growth fail while a later optimization lowers the ceiling. Tests
+regression baselines, not target sizes: unexplained growth fails, while measured
+consumer value can justify compaction or a reviewed increase. Tests
 also record UTF-8 bytes, line count, JSON parseability, pretty-print overhead,
 semantic anchors, collection-growth slope, and bootstrap duplication. Every
 declared agent-facing surface must name an owner, consumer action, and cold-path
@@ -141,8 +154,12 @@ Restraint rules for new fields:
    decision summary into a hot-path surface.
 2. A hot-path field must answer a current consumer action. If the consumer only
    says "nice to inspect", keep the field in the cold path.
-3. A new nested object must either stay within the nested budget above or retire
-   / compact an older field in the same surface.
+3. For a new nested object or a budget failure, compare compaction, retaining the
+   limit, and an evidence-backed increase using the
+   [budget decision guide](../../development/testing-and-quality.md#budget-failure-decisions).
+   Update the owning contract and tests together when the budget changes;
+   preserve semantic checks and the original measurement scope. Similar
+   objects with different consumers are not automatically redundant.
 4. Do not add prompt branches to compensate for an unclear payload. Clarify the
    status/quota/review-packet contract instead.
 5. If a short worker would need to read more than one hot-path payload before it

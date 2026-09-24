@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import signal
 import subprocess
@@ -29,8 +30,132 @@ from .goal_channel_operation import (
 from .private_json import write_private_json_atomic
 
 APP_ID_PATTERN = re.compile(r"cli_[A-Za-z0-9_-]+")
+EVENT_READY_PREFIX = "[event] ready "
+EVENT_DIAGNOSTIC_PREFIX = "[event] "
+_CALLBACK_FAILURE_CODES = {
+    "collector Bot application identity is unverified": "collector_app_identity_unverified",
+    "operation callback event type is unsupported": "callback_event_type_unsupported",
+    "operation callback must come from a button": "callback_action_not_button",
+    "operation callback action_value is invalid": "callback_action_value_invalid",
+    "operation callback action is incomplete": "callback_action_incomplete",
+    "operation callback action schema is unsupported": "callback_action_schema_unsupported",
+    "operation callback decision is unsupported": "callback_decision_unsupported",
+    "operation callback update token is invalid": "callback_update_token_invalid",
+    "operation callback event_id is invalid": "callback_event_id_invalid",
+    "operation callback message_id is invalid": "callback_message_id_invalid",
+    "operation callback chat_id is invalid": "callback_chat_id_invalid",
+    "operation callback operator_id is invalid": "callback_operator_id_invalid",
+    "operation callback host is unsupported": "callback_host_unsupported",
+    "operation callback card content is unavailable": "callback_card_content_unavailable",
+    "operation callback proposal was not found": "callback_proposal_not_found",
+    "typed operation proposal is unavailable": "callback_operation_unavailable",
+    "typed operation envelope is unavailable": "callback_operation_envelope_unavailable",
+    "operation review plan is unavailable": "callback_review_plan_unavailable",
+    "operation review frame is unavailable": "callback_review_frame_unavailable",
+    "operation projection is unavailable": "callback_projection_unavailable",
+    "operation projection fields are unavailable": "callback_projection_fields_unavailable",
+    "operation callback timestamp is invalid": "callback_timestamp_invalid",
+    "operation confirmation has unsupported or missing fields": "callback_confirmation_invalid",
+    "operation timestamps require a timezone": "callback_timestamp_timezone_missing",
+    "claimed operation disappeared before dispatch": "callback_claim_disappeared",
+    "operation executor outcome does not match the consumed claim": "callback_executor_outcome_invalid",
+    "operation disappeared before result delivery": "callback_operation_disappeared",
+    "operation card delivery was not recorded": "delivery_not_recorded",
+    "operation callback digest drifted": "confirmation_digest_drifted",
+    "recorded operation card digest drifted": "recorded_card_digest_drifted",
+    "operation callback card content drifted": "callback_card_projection_drifted",
+    "operation callback app identity drifted": "callback_app_identity_drifted",
+    "principal is not authorized for this operation": "principal_not_authorized",
+    "operation callback tenant membership is unverified": "membership_unverified",
+    "operation callback does not match the delivered request": "delivery_binding_mismatch",
+    "operation is not awaiting confirmation": "operation_not_awaiting_confirmation",
+    "operation confirmation arrived after expiry": "operation_expired",
+    "operation callback result delivery was not verified": "result_delivery_unverified",
+}
+_CALLBACK_FAILURE_STAGES = {
+    "_callback_action": "parse_action",
+    "_callback_timestamp": "validate_timestamp",
+    "callback_timestamp": "validate_timestamp",
+    "_callback_card_content_matches": "verify_card_content",
+    "callback_card_content_matches": "verify_card_content",
+    "_operator_membership_verified": "verify_operator_membership",
+    "operator_membership_verified": "verify_operator_membership",
+    "decide_operation": "claim_operation",
+    "_execute_claimed_operation": "execute_operation",
+    "_update_callback_card": "deliver_result",
+    "update_callback_card": "deliver_result",
+}
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
 Sleeper = Callable[[float], None]
+
+
+def _operation_callback_failure_code(exc: BaseException) -> str:
+    return _CALLBACK_FAILURE_CODES.get(str(exc), "callback_rejected")
+
+
+def _operation_callback_failure_stage(exc: BaseException) -> str:
+    """Return a value-free processing stage for a rejected callback."""
+
+    stage = "handle_callback"
+    traceback = exc.__traceback__
+    while traceback is not None:
+        stage = _CALLBACK_FAILURE_STAGES.get(
+            traceback.tb_frame.f_code.co_name,
+            stage,
+        )
+        traceback = traceback.tb_next
+    return stage
+
+
+def _callback_event_shape(payload: Mapping[str, Any]) -> dict[str, object]:
+    """Return a value-free diagnostic projection for a rejected callback."""
+
+    action_value = payload.get("action_value")
+    try:
+        action = (
+            json.loads(action_value) if isinstance(action_value, str) else action_value
+        )
+    except json.JSONDecodeError:
+        action = None
+    card_content = payload.get("card_content")
+    card_shape = "missing"
+    if isinstance(card_content, str):
+        if not card_content:
+            card_shape = "empty"
+        else:
+            try:
+                parsed_card = json.loads(card_content)
+            except json.JSONDecodeError:
+                card_shape = "text"
+            else:
+                card_shape = (
+                    "json_object" if isinstance(parsed_card, Mapping) else "json_other"
+                )
+    elif isinstance(card_content, Mapping):
+        card_shape = "object"
+    elif card_content is not None:
+        card_shape = type(card_content).__name__
+    timestamp = str(payload.get("timestamp") or "")
+    return {
+        "type_supported": payload.get("type") == "card.action.trigger",
+        "action_is_button": payload.get("action_tag") == "button",
+        "action_is_object": isinstance(action, Mapping),
+        "action_field_count": len(action) if isinstance(action, Mapping) else 0,
+        "event_id_valid": bool(
+            re.fullmatch(r"[A-Za-z0-9._:-]{1,240}", str(payload.get("event_id") or ""))
+        ),
+        "timestamp_is_digits": timestamp.isdigit(),
+        "timestamp_digit_count": len(timestamp),
+        "operator_id_present": bool(payload.get("operator_id")),
+        "message_id_present": bool(payload.get("message_id")),
+        "chat_id_present": bool(payload.get("chat_id")),
+        "host_supported": payload.get("host") == "im_message",
+        "token_present": bool(payload.get("token")),
+        "card_content_shape": card_shape,
+        "shape_digest": hashlib.sha256(
+            "\0".join(sorted(str(key) for key in payload)).encode()
+        ).hexdigest()[:16],
+    }
 
 
 def _run_json(
@@ -360,7 +485,6 @@ def _operation_callback_consume_argv(
         str(config["consume_timeout"]),
         "--jq",
         f"select({chat_filter})",
-        "--quiet",
     ]
 
 
@@ -388,8 +512,12 @@ def _write_operation_callback_status(
     project: str | Path,
     *,
     listener_active: bool,
+    listener_ready: bool | None = None,
     callback_delivery_verified: bool | None = None,
     failure_kind: str | None = None,
+    failure_code: str | None = None,
+    failure_stage: str | None = None,
+    failure_event_shape: Mapping[str, object] | None = None,
     consumer_returncode: int | None = None,
     recovered_result_count_delta: int = 0,
     result_delivery_failure_count_delta: int = 0,
@@ -411,8 +539,13 @@ def _write_operation_callback_status(
     if failure_kind:
         failure_count += 1
     payload = {
-        "schema_version": "lark_operation_callback_listener_status_v0",
+        "schema_version": "lark_operation_callback_listener_status_v1",
         "listener_active": listener_active,
+        "listener_ready": (
+            bool(listener_ready)
+            if listener_ready is not None
+            else bool(prior.get("listener_ready") is True)
+        ),
         "callback_delivery_verified": bool(
             prior.get("callback_delivery_verified") is True
             or callback_delivery_verified is True
@@ -437,6 +570,13 @@ def _write_operation_callback_status(
             else prior.get("last_verified_callback_at")
         ),
         "last_failure_kind": failure_kind or prior.get("last_failure_kind"),
+        "last_failure_code": failure_code or prior.get("last_failure_code"),
+        "last_failure_stage": failure_stage or prior.get("last_failure_stage"),
+        "last_failure_event_shape": (
+            dict(failure_event_shape)
+            if failure_event_shape is not None
+            else prior.get("last_failure_event_shape")
+        ),
         "consumer_returncode": consumer_returncode,
         "updated_at": now,
         "private_content_returned": False,
@@ -447,13 +587,20 @@ def _write_operation_callback_status(
 
 def _operation_transport_runner(
     runner: CommandRunner,
-) -> Callable[[list[str], Path | None, float | None], Mapping[str, Any]]:
-    def run(
-        argv: list[str], cwd: Path | None, timeout: float | None
-    ) -> Mapping[str, Any]:
+    *,
+    command_prefix: Sequence[str],
+) -> Callable[[list[str], Path | None, float | None], dict[str, Any]]:
+    def run(argv: list[str], cwd: Path | None, timeout: float | None) -> dict[str, Any]:
+        effective_argv = list(argv)
+        if (
+            len(command_prefix) > 1
+            and effective_argv
+            and effective_argv[0] == command_prefix[-1]
+        ):
+            effective_argv = [*command_prefix, *effective_argv[1:]]
         try:
             result = runner(
-                argv,
+                effective_argv,
                 cwd=cwd,
                 capture_output=True,
                 text=True,
@@ -611,7 +758,7 @@ def run_lark_event_collector(
     process = subprocess.Popen(
         _consume_argv(config, command_prefix),
         stdout=subprocess.PIPE,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         bufsize=1,
     )
     callback_process: subprocess.Popen[str] | None = None
@@ -619,6 +766,7 @@ def run_lark_event_collector(
     result_recovery_thread: threading.Thread | None = None
     result_recovery_stop = threading.Event()
     callback_stats = {
+        "ready": 0,
         "received": 0,
         "verified": 0,
         "failed": 0,
@@ -636,58 +784,106 @@ def run_lark_event_collector(
         profile_identity_checked = True
         callback_process = subprocess.Popen(
             _operation_callback_consume_argv(config, command_prefix),
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
-            text=True,
+            stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace",
             bufsize=1,
         )
         _write_operation_callback_status(
             config["project"],
             listener_active=True,
+            listener_ready=False,
         )
 
         def consume_operation_callbacks() -> None:
             assert callback_process is not None
             assert callback_process.stdout is not None
-            transport_runner = _operation_transport_runner(runner)
-            for line in callback_process.stdout:
-                try:
-                    payload = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(payload, Mapping):
-                    continue
-                callback_stats["received"] += 1
-                try:
-                    if profile_app_id is None:
-                        raise ValueError(
-                            "collector Bot application identity is unverified"
+            transport_runner = _operation_transport_runner(
+                runner,
+                command_prefix=command_prefix,
+            )
+            try:
+                for line in callback_process.stdout:
+                    stripped = line.strip()
+                    if stripped.startswith(EVENT_READY_PREFIX):
+                        callback_stats["ready"] = 1
+                        _write_operation_callback_status(
+                            config["project"],
+                            listener_active=True,
+                            listener_ready=True,
                         )
-                    receipt = handle_goal_channel_operation_callback(
-                        payload,
-                        runtime_root=resolved_runtime_root,
-                        action_store_root=resolved_runtime_root / "chat" / "actions",
-                        profile_app_id=profile_app_id,
-                        cli_bin=lark_cli_executable,
-                        profile=str(config["profile"]),
-                        runner=transport_runner,
-                    )
-                    if receipt.get("ok") is not True:
-                        raise RuntimeError(
-                            "operation callback result delivery was not verified"
+                        continue
+                    if stripped.startswith(EVENT_DIAGNOSTIC_PREFIX):
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(payload, Mapping):
+                        continue
+                    if payload.get("type") != "card.action.trigger":
+                        # stderr is intentionally merged so provider startup
+                        # diagnostics remain observable.  Some diagnostics are
+                        # JSON objects, but they do not prove that the typed
+                        # callback route is receiving events.
+                        continue
+                    if not callback_stats.get("ready"):
+                        # A real typed event is stronger readiness evidence than
+                        # the provider diagnostic marker.
+                        callback_stats["ready"] = 1
+                        _write_operation_callback_status(
+                            config["project"],
+                            listener_active=True,
+                            listener_ready=True,
                         )
-                except Exception as exc:  # noqa: BLE001
-                    callback_stats["failed"] += 1
+                    callback_stats["received"] += 1
+                    try:
+                        if profile_app_id is None:
+                            raise ValueError(
+                                "collector Bot application identity is unverified"
+                            )
+                        receipt = handle_goal_channel_operation_callback(
+                            payload,
+                            runtime_root=resolved_runtime_root,
+                            action_store_root=resolved_runtime_root
+                            / "chat"
+                            / "actions",
+                            profile_app_id=profile_app_id,
+                            cli_bin=lark_cli_executable,
+                            profile=str(config["profile"]),
+                            runner=transport_runner,
+                        )
+                        if receipt.get("ok") is not True:
+                            raise RuntimeError(
+                                "operation callback result delivery was not verified"
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        callback_stats["failed"] += 1
+                        _write_operation_callback_status(
+                            config["project"],
+                            listener_active=True,
+                            listener_ready=True,
+                            failure_kind=type(exc).__name__,
+                            failure_code=_operation_callback_failure_code(exc),
+                            failure_stage=_operation_callback_failure_stage(exc),
+                            failure_event_shape=_callback_event_shape(payload),
+                        )
+                        continue
+                    callback_stats["verified"] += 1
                     _write_operation_callback_status(
                         config["project"],
                         listener_active=True,
-                        failure_kind=type(exc).__name__,
+                        listener_ready=True,
+                        callback_delivery_verified=True,
                     )
-                    continue
-                callback_stats["verified"] += 1
+            finally:
+                callback_returncode = callback_process.wait()
                 _write_operation_callback_status(
                     config["project"],
-                    listener_active=True,
-                    callback_delivery_verified=True,
+                    listener_active=False,
+                    listener_ready=False,
+                    consumer_returncode=callback_returncode,
                 )
 
         callback_thread = threading.Thread(
@@ -714,7 +910,10 @@ def run_lark_event_collector(
                         allowed_chat_ids=set(routes_by_chat),
                         cli_bin=lark_cli_executable,
                         profile=str(config["profile"]),
-                        runner=_operation_transport_runner(runner),
+                        runner=_operation_transport_runner(
+                            runner,
+                            command_prefix=command_prefix,
+                        ),
                     )
                 except Exception:  # noqa: BLE001
                     result = {"attempted": 1, "delivered": 0, "failed": 1}
@@ -875,6 +1074,7 @@ def run_lark_event_collector(
             _write_operation_callback_status(
                 config["project"],
                 listener_active=False,
+                listener_ready=False,
                 consumer_returncode=(
                     callback_process.returncode
                     if callback_process is not None
@@ -922,6 +1122,7 @@ def run_lark_event_collector(
         result.update(
             {
                 "operation_callback_listener_started": True,
+                "operation_callback_listener_ready": bool(callback_stats.get("ready")),
                 "operation_callback_received_count": callback_stats["received"],
                 "operation_callback_verified_count": callback_stats["verified"],
                 "operation_callback_failure_count": callback_stats["failed"],

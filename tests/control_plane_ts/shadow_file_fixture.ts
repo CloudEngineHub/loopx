@@ -8,6 +8,7 @@ import { canonicalAuthorityBytes, canonicalAuthoritySha256 } from "../../loopx/c
 import { TODO_CANONICAL_READ_RECORD_FIELDS } from "../../loopx/control_plane/coordination/coordination_projection.ts";
 import * as schemas from "../../loopx/control_plane/coordination/coordination_state_contract.generated.ts";
 import { FileAuthorityStore } from "../../loopx/control_plane/coordination/file_authority_store.ts";
+import { localAuthorityShadowPartitionDigest } from "../../loopx/control_plane/coordination/local_authority_shadow.ts";
 import { outboxEntryIdentity } from "../../loopx/control_plane/coordination/local_authority_shadow_outbox.ts";
 import { bootstrapCoordinationRuntimeShadow } from "../../loopx/control_plane/coordination/runtime_shadow.ts";
 import { requireShadowCaptureBinding } from "../../loopx/control_plane/coordination/shadow_management.ts";
@@ -52,6 +53,7 @@ export async function fixture(t: TestContext): Promise<ShadowFixture> {
 }
 export async function pendingEntry(f: ShadowFixture, seq: number, part: JsonObject, options: {
   partition?: "todos" | "leases"; resolution?: string; writeClass?: string; marker?: boolean;
+  previousPartitionProjection?: JsonObject;
 } = {}): Promise<JsonObject> {
   const partition = options.partition ?? "todos";
   const binding = await requireShadowCaptureBinding(f.root, "goal-a");
@@ -62,7 +64,10 @@ export async function pendingEntry(f: ShadowFixture, seq: number, part: JsonObje
   const sourceBytes = Buffer.from(`primary transaction ${partition}:${seq}\n`);
   if (partition === "todos" && options.resolution !== "abandoned") await writeFile(f.statePath, sourceBytes);
   const source = { kind: partition === "todos" ? "markdown_active_state" : "task_lease_record",
-    previous_partition_digest: `sha256:${canonicalAuthoritySha256(previousPartition)}`,
+    previous_partition_digest: localAuthorityShadowPartitionDigest(
+      partition,
+      options.previousPartitionProjection ?? previousPartition,
+    ),
     previous_bytes_digest: sha(previous), bytes_digest: sha(sourceBytes), lease: null, event_id: null };
   const entryId = outboxEntryIdentity("goal-a", partition, seq, source.bytes_digest, binding.capture_lineage_id, binding.source_root_digest);
   const preparedAt = `2026-09-06T00:00:${String(seq).padStart(2, "0")}.000Z`;
@@ -75,7 +80,7 @@ export async function pendingEntry(f: ShadowFixture, seq: number, part: JsonObje
   const prepared = { schema_version: schemas.LOCAL_AUTHORITY_SHADOW_OUTBOX_ENTRY_SCHEMA, goal_id: "goal-a",
     capture_lineage_id: binding.capture_lineage_id, entry_id: entryId, partition, seq, writer, source,
     source_root_digest: binding.source_root_digest, projection: recordedProjection,
-    partition_digest: partition === "todos" ? `sha256:${canonicalAuthoritySha256(part)}` : null, prepared_at: preparedAt };
+    partition_digest: partition === "todos" ? localAuthorityShadowPartitionDigest(partition, part) : null, prepared_at: preparedAt };
   const preparedBytes = `${JSON.stringify(prepared, null, 2)}\n`;
   await writeFile(join(directory, `${stem}.prepared.json`), preparedBytes);
   const marker = options.marker ?? true;
@@ -84,11 +89,12 @@ export async function pendingEntry(f: ShadowFixture, seq: number, part: JsonObje
   if (marker) await writeFile(join(directory, `${stem}.committed.json`), markerBytes);
   const resolution = options.resolution ?? "committed";
   const noOp = resolution === "abandoned" || resolution === "unproved";
-  return { schema_version: schemas.LOCAL_AUTHORITY_SHADOW_COMMIT_ENTRY_REQUEST_SCHEMA, runtime_root: f.root, goal_id: "goal-a",
+  return { runtime_root: f.root, goal_id: "goal-a",
     entry: { capture_lineage_id: binding.capture_lineage_id, entry_id: entryId, partition, seq, writer, source,
       source_root_digest: binding.source_root_digest, prepared_at: preparedAt, committed_at: marker ? committedAt : null,
       prepared_sha256: sha(preparedBytes), committed_sha256: marker ? sha(markerBytes) : null, resolution },
-    partition_projection: noOp ? null : part, partition_digest: noOp ? null : `sha256:${canonicalAuthoritySha256(part)}` };
+    partition_projection: noOp ? null : part,
+    partition_digest: noOp ? null : localAuthorityShadowPartitionDigest(partition, part) };
 }
 export async function settleFiles(f: ShadowFixture, request: JsonObject, result: JsonObject, previousDigest: string | null = null): Promise<void> {
   const entry = request.entry as JsonObject;
@@ -102,4 +108,13 @@ export async function settleFiles(f: ShadowFixture, request: JsonObject, result:
   }));
   await rm(join(directory, `${stem}.prepared.json`));
   await rm(join(directory, `${stem}.committed.json`), { force: true });
+}
+
+/** Production delivery sends identity and byte witnesses, not a second projection. */
+export function entrySelection(request: JsonObject): JsonObject {
+  const entry = request.entry as JsonObject;
+  return {schema_version: schemas.LOCAL_AUTHORITY_SHADOW_COMMIT_ENTRY_REQUEST_SCHEMA,
+    runtime_root: request.runtime_root, goal_id: request.goal_id,
+    ...Object.fromEntries(["partition", "seq", "entry_id", "capture_lineage_id", "prepared_sha256", "committed_sha256"]
+      .map(key => [key, entry[key]]))};
 }

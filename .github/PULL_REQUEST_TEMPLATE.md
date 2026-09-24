@@ -1,11 +1,28 @@
-## Summary
+## Goal And Delivered Outcome
 
--
+<!-- Use a few concrete sentences; references are optional when the request or
+regression is self-contained. State the accepted outcome, not a list of files.
+For cross-cutting LoopX work, link the relevant overall-roadmap/domain acceptance
+when useful. A roadmap id is not required for ordinary fixes or maintenance.
+These are author facts; the review capability independently judges delivery.
+-->
 
-## Issue Or Task
+- Goal/source and gap:
+- Observable before → after, with the validation row that proves it:
+- Issue/task and intended base: <!-- Use Closes only for the issue actually completed; otherwise Related to. -->
 
-- Closes #
-- Contributor task ID:
+## Scope And Continuation
+
+<!-- A scoped fix may be complete while the parent program remains open.
+For a staged increment, explain the useful delta, remaining gap, next owner/task
+and why this is an independently testable/reversible boundary. Link existing
+work before creating follow-ups. Docs/research/maintenance need a concrete value,
+not a fabricated runtime caller. Write "complete within this scope" when no
+successor is needed. Do not grade quality from LOC, PR counts or test counts.
+-->
+
+- Completed scope and remaining work:
+- Slice boundary / successor: <!-- N/A with reason when the accepted task is complete. -->
 
 ## Validation
 
@@ -41,7 +58,7 @@ baseline/head comparison and a failing-before or mutation check, not just test c
   Documentation-only changes may use a static/manual row and explain runtime N/A.
   A passing row does not waive required real-path/backend gates. -->
 
-See [validation disclosure guidance](https://github.com/huangruiteng/loopx/blob/main/CONTRIBUTING.md#validation-disclosure).
+See [validation disclosure guidance](https://github.com/loopx-project/loopx/blob/main/CONTRIBUTING.md#validation-disclosure).
 
 ## Frontend / Visual Evidence
 
@@ -63,6 +80,7 @@ even when the underlying access was authorized.
 - After:
 - States and viewports shown:
 - Source data: <!-- choose one: none | synthetic | public_fixture -->
+- Attention review: <!-- Per docs/development/design.md: what earns its place through high-value information, essential interaction, or expressive visual presentation? Name consolidation/removal across the whole viewport, and how failures, uncertainty, and one-step controls remain available. -->
 
 ## Type of Change
 
@@ -88,16 +106,14 @@ even when the underlying access was authorized.
 
 ## Technical Direction
 
-<!-- Select one. Direction labels route review; they do not imply maturity or merge authority. -->
+<!-- Optional routing: Core control-plane hardening; Long-horizon benchmark evidence;
+Operator surface and IM integration; Shared Goal Authority and cross-host coordination;
+Architecture and research incubator. For cross-cutting work, reference an existing
+roadmap S/G/R or domain acceptance id rather than copying the plan.
+Routing is not maturity or implementation authority.
+-->
 
-- [ ] Core control-plane hardening
-- [ ] Long-horizon benchmark evidence
-- [ ] Operator surface and IM integration
-- [ ] Shared Goal Authority and cross-host coordination
-- [ ] Architecture and research incubator
-
-- Target base branch:
-- Direction tracker or promotion unit:
+- Direction / acceptance reference, when applicable:
 
 ## Shared-authority RFC fixture impact
 

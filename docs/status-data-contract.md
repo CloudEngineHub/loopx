@@ -1525,9 +1525,10 @@ carry any writeback review guidance. The trace is not an independent
 next-action authority and does not imply automatic active-state writeback.
 `execution_obligation`,
 `heartbeat_recommendation`, `work_lane_contract`,
-`external_evidence_observation`, `goal_boundary`, and
-`protocol_action_packet` remain compatibility and drill-down fields under that
-contract, not competing sources of truth.
+`external_evidence_observation`, and `goal_boundary` remain compatibility and
+drill-down fields under that contract, not competing sources of truth.
+`protocol_action_packet` belongs to the historical summary contract; the
+PR-05 migration below omits it from new outputs.
 The same payload includes `scheduler_hint.schema_version=scheduler_hint_v0`.
 This is the scheduling contract for host runtimes, not a delivery permission:
 Codex App can back off its automation cadence for long waits, while Codex CLI
@@ -1549,9 +1550,9 @@ available from `scheduler_hint.cold_path_detail` when callers request
 App/local cadence back to the current profile's initial interval before
 unchanged backoff resumes, and does not spend quota.
 Codex App heartbeats should use `automation_update` only when
-`codex_app.stateful_backoff.apply_needed=true` and
-`codex_app.recommended_rrule` is present. If that update succeeds, the agent
-must run `codex_app.ack_hint.cli_args`;
+`app_automation.stateful_backoff.apply_needed=true` and
+`app_automation.recommended_rrule` is present. If that update succeeds, the agent
+must run `app_automation.ack_hint.cli_args`;
 current payloads use `quota scheduler-ack-current` so LoopX re-reads the latest
 hint, then persists `reset_token`, `identity_signature`, `progression_index`,
 and `last_applied_rrule` under the runtime root. When the same identity repeats,
@@ -1559,7 +1560,7 @@ LoopX advances the progression after the applied interval has elapsed, until
 the max interval. An immediate post-ACK readback remains on the acknowledged
 RRULE so repeated reconciliation converges rather than oscillates. When the reset token
 changes, the next projected RRULE returns to
-`reset_policy.codex_app_initial_rrule`. If the current desired RRULE is already
+`reset_policy.app_automation_initial_rrule`. If the current desired RRULE is already
 applied, `recommended_rrule` is omitted and the host update should be skipped.
 When that matching readback still needs a reset-token/identity binding,
 `ack_needed=true`; run the bound ack directly. Otherwise no scheduler action
@@ -1591,23 +1592,25 @@ requires `execution_obligation.must_attempt_work=false` and no blocker-push
 notification such as `notify_user_on_open_todo=true`; when both are present,
 notify the user and do not spend. Verified `mapped_noop_if_unchanged` remains a
 quiet no-op case.
-The guard also emits `protocol_action_packet.schema_version =
-protocol_action_packet_v0`, a compact rule-only packet for executor and future
-LLM-router experiments. It distills the same quota guard into one primary actor,
-user/agent action requirement, quiet-noop allowance, execution lane, and a short
-`llm=no_api` marker inside a single `summary` string so the hot path stays
-within interface budget. The detailed spend policy remains in
-`heartbeat_recommendation.spend_policy`. This packet is not a new source of
-authority and does not authorize model/API use; it is the deterministic baseline
-that an optional Codex/LLM summarizer must beat on payload shrinkage and
-user/agent action clarity before direct LLM API wiring is added. When an open
-todo uses the common `[P*] short title: details` shape, the packet uses the
-short title as the action label so long progress notes do not re-enter the hot
-path.
-If open user todos coexist with executable agent work, the packet keeps the
-primary actor as `agent` but adds `user_action_pending=true` plus a compact
-`user_action` label. This preserves the owner-visible blocker without
-mislabeling that owner todo as `agent_action`.
+Historical guard outputs carried `protocol_action_packet_v0`, a deterministic
+summary of actor, action requirements, quiet-noop allowance, and lane with
+`llm=no_api`. It conveyed no independent execution or model/API authority.
+The [PR-05 migration](reference/protocols/protocol-action-packet-decision-v0.md)
+omits `protocol_action_packet` from all new quota/live/paused/recovery
+outputs, including full-decision cold reads. Current executors and status/display
+consumers should read the typed interaction, lane, and scheduler contracts above;
+packet absence must not imply permission to deliver, spend, or stay quiet.
+Historical packet, opaque-summary, residue, and signature readers remain;
+stored records are not rewritten. New source/envelope signature documents may
+omit the capsule's packet witness while preserving semantic fields: equal hashes
+with older packet-bearing outputs are not promised. The release boundary is the first official release containing #4794;
+published v1.1.0 artifacts remain unchanged. Valid v0 historical formats stay
+supported for the lifetime of the v0 reader contract, without a removal date
+introduced by this migration. The named bundled consumers and v1.1.0 rollback
+baseline are qualified; external clients requiring this optional packet must
+migrate or pin the previous release. See the migration contract for exact scope
+and rollback steps.
+
 When a registry-enabled goal has `control_plane.self_repair.enabled=true`,
 `quota should-run` may return `decision=self_repair`,
 `self_repair_allowed=true`, `stall_self_repair`, and an `effective_action` such
@@ -1832,6 +1835,7 @@ Goal shape:
     "blocked_action_scope": "gated_delivery",
     "safe_bypass_allowed": true
   },
+  "index_digest": "sha256:<exact-run-index-digest>",
   "index_exists": true,
   "raw_index_records": 2,
   "unique_runs": 2,
@@ -1865,6 +1869,11 @@ Goal shape:
   "latest_runs": []
 }
 ```
+
+`index_digest` is the SHA-256 digest of the exact run-index bytes observed by
+the status read. It is `null` when the index file does not exist. Quota spend
+previews carry this opaque value into the write-time compare-and-swap check, so
+consumers must not recompute it from the compact `latest_runs` projection.
 
 `authority_registry` on the goal comes from the registry and stays visible even
 when the latest run is an operator gate or reward overlay rather than a fresh
@@ -2000,9 +2009,9 @@ quiet skip.
 For `controller_readiness`, the status export keeps only controller-stage
 booleans, missing gate names, operator-facing review text, next handoff
 condition, and compact gate rows with `id`, `ok`, and `review`. For
-`human_reward`, the status export keeps only `recorded_at`, `decision`,
-`reward`, `reason_summary`, and `follow_up`. For `operator_gate`, the status
-export keeps only `recorded_at`, `gate`, `decision`, `operator_question`,
+`human_reward`, the status export keeps only `recorded_at`, `actor_kind`,
+`decision`, `reward`, `reason_summary`, and `follow_up`. For `operator_gate`,
+the status export keeps only `recorded_at`, `gate`, `decision`, `operator_question`,
 `reason_summary`, `follow_up`, and `agent_command`. Operator-gate runs may also
 include a compact `operator_gate_resume_contract` with
 `version=operator_gate_resume_contract_v0`, `gate_id`, `created_state_ref`,
@@ -2040,6 +2049,7 @@ Operators can append `human_reward` with the CLI:
 ```bash
 loopx reward \
   --goal-id example-experiment-goal \
+  --actor-kind owner \
   --decision continue_route \
   --reward positive \
   --reason-summary "comparable validation improved and the route is worth extending"
@@ -2055,6 +2065,7 @@ operating-rule correction, the overlay may also include a compact lesson:
 ```bash
 loopx reward \
   --goal-id example-experiment-goal \
+  --actor-kind owner \
   --decision route_correction \
   --reward mixed \
   --reason-summary "run the driver repair before expanding cases" \
@@ -2105,6 +2116,7 @@ operator explicitly asks for it:
 ```bash
 loopx reward \
   --goal-id example-experiment-goal \
+  --actor-kind owner \
   --decision continue_route \
   --reward positive \
   --reason-summary "comparable validation improved and the route is worth extending" \
@@ -2266,6 +2278,18 @@ attributing one session's spend to another run. A host that measures usage
 itself can instead pass one finished per-run
 measurement with `--usage-json`. Without either flag, usage stays unknown.
 
+The explicitly selected rollout is scanned as UTF-8 JSONL through its opening
+file size, one record at a time. This is a complete accounting scan of that
+extent, not a sampled prefix: later appended usage is observed on the next
+read. Transcript-buffer memory scales with the largest record rather than the
+whole file; the reader also retains aggregate metadata and any trailing model
+contexts needed for legacy binding reconciliation. The final incomplete JSON
+record or incomplete UTF-8 codepoint may be ignored while the writer appends.
+Interior corruption, other invalid UTF-8 and an early EOF before the captured
+extent fail closed. Unicode separators inside JSON strings are content, not
+JSONL record boundaries. No discovery, resume, session import or additional
+usage authority is introduced.
+
 Cumulative host snapshots are converted to non-negative deltas at that
 producer boundary, and the run index append is the single commit point: each
 session's delta basis is reconstructed from its own already-booked rows
@@ -2323,7 +2347,12 @@ The summary currently reports:
 - `runs_24h` / `runs_7d`: observed compact run records in the current status
   sample.
 - `quota_spend_slots_24h` / `quota_spend_slots_7d`: slots from
-  `quota_slot_spent` events in that sample.
+  `quota_slot_spent` events in that sample, using the same rule as the quota
+  spend ledger (`goal_quota_with_spend_ledger`): the event's `event_type`
+  decides, a spend is keyed by the run it was recorded against, and a void is
+  clamped against the spend it names. A spend whose `quota_event` cannot be
+  read contributes no slot, and a void that targets a spend outside the window
+  does not reduce that window.
 - `automation_run_count_24h` / `automation_run_count_7d`: quota spend events
   whose compact `quota_event.source` is `heartbeat`, `automation`, or `cron`.
   If the compact run index does not retain a source, `quota_slot_spent` is

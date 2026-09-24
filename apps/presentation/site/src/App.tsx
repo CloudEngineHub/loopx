@@ -37,7 +37,7 @@ const mlEvidenceUrl = new URL(
 ).href;
 
 const setupPrompts: Record<Language, string> = {
-  en: `Connect the current project to LoopX: https://github.com/huangruiteng/loopx
+  en: `Connect the current project to LoopX: https://github.com/loopx-project/loopx
 
 Do not clone LoopX. Follow the README Quick Start to use the no-clone installer and \`loopx doctor\`, then reuse or \`loopx connect/bootstrap\` the current project state.
 
@@ -45,7 +45,7 @@ After setup, first report the project connection status, current user gate, top 
 
 Then I will use \`/loopx <complex task>\` to begin real work.
 When you receive \`/loopx <goal text>\`, first provide a concise ordered plan, then write it as P0/P1/P2 todos so I can see what needs to be done, what is blocked by a gate, and what the next safe action is.`,
-  zh: `把当前项目接入 LoopX: https://github.com/huangruiteng/loopx
+  zh: `把当前项目接入 LoopX: https://github.com/loopx-project/loopx
 
 不要 clone LoopX；按 README Quick Start 使用 no-clone installer、
 \`loopx doctor\`，复用或 \`loopx connect/bootstrap\` 当前项目状态。
@@ -59,7 +59,7 @@ P0/P1/P2 todos，让我能看到当前要做什么、什么被 gate 卡住、
 下一步安全动作是什么。`,
 };
 
-const shellSetupCommand = `curl -fsSL https://huangruiteng.github.io/loopx/install.sh | bash
+const shellSetupCommand = `curl -fsSL https://loopx-project.github.io/loopx/install.sh | bash
 export PATH="$HOME/.local/bin:$PATH"
 loopx doctor
 cd /path/to/your-project
@@ -139,8 +139,10 @@ const content = {
       body: "Try the product guide, read the research, and browse the full case collection.",
       cards: [
         ["Product demo", "Personal Workspace", "A shared view of Goals, Tasks, Chat, and outputs. Watch the demo and start your own local workspace.", "Watch demo & read guide"],
-        ["Research & evaluation", "SWE-Marathon", "Compare five execution modes across 15 matched tasks, with results, costs, and study limitations.", "Read the study"],
+        ["Research & evaluation", "SWE-Marathon", "Compare three retained execution modes across 15 matched tasks, with results, costs, and study limitations.", "Read the study"],
+        ["Research & evaluation", "LHTB × LoopX", "Compare five execution mechanisms across 46 long-horizon terminal tasks and inspect where recoverable state helps.", "Read the study"],
         ["Research · Chinese", "DeepSWE behavior discoveries", "Explore how domain hints affect implementation and validation in individual cases.", "Read the behavior analysis"],
+        ["Research · Chinese", "DeepSWE × Sol", "Read the historical 113-task results, continuation mechanisms, and patch-delivery checks.", "Read the research brief"],
         ["Cases", "All LoopX showcases", "Browse public cases, interactive walkthroughs, and their evidence boundaries.", "Browse all cases"],
       ],
       developer: "Projection developer tools",
@@ -252,8 +254,10 @@ const content = {
       body: "从产品演示到评测结果，找到你想深入了解的内容。",
       cards: [
         ["产品演示", "Personal Workspace", "在一个工作区查看目标、任务、对话与产出。观看演示，开始使用本地工作区。", "观看演示与使用指南"],
-        ["研究与评测", "SWE-Marathon", "查看五种执行模式在 15 个匹配任务上的结果、成本与研究局限。", "阅读研究简报"],
+        ["研究与评测", "SWE-Marathon", "查看三种保留模式在 15 个匹配任务上的结果、成本与研究局限。", "阅读研究简报"],
+        ["研究与评测", "LHTB × LoopX", "对比五种执行机制在 46 个长程终端任务上的结果，观察可恢复状态在什么场景有效。", "阅读研究简报"],
         ["研究与评测", "DeepSWE 行为分析", "从具体案例观察领域提示如何影响实现选择与验证行为。", "阅读行为分析"],
+        ["研究与评测", "DeepSWE × Sol", "解读 113 任务的历史结果、持续执行机制，以及补丁如何进入最终验收。", "阅读研究简报"],
         ["案例", "完整案例目录", "浏览公开案例、交互式讲解及其证据边界。", "浏览全部案例"],
       ],
       developer: "开发者投影工具",
@@ -821,7 +825,7 @@ export function App() {
           >
             {language === "en" ? "中文" : "EN"}
           </button>
-          <a className="github-button" href="https://github.com/huangruiteng/loopx">
+          <a className="github-button" href="https://github.com/loopx-project/loopx">
             <GitHubIcon />
             GitHub
           </a>
@@ -848,7 +852,7 @@ export function App() {
             </a>
             <a href={`${basePath}blog/${language === "zh" ? "zh/" : ""}`}>Blog</a>
             <a href={`${basePath}docs/`}>Docs</a>
-            <a href="https://github.com/huangruiteng/loopx">GitHub</a>
+            <a href="https://github.com/loopx-project/loopx">GitHub</a>
           </nav>
         ) : null}
       </header>
@@ -1009,7 +1013,9 @@ export function App() {
                 const paths = [
                   "docs/guides/personal-workspace-user-guide/",
                   `benchmarks/swe-marathon/${language === "zh" ? "?lang=zh" : ""}`,
+                  `benchmarks/lhtb/${language === "zh" ? "?lang=zh" : ""}`,
                   "benchmarks/deepswe/behavior-discovery/",
+                  "benchmarks/deepswe-sol/",
                   `docs/showcases/index${language === "en" ? ".en" : ""}.html`,
                 ];
                 return (
@@ -1121,7 +1127,7 @@ export function App() {
               </div>
               <pre>
                 <code>
-                  <b>$</b> curl -fsSL https://huangruiteng.github.io/loopx/install.sh | bash{"\n"}
+                  <b>$</b> curl -fsSL https://loopx-project.github.io/loopx/install.sh | bash{"\n"}
                   <b>$</b> export PATH="$HOME/.local/bin:$PATH"{"\n"}
                   <b>$</b> loopx doctor{"\n"}
                   <b>$</b> cd /path/to/your-project{"\n"}
@@ -1133,10 +1139,10 @@ export function App() {
                 </code>
               </pre>
               <div className="quickstart-links">
-                <a href="https://github.com/huangruiteng/loopx#quick-start">
+                <a href="https://github.com/loopx-project/loopx#quick-start">
                   {copy.quickstart.guide} <ArrowRight size={14} />
                 </a>
-                <a href="https://github.com/huangruiteng/loopx/blob/main/scripts/install-from-github.sh">
+                <a href="https://github.com/loopx-project/loopx/blob/main/scripts/install-from-github.sh">
                   {copy.quickstart.inspect} <ExternalLink size={13} />
                 </a>
               </div>
@@ -1152,7 +1158,7 @@ export function App() {
         </a>
         <p>{copy.footer}</p>
         <nav>
-          <a href="https://github.com/huangruiteng/loopx">GitHub</a>
+          <a href="https://github.com/loopx-project/loopx">GitHub</a>
           <a href="#explore">{language === "zh" ? "研究与案例" : "Research & cases"}</a>
           <a href={`${basePath}blog/${language === "zh" ? "zh/" : ""}`}>Blog</a>
           <a href={`${basePath}docs/guides/personal-workspace-user-guide/`}>Personal Workspace</a>
