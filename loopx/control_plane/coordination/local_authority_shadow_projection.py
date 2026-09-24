@@ -84,20 +84,23 @@ def text_digest(text: str) -> str:
 
 def project_coordination_source(request: dict[str, Any]) -> dict[str, Any]:
     """One bounded call for a complete capture, never one call per record."""
-    from ..effect_runtime import EffectRuntimeRejected, effect_runtime_result
+    from ..effect_runtime import EffectRuntimeRejected
+    from .source_transfer import source_effect_runtime_result
 
     _reject_floats(request, "$")
     try:
-        result = effect_runtime_result("coordination.source.project", {
+        result = source_effect_runtime_result("coordination.source.project", {
             "schema_version": "coordination_source_projection_request_v0", **request,
         })
     except EffectRuntimeRejected as error:
         raise ProjectionValueError(str(error)) from error
     if (not isinstance(result, dict)
-        or result.get("schema_version") != "coordination_source_projection_result_v0"
-        or not isinstance(result.get("projection"), dict)):
+        or result.get("schema_version") != "coordination_source_projection_result_v0"):
         raise ProjectionValueError("invalid coordination source projection result")
-    return result["projection"]
+    projection = result.get("projection")
+    if not isinstance(projection, dict):
+        raise ProjectionValueError("invalid coordination source projection result")
+    return projection
 
 
 def compact_lease(raw: object, *, goal_id: str, file_stem: str) -> dict[str, Any]:
