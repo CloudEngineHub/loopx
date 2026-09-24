@@ -378,6 +378,14 @@ These priorities do not change live Goal quota or authorize experiments/cloud re
 - **Exit:** independent readback proves retained commitments; distinguish all-gap/partial/stale/rejected/committed; recovery neither duplicates nor expands work, and the initiating surface displays the exact outcome. Add independent semantic counterexamples, not only row-existence assertions.
 - **Rollback:** stop new plan production, keep old previews/receipts readable and unfinished reconciliation available; do not delete materialized work.
 
+**Recovery checkpoint (2026-09-24):** Enabled acceptance now routes missing as
+well as stale associations through bounded agent-scoped replan. Exact hold
+checkpoints survive crowded vision projections; a replan decision does not
+simultaneously select a candidate monitor. Owner binding and fresh completion
+validation remain required. This repairs R1/S2/S3 continuity, not R4's general
+intent-preserving amendment or provider promotion. Real File/SQLite CLI
+regressions cover recovery admission and continued refusal of unbound completion.
+
 ### R2: Continuous Small-team Execution
 
 **Product responsibility.** The steward owns the owner's cross-project context,
@@ -457,6 +465,14 @@ including independent objection and useful synthesis, remains open.
 This qualifies a local execution-facts readback, not the full R2 ladder: assignment
 receipt integration, provisioning, remote probes, two-cycle continuation and Lark
 qualification remain open under their existing owners.
+For managed non-Chat work, [PR #4978](https://github.com/loopx-project/loopx/pull/4978)
+proposes an accepted, exact-version Goal result readback: canonical Todo
+completion binds local report bytes, the CLI verifies them, and packaged Goal
+Files reads a Goal-scoped loopback projection. The [Live Team Workspace RFC](live-team-workspace-v0.md)
+defines this producer-to-reader boundary. Focused local File/SQLite and
+desktop/mobile checks pass on the proposed head; maintainer review and CI
+remain open. Return to the original requester conversation, mixed-team
+continuation and stop/recovery remain separate unqualified outcomes.
 
 **Live team experience is a core S5 outcome.** The [Live Team Workspace
 RFC](live-team-workspace-v0.md) joins a precise command surface with a spatial
@@ -596,6 +612,16 @@ Progress means another independently reproducible user journey, not more fields 
 ### Verified Findings
 
 These are synthetic-fixture results at the exact baseline, without live user content. F1–F4 exercise existing `ChatActionService.preview/apply` with isolated Goals. F4 injects failure immediately before the second Todo write; the other writes use the actual local Todo writer. F5–F7 are source/contract findings.
+
+**R1 acceptance coverage checkpoint.** New owner acceptance configurations must
+explicitly select named work or all advancement work; bounded experiments no
+longer implicitly gate future independent tasks. Legacy contracts retain their
+scope until owner reconfiguration. Claim, lease, completion, verification and
+read-only delivery surfaces share the TS acceptance owner. A blocker ACK remains
+a wait checkpoint, not recovery completion; scope correction must prove restored
+independent admission without weakening task-level validation. See the
+[acceptance contract](../../reference/goal-acceptance-observations.md#owner-authorized-contract-v0).
+This narrows a local recovery gap, not the full R1/R2 coordination acceptance.
 
 **R1 transaction checkpoint.** Team-plan admission and whole-batch planning now live in `work_items/team_plan.ts`. Confirmation assigns all admitted lanes in one write with a durable operation receipt; identity is proposal + lane, never Todo text. File/SQLite authority uses the existing CAS and receipt owner; legacy Markdown writes the records and immutable receipt together under its existing fence and lock. Exact replay reads historical results even after a receiver changes, completes or deletes work. A precommit failure creates no lane prefix, and pending canonical display delivery requires recovery before Chat reports verified success. The card names partial assignments and gaps; quota/stop remain advisory and an explicit enforcement claim is rejected.
 

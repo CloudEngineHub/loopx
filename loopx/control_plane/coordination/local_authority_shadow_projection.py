@@ -1,7 +1,7 @@
 """Pure projection rules shared by the local authority shadow capture and parity.
 
-Everything here is a deterministic function of its inputs: no file, lock,
-registry, or effect-runtime access. The same complete record contracts and canonical
+TS owns complete Todo capture assembly; Python retains exact-byte encoding
+and source-file identity adaptation. Neither path changes source state. The same complete record contracts and canonical
 bytes define the source digest, the outbox partition digest, and the candidate
 readback comparison, so no two code paths can disagree about what "the same
 coordination state" means.
@@ -14,7 +14,6 @@ import json
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from ..todos.todo_summary import canonical_todo_read_record
 from .coordination_state_contract import TODO_CANONICAL_READ_RECORD_FIELDS
 from .coordination_state_contract_generated import LOCAL_AUTHORITY_SHADOW_PROJECTION_SCHEMA
 
@@ -35,6 +34,8 @@ def _reject_floats(value: object, path: str) -> None:
     # Python `1.0` and JavaScript `1` would canonicalize differently, so a
     # float anywhere in a compared projection would manufacture a false
     # divergence between the Python source digest and the TypeScript head.
+    if isinstance(value, int) and not isinstance(value, bool) and abs(value) > 2**53 - 1:
+        raise ProjectionValueError(f"integer is outside the cross-runtime safe range ({path})")
     if isinstance(value, bool) or value is None or isinstance(value, (str, int)):
         return
     if isinstance(value, float):
@@ -81,22 +82,22 @@ def text_digest(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def compact_todo(raw: object) -> dict[str, Any] | None:
-    """Retain the complete versioned Todo consumer record."""
+def project_coordination_source(request: dict[str, Any]) -> dict[str, Any]:
+    """One bounded call for a complete capture, never one call per record."""
+    from ..effect_runtime import EffectRuntimeRejected, effect_runtime_result
 
-    if not isinstance(raw, Mapping):
-        return None
-    todo_id = str(raw.get("todo_id") or "").strip()
-    if not todo_id:
-        return None
+    _reject_floats(request, "$")
     try:
-        return dict(
-            canonical_value(
-                canonical_todo_read_record(dict(raw), reject_unknown=True)
-            )
-        )
-    except ValueError as error:
+        result = effect_runtime_result("coordination.source.project", {
+            "schema_version": "coordination_source_projection_request_v0", **request,
+        })
+    except EffectRuntimeRejected as error:
         raise ProjectionValueError(str(error)) from error
+    if (not isinstance(result, dict)
+        or result.get("schema_version") != "coordination_source_projection_result_v0"
+        or not isinstance(result.get("projection"), dict)):
+        raise ProjectionValueError("invalid coordination source projection result")
+    return result["projection"]
 
 
 def compact_lease(raw: object, *, goal_id: str, file_stem: str) -> dict[str, Any]:
@@ -116,9 +117,9 @@ def todo_partition_projection(
 ) -> dict[str, Any]:
     """The state guarded by the goal's active-state file lock."""
 
-    compact = [item for item in (compact_todo(raw) for raw in todos) if item is not None]
-    compact.sort(key=lambda item: str(item["todo_id"]))
-    return {"handoff_mode": handoff_mode, "todos": compact}
+    return project_coordination_source({
+        "kind": "todo_partition", "handoff_mode": handoff_mode, "todos": list(todos),
+    })
 
 
 def lease_partition_projection(
@@ -199,7 +200,6 @@ __all__ = [
     "canonical_bytes",
     "canonical_value",
     "compact_lease",
-    "compact_todo",
     "head_comparison_view",
     "head_digest",
     "lease_partition_projection",

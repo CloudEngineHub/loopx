@@ -1131,6 +1131,183 @@ def test_runtime_service_uses_one_consumer_for_reused_app_profile(
     assert service.active_profiles() == []
 
 
+def test_same_lark_app_aliases_share_one_machine_consumer(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    from loopx.extensions.lark import goal_topic_runtime as runtime
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    started = threading.Event()
+    calls: list[str] = []
+    app_id = "cli_public_fixture"
+
+    def snapshot(profile: str) -> dict[str, Any]:
+        return {
+            "target_payload": {
+                "targets": {
+                    profile: {
+                        "enabled": True,
+                        "channel": {"chat_id": "oc_public_fixture"},
+                        "identity": {
+                            "sender_profile": profile,
+                            "bot_app_id": app_id,
+                            "cli_bin": "fake-lark",
+                        },
+                    }
+                }
+            },
+            "binding_payloads": {
+                "goal-alpha": {
+                    "bindings": {
+                        "goal-alpha": {
+                            "goal_id": "goal-alpha",
+                            "provider": "lark",
+                            "enabled": True,
+                            "target_ref": profile,
+                            "topic": {"root_message_id": "om_topic_alpha"},
+                        }
+                    }
+                }
+            },
+            "goal_contexts": {},
+        }
+
+    def fake_stream(**kwargs: Any) -> dict[str, Any]:
+        calls.append(str(kwargs["profile"]))
+        started.set()
+        kwargs["stop"].wait(2)
+        return {"ok": True, "status": "stopped"}
+
+    monkeypatch.setattr(runtime, "stream_lark_goal_topic_profile", fake_stream)
+    first = runtime.LarkGoalTopicRuntimeService(
+        snapshot_provider=lambda: snapshot("app-id-profile"),
+        runtime_root=tmp_path / "first",
+        runtime_controller=object(),
+    )
+    second = runtime.LarkGoalTopicRuntimeService(
+        snapshot_provider=lambda: snapshot("alias-profile"),
+        runtime_root=tmp_path / "second",
+        runtime_controller=object(),
+    )
+    first.refresh()
+    assert started.wait(1)
+    second.refresh()
+    for _ in range(100):
+        if second.health_snapshot().get("alias-profile", {}).get("status") == "standby":
+            break
+        threading.Event().wait(0.01)
+    assert calls == ["app-id-profile"]
+    assert second.health_snapshot()["alias-profile"]["error_code"] == (
+        "lark_event_consumer_owned_elsewhere"
+    )
+    second.close()
+    first.close()
+
+    successor = runtime.LarkGoalTopicRuntimeService(
+        snapshot_provider=lambda: snapshot("alias-profile"),
+        runtime_root=tmp_path / "successor",
+        runtime_controller=object(),
+    )
+    successor.refresh()
+    for _ in range(100):
+        if len(calls) == 2:
+            break
+        threading.Event().wait(0.01)
+    assert calls == ["app-id-profile", "alias-profile"]
+    successor.close()
+
+
+def test_alias_consumer_routes_all_chats_of_its_bot_app() -> None:
+    from loopx.extensions.lark.goal_topic_runtime import _target_for_profile_chat
+    from loopx.extensions.lark.team_plan_confirmation import active_profile_chat_ids
+
+    snapshot = {
+        "target_payload": {
+            "targets": {
+                profile: {
+                    "enabled": True,
+                    "channel": {"chat_id": chat_id},
+                    "identity": {
+                        "sender_profile": profile,
+                        "bot_app_id": "cli_public_fixture",
+                    },
+                }
+                for profile, chat_id in (
+                    ("canonical", "oc_first"),
+                    ("alias", "oc_second"),
+                )
+            }
+        },
+        "binding_payloads": {
+            profile: {
+                "bindings": {
+                    profile: {
+                        "goal_id": profile,
+                        "provider": "lark",
+                        "enabled": True,
+                        "target_ref": profile,
+                    }
+                }
+            }
+            for profile in ("canonical", "alias")
+        },
+    }
+    assert (
+        _target_for_profile_chat(
+            snapshot["target_payload"],
+            profile="canonical",
+            bot_app_id="cli_public_fixture",
+            chat_id="oc_second",
+        )[0]
+        == "alias"
+    )
+    assert active_profile_chat_ids(snapshot, "canonical") == [
+        "oc_first",
+        "oc_second",
+    ]
+    snapshot["target_payload"]["targets"]["canonical"]["channel"]["chat_id"] = "oc_second"
+    for profile in ("canonical", "alias"):
+        snapshot["binding_payloads"][profile]["bindings"][profile]["topic"] = {
+            "root_message_id": f"om_{profile}"
+        }
+    assert (
+        _target_for_profile_chat(
+            snapshot["target_payload"],
+            profile="canonical",
+            bot_app_id="cli_public_fixture",
+            chat_id="oc_second",
+            root_id="om_alias",
+            binding_payloads=snapshot["binding_payloads"],
+        )[0]
+        == "alias"
+    )
+    for profile in ("canonical", "alias"):
+        snapshot["binding_payloads"][profile]["bindings"][profile]["routing"] = {
+            "conversation_kind": "manager"
+        }
+    assert (
+        _target_for_profile_chat(
+            snapshot["target_payload"],
+            profile="canonical",
+            bot_app_id="cli_public_fixture",
+            chat_id="oc_second",
+            binding_payloads=snapshot["binding_payloads"],
+        )
+        is None
+    )
+    assert (
+        _target_for_profile_chat(
+            snapshot["target_payload"],
+            profile="canonical",
+            bot_app_id="cli_public_fixture",
+            chat_id="oc_second",
+            active_target_refs={"alias"},
+        )[0]
+        == "alias"
+    )
+
+
 def test_runtime_service_restarts_profile_when_callback_chats_change(
     tmp_path: Path,
 ) -> None:

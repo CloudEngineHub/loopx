@@ -4,7 +4,7 @@ import {
   isStaleActionFailure,
 } from "../../../../../../loopx/control_plane/presentation/action_review_plan.js";
 import { refreshAttention } from "./attention-details";
-import { teamPlanAssignments, teamPlanAppliedLine, teamPlanAppliedOutcome, teamPlanFields, teamPlanGoalId, teamPlanLaneCount, teamPlanReceiptGapLanes } from "./team-plan-preview";
+import { teamPlanAssignments, teamPlanAppliedLine, teamPlanAppliedOutcome, teamPlanFields, teamPlanGoalId, teamPlanLaneCount, teamPlanReceiptGapLanes, teamPlanTodoIds } from "./team-plan-preview";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent } from "react";
 import { AlertCircle, Bot, CalendarClock, FileText, ListPlus, MessageCircleQuestion, Paperclip, Plus, RefreshCw, Send, X } from "lucide-react";
 
@@ -16,6 +16,7 @@ import {
   fetchGoalContexts,
   fetchGoalChannelTargets,
   fetchLarkConnections,
+  fetchLoopXMode,
   listTypedActions,
   previewTypedAction,
   setupGoalChannel,
@@ -181,40 +182,71 @@ function ManagerHomeBoard({
 }
 
 function GoalOutputsView({
+  active,
   items,
   onSelect,
   reportState,
+  teamSessionId,
 }: {
+  active: boolean;
   items: Array<Extract<WorkspaceTimelineItem, { kind: "output" }>>;
   onSelect: (selection: WorkspaceDrawerSelection) => void;
   reportState?: WorkspaceModel["periodicReports"];
+  teamSessionId?: string;
 }) {
   const { locale, t } = useWorkspaceI18n();
+  const [teamSnapshot, setTeamSnapshot] = useState<LoopXModeSnapshot | null>(null);
+  const [teamError, setTeamError] = useState(false);
+  const [teamRefresh, setTeamRefresh] = useState(0);
+  useEffect(() => {
+    if (!active || !teamSessionId) {
+      setTeamSnapshot(null);
+      setTeamError(false);
+      return;
+    }
+    let current = true;
+    setTeamSnapshot(null);
+    setTeamError(false);
+    void fetchLoopXMode(teamSessionId).then((snapshot) => {
+      if (current) setTeamSnapshot(snapshot);
+    }).catch(() => {
+      if (current) setTeamError(true);
+    });
+    return () => { current = false; };
+  }, [active, teamSessionId, teamRefresh]);
+  const teamConfigured = Boolean(teamSnapshot?.session_id === teamSessionId
+    && teamSnapshot?.settings.agent_id && teamSnapshot?.settings.execution_config);
   return (
-    <section className="personal-object-list personal-files-list" data-testid="personal-goal-outputs">
-      <header><strong>{t("files.title")}</strong><span>{items.length}</span></header>
-      {reportState?.loading ? (
-        <p className="personal-object-list-state" role="status"><RefreshCw className="is-spinning" size={14} />{t("files.loadingReports")}</p>
-      ) : null}
-      {reportState?.error ? (
-        <p className="personal-object-list-state is-error" role="alert"><AlertCircle size={14} />{t("files.reportLoadFailed")}: {reportState.error}</p>
-      ) : null}
-      {!reportState?.loading && !reportState?.error && items.length === 0 ? (
-        <p className="personal-object-list-state"><FileText size={14} />{t("files.empty")}</p>
-      ) : null}
-      {items.map((item) => (
-        <button data-output-kind={item.output.kind} key={item.id} onClick={() => onSelect({ item: item.output, kind: "output" })} type="button">
-          <span className="personal-file-icon"><FileText size={16} /></span>
-          <strong>{item.output.title}</strong>
-          {item.output.report ? <em>{t("files.reportDelta", { added: item.output.report.addedCount, changed: item.output.report.changedCount })}</em> : null}
-          <p>{item.output.summary ?? item.output.safePreview ?? item.output.kind ?? t("files.emptySummary")}</p>
-          <small title={item.output.createdAt}>{[
-            item.output.kind === "report" ? t("files.verifiedReport") : null,
-            activityTimeLabel(item.output.createdAt, locale, t),
-          ].filter(Boolean).join(" · ")}</small>
-        </button>
-      ))}
-    </section>
+    <>
+      <section className="personal-object-list personal-files-list" data-testid="personal-goal-outputs">
+        <header><strong>{t("files.title")}</strong>{!teamConfigured ? <span>{items.length}</span> : null}</header>
+        {reportState?.loading ? (
+          <p className="personal-object-list-state" role="status"><RefreshCw className="is-spinning" size={14} />{t("files.loadingReports")}</p>
+        ) : null}
+        {reportState?.error ? (
+          <p className="personal-object-list-state is-error" role="alert"><AlertCircle size={14} />{t("files.reportLoadFailed")}: {reportState.error}</p>
+        ) : null}
+        {!reportState?.loading && !reportState?.error && items.length === 0 && !teamConfigured
+          && (!teamSessionId || Boolean(teamSnapshot)) ? (
+          <p className="personal-object-list-state"><FileText size={14} />{t("files.empty")}</p>
+        ) : null}
+        {items.map((item) => (
+          <button data-output-kind={item.output.kind} key={item.id} onClick={() => onSelect({ item: item.output, kind: "output" })} type="button">
+            <span className="personal-file-icon"><FileText size={16} /></span>
+            <strong>{item.output.title}</strong>
+            {item.output.report ? <em>{t("files.reportDelta", { added: item.output.report.addedCount, changed: item.output.report.changedCount })}</em> : null}
+            <p>{item.output.summary ?? item.output.safePreview ?? item.output.kind ?? t("files.emptySummary")}</p>
+            <small title={item.output.createdAt}>{[
+              item.output.kind === "report" ? t("files.verifiedReport") : null,
+              activityTimeLabel(item.output.createdAt, locale, t),
+            ].filter(Boolean).join(" · ")}</small>
+          </button>
+        ))}
+      </section>
+      {active && teamSessionId && !teamSnapshot && !teamError ? <p className="personal-object-list-state" role="status">{t("files.checkingTeam")}</p> : null}
+      {active && teamSessionId && teamError ? <p className="personal-object-list-state is-error" role="alert">{t("files.teamLoadFailed")} <button type="button" onClick={() => setTeamRefresh(value => value + 1)}>{t("startup.retry")}</button></p> : null}
+      {active && teamConfigured && teamSessionId ? <GoalTeamResults sessionId={teamSessionId} zh={locale === "zh-CN"} refreshKey={JSON.stringify(teamSnapshot?.deliveries ?? [])} /> : null}
+    </>
   );
 }
 
@@ -635,6 +667,7 @@ function workspaceProposal(proposal: TypedActionProposal, t: WorkspaceTranslate)
       : proposalStatus(proposal.status),
     teamPlanOutcome: proposal.action_kind === "team.plan" ? teamPlanAppliedOutcome(proposal.receipt) ?? undefined : undefined,
     teamPlanAssignments: proposal.action_kind === "team.plan" ? teamPlanAssignments(proposal.receipt, proposal.normalized_parameters) : undefined,
+    teamPlanTodoIds: proposal.action_kind === "team.plan" ? teamPlanTodoIds(proposal.receipt) : undefined,
     teamPlanGapLanes: proposal.action_kind === "team.plan"
       ? teamPlanReceiptGapLanes(proposal.receipt, proposal.normalized_parameters)
       : undefined,
@@ -1102,6 +1135,7 @@ export function PersonalWorkspacePage({
         const restoreable = stored
           .filter((proposal) => ["preview_ready", "gated", "deferred", "applying"].includes(proposal.status)
             || compileActionReviewPlan(proposal).retryOriginal === true
+            || (proposal.action_kind === "team.plan" && proposal.status === "applied")
             || (proposal.action_kind === "operation.execute" && proposal.status === "applied"))
           .map((proposal) => workspaceProposal(proposal, t));
         const restored = Object.fromEntries(restoreable.map((proposal) => [proposal.previewId, proposal]));
@@ -1890,7 +1924,7 @@ export function PersonalWorkspacePage({
       drawer={drawerSelection ? <ContextDrawer agents={agents} attentionHistory={model.attentionHistory ?? model.userTodos} onSelectAttention={(item) => setSelection({ kind: "attention", item })} callbacks={effectiveDrawerCallbacks} goalNotifications={model.goalNotifications ?? []} goals={workspaceGoals} inspectorExpanded={taskInspectorExpanded} larkConnections={readOnly ? [] : larkConnections} onClose={() => {
         if (drawerSelection.kind === "proposal"
           && ["applied", "rejected"].includes(drawerSelection.item.status)
-          && !(drawerSelection.item.actionKind === "heartbeat.bind" && drawerSelection.item.status === "applied")) {
+          && !(drawerSelection.item.status === "applied" && ["heartbeat.bind", "team.plan"].includes(drawerSelection.item.actionKind))) {
           setProposals((current) => {
             const next = { ...current };
             delete next[drawerSelection.item.previewId];
@@ -1991,9 +2025,11 @@ export function PersonalWorkspacePage({
                     userTodos={model.userTodos}
                   />),
                   files: (<GoalOutputsView
+                    active={selectedGoalTab === "files"}
                     items={items.filter((item): item is Extract<WorkspaceTimelineItem, { kind: "output" }> => item.kind === "output")}
                     onSelect={setSelection}
                     reportState={model.periodicReports}
+                    teamSessionId={!readOnly && selectedAgentId === "codex" ? conversationSessionId : undefined}
                   />),
                   chat: (<>
                     {selectedGoal && activeSessionRun?.goalId === selectedGoal.goalId ? (
@@ -2009,7 +2045,8 @@ export function PersonalWorkspacePage({
             ) : !managerChatOpen ? (
               <ManagerHomeBoard goals={workspaceGoals} onRetry={() => void callbacks.onRefresh?.()} onSelectGoal={selectGoal} systemHealth={model.systemHealth} />
             ) : (
-              <ChannelTimeline items={managerChatItems} onSelect={setSelection} selectedGoal={null} />
+              <ChannelTimeline items={managerChatItems} onSelect={setSelection} selectedGoal={null} showManagerTeamResults
+                onOpenGoalEvidence={(goalId) => { selectGoal(goalId); openGoalConversation(); }} />
             )}
           </div>
           <div className="personal-composer-wrap">

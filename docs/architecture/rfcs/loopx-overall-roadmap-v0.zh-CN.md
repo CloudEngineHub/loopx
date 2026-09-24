@@ -336,6 +336,12 @@ R2 的一条依赖必须通过真实 LoopX Agent 间的请求/产物交接完成
 - **退出：** 独立回读证明承诺保留；all-gap/partial/stale/rejected/committed 区分；中断后恢复不复制、不扩大工作，原接收界面显示精确结果。新增独立语义反例，不能只断言一行存在。
 - **回滚：** 停新计划 producer，保留可读旧预览/receipt 及未完成对账；不删除已经形成的工作。
 
+**恢复检查点（2026-09-24）：** 已启用验收的缺失关联与过期关联统一进入 Agent 范围的
+有界重规划；精确阻塞检查点不会被拥挤的 vision 展示挤掉，重规划不再同时选择候选观察任务。
+所有者绑定与完成时的新鲜验证仍然必需。这修复 R1/S2/S3 的持续运行路径，不代表 R4 通用
+意图保持 amendment 或 provider 晋升。真实 File/SQLite CLI 回归覆盖恢复准入与继续拒绝
+未绑定任务完成。
+
 ### R2：小团队持续执行
 
 **产品职责。** 管家负责所有者跨项目的上下文、取舍和注意力；项目 coordinator 是
@@ -391,6 +397,12 @@ executor/profile 检查启动条件。任务准入、当前 pinned 验收绑定�
 验收；包含独立异议和有效综合结论的 L1 仍未通过。
 这只验收本地执行事实的读回；计划分配回执
 整合、通用创建、远端探针、两轮持续协作及 Lark 等价仍由原 owner 继续推进。
+对于托管非 Chat 工作，[PR #4978](https://github.com/loopx-project/loopx/pull/4978)
+提议已验收、精确版本的 Goal 成果回读：canonical Todo 完成时绑定本地报告字节，
+CLI 重新核验，打包 Goal「文件」读取按 Goal 限定的本机回环投影。
+[团队实时工作区 RFC](live-team-workspace-v0.zh-CN.md) 定义产出到读取的边界。
+提议版本已通过本地 File/SQLite 和桌面 / 手机的针对性检查；维护者评审与 CI
+仍待完成。向原请求方对话回送、混合团队持续协作及整队停止 / 恢复仍需另行验收。
 
 **团队现场是 S5 核心产品目标。** [团队实时工作区 RFC](live-team-workspace-v0.zh-CN.md)
 融合精确指挥台与空间研究工作室：展示产物交换、有来源的分歧、结论修订、回放与
@@ -506,6 +518,13 @@ owner，先资格化本地路径；R6 service identity、D1–D3 promotion 独�
 ### 已复核的问题
 
 以下是精确基线上的合成 fixture 结果，不含线上用户内容。F1–F4 用现有 `ChatActionService.preview/apply` 及隔离 Goal 复核；F4 只在第二次 Todo 写入前注入失败，其余走实际本地 Todo writer。F5–F7 是源码/合同审计。
+
+**R1 验收覆盖检查点。** 新的 owner 验收配置必须明确选择指定任务或全部推进工作；
+局部实验不再隐式阻断未来独立任务。旧合同在 owner 重新配置前保留原范围。
+认领、租约、完成、验证与只读交付界面共用 TS 验收 owner。阻塞 ACK 仅为等待检查点，
+不是恢复完成；范围修正必须证明独立工作恢复准入且自身校验保持有效。
+见[验收合同](../../reference/goal-acceptance-observations.md#owner-authorized-contract-v0)。
+这修复局部恢复缺口，不代表 R1/R2 协同整体验收完成。
 
 **R1 事务检查点。** 团队计划准入与整批规划现在归 `work_items/team_plan.ts`。确认后，全部已准入 lane 与持久操作回执一次提交；身份由 proposal + lane 决定，不再由 Todo 文本决定。File/SQLite 权威复用现有 CAS 与回执 owner；legacy Markdown 在原有 fence 和锁内同时写入任务和不可变回执。同一操作重试只读历史结果，接收者后来修改、完成或删除任务也不会触发重建。提交前失败不会留下部分 lane；canonical 展示投递仍 pending 时，Chat 必须恢复后才能报告验证成功。卡片列出部分分配及缺口；quota/stop 是参考，显式强制声明会被拒绝。
 
