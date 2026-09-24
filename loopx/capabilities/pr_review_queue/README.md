@@ -50,8 +50,32 @@ or `not_applicable`. A required simplification or material unknown cannot suppor
 APPROVE; an evidenced non-blocking follow-up can. Unrelated changes need only a
 scoped not-applicable reason. The checker enforces these declarations, not their
 truth: real caller inspection and old-data/mixed-version readback still belong
-to the reviewer. Policy revision 8 requires fresh evidence rather than relabeling
+to the reviewer. Policy revision 9 requires fresh evidence rather than relabeling
 an older result. It does not add a new wire schema or a new review authority.
+
+Policy revision 9 also requires `observable_semantics.scope_coverage` for
+behavior-bearing reviews. First establish whether the touched path owns or
+retains a gate; a scoped `not_applicable` reason is sufficient otherwise. For a
+gate, distinguish activation authority, covered subjects and binding readiness.
+Validate covered work, independent work in the same container, new work after
+activation, mutable-field escape and recovery back to useful execution. Global
+coverage is valid when explicitly authorized; feature-off parity alone does not
+prove enabled-but-out-of-scope isolation. A blocker receipt or replan ACK does
+not establish recovery. These are reviewer-executed counterfactuals, not semantic
+facts inferred by the checker.
+
+Save the exact final Markdown in the result's `review_body` before `--check-result`.
+The same body validator is used for published review readback and merge readiness.
+For behavior-bearing changes, the five sections require respectively 40, 80,
+180, 120 and 60 explanatory letters/numbers; reviews without executable or
+policy changes use 20, 30, 50, 30 and 20. Headings, code blocks, URL targets,
+commit hashes and repeated lines within a section do not count. These modest
+floors reject empty shells; they do not prove
+correct reasoning or replace evidence. Explain concrete symbols, decisions,
+counterexamples and results rather than padding. A sufficiently long body with
+unverified scope evidence still cannot support approval. Existing short reviews
+on open heads must be expanded and checked before they qualify again; queue
+ordering and explicit post-merge audit selection remain unchanged.
 
 Codex agents should use the dedicated `loopx-pr-review` skill for this slash
 command. Do not route `/loopx-pr-review` through the broader `loopx-project`

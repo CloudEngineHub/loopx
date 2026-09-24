@@ -74,8 +74,9 @@ When `review_action_kind` is null, the row stays in `pull_requests` inventory bu
    preserve missing evidence as `unverified`. Execute its repository-reuse,
    default-off, authority and real-path counterfactual requirements rather than
    repeating them as prose. Never infer `verified` from metadata or CI.
-3. Apply `completion_gate` literally. Save the filled result and check it before
-   publication:
+3. Apply `completion_gate` literally: save final Markdown in `review_body`, then check
+   evidence and that exact body. Follow capability-owned floors and scope
+   counterfactuals; prose cannot replace missing execution:
 
    ```bash
    loopx --format json pr-review --check-result review-result.json --packet review-packet.json
@@ -86,13 +87,12 @@ When `review_action_kind` is null, the row stays in `pull_requests` inventory bu
    an old result relabeled without executing the current plan. Verified rows fill
    their declared fields; validation rows bind typed `case_id` coverage, and
    missing material evidence needs a concrete request-changes reason.
-4. Render the verified result through `review_template`. The five sections are
-   output structure, while the execution contract is the evidence authority.
+4. Publish the checked `review_body`; recheck after edits. Remote readback uses
+   the same body rules. Headings and a verdict alone cannot certify a review.
 5. Re-read the remote head immediately before verdict and publication. Restart
    the evidence pass if it changed.
 
-Each PR gets an independent evidence pass and standalone card; a queue table is
-only a preface. Finish fewer complete cards rather than metadata-only reviews.
+Each PR needs independent evidence and a standalone card; a queue table is only a preface.
 
 For managed review, pass `--goal-id GOAL` and follow the packet’s resolved `wait_for_ci`: false means never fetch, poll, or wait for CI; true retains CI validation. Required local failures/skips always block. Configure one Goal with `configure-goal --goal-id GOAL --no-pr-review-wait-for-ci --execute`; clear with `--clear-pr-review-configuration --execute`.
 
