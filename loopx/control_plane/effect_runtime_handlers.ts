@@ -1,4 +1,6 @@
 import {admitAutomationStart, confirmAutomationStart, manageAutomationCadence, projectCadenceSchedule} from "./quota/automation_cadence.ts";
+import {readShadowDrainPlan} from "./coordination/shadow_drain_plan.ts";
+import {readCanonicalSnapshotPage} from "./coordination/canonical_snapshot_page.ts";
 import {manageLocalAuthorityArchive} from "./coordination/local_authority_archive.ts";
 import {selectPeriodicReportProgress, selectPeriodicReportApprovalRetry} from "./capabilities/periodic_report_progress.ts";
 import {planIssueFixMonitorReconciliation} from "./capabilities/issue_fix_monitor_reconciliation.ts";
@@ -111,6 +113,9 @@ import {
   writeSchedulerState,
 } from "./scheduler/state_store.ts";
 import { buildVisionCheckpoint } from "./goals/vision_checkpoint.ts";
+import {evaluateCheckpointReadContext} from "./goals/checkpoint_read_context.ts";
+import {readCheckpointAuthority} from "./goals/checkpoint_authority.ts";
+import {commitCheckpoint, inspectCheckpointReplay} from "./goals/checkpoint_commit.ts";
 import { projectVisionWaitCoverage } from "./goals/vision_wait_coverage.ts";
 import { admitGoalAmendmentProposal } from "./goals/goal_amendment_proposal.ts";
 import { projectSharedGoalAlignment } from "./goals/shared_goal_alignment.ts";
@@ -169,7 +174,8 @@ import {
   executeReviewedCoordinationPromotion,
   terminalLifecycleLocalCoordinationTodo,
 } from "./coordination/local_authority_runtime.ts";
-import {listLocalCoordinationTodos, readLocalCoordinationTodo} from "./coordination/local_authority_read.ts";
+import {listLocalCoordinationTodos, readLocalCoordinationTodo,
+  readLocalCoordinationOperationReceipt} from "./coordination/local_authority_read.ts";
 import { evaluateCoordinationTodoClaimDecision } from "./coordination/todo_claim.ts";
 import {
   evaluateCoordinationTodoTerminalDecision,
@@ -501,6 +507,10 @@ export function createEffectRuntimeHandlers(
     ["work_item.delivery_response.project", projectDeliveryResponse],
     ["work_item.delivery_claim.validate", validateDeliveryClaim],
     ["goal.vision_checkpoint.evaluate", buildVisionCheckpoint],
+    ["goal.checkpoint_read_context.evaluate", evaluateCheckpointReadContext],
+    ["goal.checkpoint_read_context.source", readCheckpointAuthority],
+    ["goal.checkpoint_read_context.commit", commitCheckpoint],
+    ["goal.checkpoint_read_context.inspect_replay", inspectCheckpointReplay],
     ["goal.vision_wait.coverage", projectVisionWaitCoverage],
     ["goal.shared_goal_alignment.project", projectSharedGoalAlignment],
     ["goal.operator_actions.project", projectGoalOperatorActions],
@@ -560,8 +570,10 @@ export function createEffectRuntimeHandlers(
     ["coordination.local_authority.todo_archive", archiveLocalCoordinationTodos],
     ["coordination.local_authority.todo_archive_ack", acknowledgeLocalCoordinationTodoArchive],
     ["coordination.local_authority.todo_read", readLocalCoordinationTodo],
+    ["coordination.local_authority.operation_receipt", readLocalCoordinationOperationReceipt],
     ["coordination.ownership_observation", projectOwnershipObservation],
     ["coordination.local_authority.ownership_observation", observeLocalCoordinationOwnership],
+    ["coordination.local_authority.todo_snapshot_page", readCanonicalSnapshotPage],
     ["coordination.local_authority.todo_list", listLocalCoordinationTodos],
     [
       "coordination.local_authority.legacy_writer_fence.engage",
@@ -581,6 +593,7 @@ export function createEffectRuntimeHandlers(
     ["coordination.local_authority_shadow.record", recordLocalAuthorityShadow],
     ["coordination.runtime_shadow.commit_entry", commitLocalAuthorityShadowEntry],
     ["coordination.runtime_shadow.outbox_read", readLocalAuthorityShadow],
+    ["coordination.runtime_shadow.plan_drain", readShadowDrainPlan],
     [
       "effect.program_from_ordered_steps",
       (params) => effectProgramFromOrderedSteps(

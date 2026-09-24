@@ -87,6 +87,15 @@ def _fixture(root: Path, *, state: str | None = None) -> tuple[Path, Path, dict]
     return registry, state_path, goal
 
 
+def _write_run_index(registry: Path, runs: list[dict[str, object]]) -> None:
+    index_path = registry.parent / "runtime/goals/goal-a/runs/index.jsonl"
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text(
+        "".join(json.dumps(run, sort_keys=True) + "\n" for run in runs),
+        encoding="utf-8",
+    )
+
+
 def _promote(registry: Path, path: Path, goal: dict) -> dict:
     fields = parse_active_state_todos(path.read_text(), goal=goal, item_limit=None)
     todos = [
@@ -297,6 +306,134 @@ def test_todo_add_replan_guard_binds_canonical_obligation_without_display(
     with pytest.raises(ValueError, match="does not match"):
         _validated_replan_successor_obligation(args, registry_path=registry, runtime_root_arg=None)
     assert not path.exists()
+
+
+def test_refresh_uses_newest_vision_by_utc_instant_across_offsets(
+    tmp_path: Path,
+) -> None:
+    registry, _, _ = _fixture(tmp_path)
+    _write_run_index(
+        registry,
+        [
+            {
+                "generated_at": "2026-01-01T08:30:00+08:00",
+                "goal_id": "goal-a",
+                "agent_id": "agent-a",
+                "agent_vision": {
+                    "agent_id": "agent-a",
+                    "state": "vision_active",
+                    "vision_patch": {"vision_summary": "Older offset vision."},
+                },
+            },
+            {
+                "generated_at": "2026-01-01T01:00:00Z",
+                "goal_id": "goal-a",
+                "agent_id": "agent-a",
+                "agent_vision": {
+                    "agent_id": "agent-a",
+                    "state": "vision_active",
+                    "vision_patch": {"vision_summary": "Newer UTC vision."},
+                },
+            },
+        ],
+    )
+
+    result = _refresh(
+        registry,
+        vision_unchanged_reason="Validated evidence keeps the newer vision unchanged.",
+    )
+
+    assert result["vision_checkpoint"]["continuity_basis"] == {
+        "kind": "existing_vision_unchanged",
+        "vision_generated_at": "2026-01-01T01:00:00Z",
+    }
+
+
+def test_todo_replan_guard_closes_later_utc_ack_across_offsets(
+    tmp_path: Path,
+) -> None:
+    from argparse import Namespace
+    from loopx.cli_commands.todo import _validated_replan_successor_obligation
+
+    registry, _, goal = _fixture(tmp_path)
+    stalled_runs = [
+        {
+            "generated_at": f"2026-01-01T08:0{index}:00+08:00",
+            "goal_id": "goal-a",
+            "agent_id": "agent-a",
+            "classification": "bounded_replan_progress",
+            "turn_instance_id": f"turn-stalled-{index}",
+            "progress_observation": {
+                "schema_version": "typed_progress_observation_v0",
+                "result_class": "blocked",
+                "surface_id": "surface-a",
+                "hypothesis_id": "hypothesis-a",
+                "probe_kind": "probe-a",
+                "evidence_ids": ["evidence-a"],
+            },
+        }
+        for index in range(2)
+    ]
+    obligation, _ = qualify_replan_writeback(
+        todo_fields={},
+        newest_first_runs=list(reversed(stalled_runs)),
+        state_text="",
+        agent_id="agent-a",
+        goal_id="goal-a",
+        registry_goal=goal,
+    )
+    assert obligation is not None
+    _write_run_index(
+        registry,
+        [
+            *stalled_runs,
+            {
+                "generated_at": "2026-01-01T01:00:00Z",
+                "goal_id": "goal-a",
+                "agent_id": "agent-a",
+                "classification": "autonomous_replan_recorded",
+                "turn_instance_id": "turn-replan-ack",
+                "autonomous_replan_ack": {
+                    "schema_version": "autonomous_replan_ack_v0",
+                    "recorded": True,
+                    "source": "refresh_state",
+                    "semantic_delta": {
+                        "schema_version": "replan_semantic_delta_v0",
+                        "accepted": True,
+                        "obligation_id": obligation["obligation_id"],
+                        "outcomes": ["new_runnable_successor"],
+                    },
+                },
+                "progress_observation": {
+                    "schema_version": "typed_progress_observation_v0",
+                    "result_class": "advanced",
+                    "surface_id": "surface-a",
+                    "hypothesis_id": "hypothesis-b",
+                    "probe_kind": "probe-a",
+                    "evidence_ids": ["evidence-b"],
+                },
+            },
+        ],
+    )
+    args = Namespace(
+        replan_obligation_id=obligation["obligation_id"],
+        role="agent",
+        task_class="advancement_task",
+        claimed_by="agent-a",
+        action_kind="implementation",
+        monitor_target_key="feature-a",
+        explore_result_node_refs=[],
+        goal_id="goal-a",
+        project=None,
+        state_file=None,
+    )
+
+    with pytest.raises(ValueError, match="no open replan obligation"):
+        _validated_replan_successor_obligation(
+            args,
+            registry_path=registry,
+            runtime_root_arg=None,
+        )
 
 
 @pytest.mark.parametrize("promoted", [False, True])
