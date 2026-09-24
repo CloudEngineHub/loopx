@@ -326,7 +326,20 @@ Markdown. Desktop uses a compact member rail beside the report; narrow screens
 stack the reader below it. Explicit artifact choices survive delivery refresh and
 are revalidated by operation, reference and hash; automatic reads do not take
 keyboard focus. Acceptance and requester adoption remain separate in details.
+When the first inventory page has no accepted artifact, the reader inspects up to
+three live pages before asking the user to continue; manual inspection stops at
+ten pages. Unreadable records and unseen pages remain visible limitations, and
+repeated cursors clear the prior report rather than implying a complete scan.
 This qualifies report readback, not mixed-team launch or stop/recovery.
+The ordinary managed Goal Files view admits only a projected deliverable, such
+as a published report. Latest-run metadata, validation summaries and event
+counts remain execution observations; they cannot become a file or inherit an
+unrelated open Todo ID. A readable managed result still needs a versioned,
+public-safe artifact projection with its own source and acceptance readback.
+For Goal Chat, Files now opens the same session-scoped accepted team report
+reader as the original conversation; source hash and current acceptance are
+rechecked, and failed mode/readback clears the prior report. This does not
+turn managed non-Chat run observations into deliverables.
 
 **Managed runs need a separate result readback.** The original Goal Chat report
 reader is requester-scoped to a delegation operation. A managed non-Chat Turn

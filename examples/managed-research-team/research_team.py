@@ -115,6 +115,7 @@ def prepare(root: Path, provider: str = "file", topology: str = "cloud-led",
                          "validation_timeout_seconds": 5, "validation_files": pins})
         bindings.append({"todo_id": identity, "criterion_ids": [actor + "-" + revision]})
     write(root / "bootstrap.json", {"tasks": tasks, "document": {
+        "scope": {"kind": "all_advancement"},
         "objective": "Deliver a revision-aware synthetic research report with every configured dependency completed",
         "non_goals": ["Trading", "External research", "Owner approval of the whole Goal"],
         "criteria": criteria, "bindings": bindings,
