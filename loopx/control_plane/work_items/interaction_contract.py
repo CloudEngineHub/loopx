@@ -1343,6 +1343,11 @@ def _build_interaction_cli_channel(
                         "unchanged_command_key": "command",
                         "changed_command_key": "material_change_command",
                     },
+                    "task_lease_proof": {
+                        "required_when": "canonical_hard_lease",
+                        "source": "canonical_lease_or_same_turn_receipt",
+                        "acquires_or_renews_lease": False,
+                    },
                 },
             }
             if _auxiliary_monitor_receipt_binding_required(payload):
@@ -1372,7 +1377,7 @@ def _build_interaction_cli_channel(
                     f"{_scoped_cli_args(agent_identity, available_capabilities=available_capabilities)}"
                     f"{auxiliary_scheduler_args} --turn-instance-id "
                     f"{shlex.quote(safe_turn_instance_id)} --todo-id "
-                    f"{shlex.quote(selected_monitor_id)} --result-hash "
+                    f"{shlex.quote(selected_monitor_id)} --use-current-task-lease --result-hash "
                     f'"${{{AUXILIARY_MONITOR_RESULT_HASH_ENV}:?}}"'
                 )
                 auxiliary_projection.update(
