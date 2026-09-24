@@ -28,7 +28,7 @@ LoopX 管理下一步工作、验收依据，以及什么时候需要你判断�
 | --- | --- |
 | 让编程或研究 Agent 跨会话持续干活 | [安装并连接项目](#试用-loopx) |
 | 在一个入口管理个人项目、定时任务与待决事项 | [个人 Agent 工作区](#认识个人-agent-工作区) |
-| 让 Agent 分工实现、审阅与改进工作 | [跨运行时协作](docs/product/use-cases/cross-runtime/cross-runtime-impl-review-demo.md) |
+| 让多个 Agent 分工协作，交付可验收的结果 | [Agent 协作指南](docs/product/use-cases/cross-runtime/README.md#中文指南) |
 
 ## 认识个人 Agent 工作区
 
@@ -261,14 +261,14 @@ SWE-Marathon 与 LHTB 每个任务、每种模式仅保留一条有效轨迹；D
 - [产品首页](https://loopx-project.github.io/loopx/)：查看产品叙事、快速开始和长程证据；
 - [Showcase 全量目录](docs/showcases/README.md)和
   [中英双语托管索引](docs/showcases/index.html)；
-- [跨 runtime 实现审阅演示](docs/product/use-cases/cross-runtime/cross-runtime-impl-review-demo.md)；
+- [Agent 协作指南](docs/product/use-cases/cross-runtime/README.md#中文指南)：产物依赖、独立审阅与结果回传；
 - 公开[用户手册](https://my.feishu.cn/wiki/CaL5wMk9ui17ngkWzeUcMlAYnZg)。
 
 <a id="快速开始"></a>
 
 ## 试用 LoopX
 
-要求：Python 3.11+ 与 Node.js 22.18.0+，推荐使用 Node.js 24 LTS。使用 console
+要求：Python 3.11+ 与 Node.js 22.22.3+，推荐使用 Node.js 24 LTS。使用 console
 scripts 已加入 `PATH` 的 Python 环境；macOS 和 Linux 使用 POSIX shell，原生
 Windows 使用 PowerShell 7。Node.js 运行 LoopX 自动启动、空闲退出的 TypeScript
 Effect core，无需手工维护 daemon。Git 仅用于源码贡献与 clone/canary 工作流。
@@ -512,6 +512,10 @@ treatment 和 guardrail 的任务，不替代生产审批。先读
 [Intelligent Management Surface](docs/product/surfaces/intelligent-management-surface.md)
 解释 operator model；[Project-Level Reward Model](docs/product/foundations/project-level-reward-model.md)
 定义产出数量、质量、token cost 和 user attention cost 的保守价值信号。
+
+一个具体的协作路径见 [Agent 协作指南](docs/product/use-cases/cross-runtime/README.md#中文指南)：
+builder 使用 analyst 的产物实现方案，交给 reviewer 独立审阅，接收用户纠正后重新验证，
+最后回到原对话交付。指南区分了可运行的同主机示例与早期跨运行时设计草案。
 
 ### App 与 Projection
 

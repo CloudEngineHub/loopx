@@ -43,8 +43,7 @@ def main() -> int:
         "Codex CLI",
         "Claude Code",
         "Cursor, shell, or custom runner",
-        "Claude implements and Codex reviews",
-        "docs/product/use-cases/cross-runtime/cross-runtime-impl-review-demo.md",
+        "docs/product/use-cases/cross-runtime/README.md",
         "## Advanced Paths",
         "200+ hours of elapsed loop lifetime",
         "200+ hour public contribution arc",
@@ -128,7 +127,18 @@ def main() -> int:
         assert required in compact_demo, required
 
     assert "use-cases/README.md" in product_index
+    # Keep both public entry paths on the guide, while retaining the old design
+    # as a secondary reference rather than forbidding historical links entirely.
+    assert "docs/product/use-cases/cross-runtime/README.md" in readme.split(
+        "## Meet the Personal Agent Workspace", 1
+    )[0]
+    assert "docs/product/use-cases/cross-runtime/README.md#中文指南" in readme_zh.split(
+        "## 认识个人 Agent 工作区", 1
+    )[0]
     assert "cross-runtime-impl-review-demo.md" in cross_runtime_index
+    assert "../../../../examples/collaboration-delivery/README.md" in cross_runtime_index
+    assert "../../../integrations/runtime-connector-catalog.md" in cross_runtime_index
+    assert "[Agent collaboration guide](README.md)" in demo
     assert "### Recover History Index Collisions" in getting_started
     assert "history rebuild-index-collisions" in getting_started
     assert "--review-plan-json reviewed-plan.json" in getting_started
