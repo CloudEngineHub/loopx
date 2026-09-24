@@ -339,6 +339,15 @@ requests, coalesced inputs, interrupted/no-answer members and result-commit vers
 notification restart races before residency optimization. These are proposed
 acceptance refinements, not new runtime guarantees or changes to G1–G4 gates.
 
+The next reusable conversation checkpoint, with the steward as first adopter, is the original conversation itself: a
+question receives a proportionate, readable result; genuine work events remain
+inspectable; stop and correction affect the right Turn; a substantive request
+reaches a context-affine active Agent; and its assessed, evidenced conclusion
+returns to that same frontend or Lark audience. The [presentation RFC §8.8](intelligent-review-presentation-surfaces-v0.md#88-reusable-conversation-work-surface) owns the shared interaction; [manager RFC §5.14](capable-manager-semantic-handoff-v0.md#514-steward-adoption-of-the-reusable-conversation-work-surface) owns the steward adoption and A21–A24 journey. Deliver it through the existing
+Chat, session, collaboration and presentation owners as R2/R3 integration work.
+Do not call a candidate catalog, spinner or queued inbox receipt a completed
+worker handoff. This checkpoint does not lower R1–R3 or G1 gates.
+
 ### Collaboration and Handoff Between LoopX Agents
 
 Participants are long-running LoopX Agents with their own goals, commitments, frontiers and execution bindings, not merely temporary subtasks inside the steward process. Manager→worker and worker→worker share one collaboration contract. Workers can request help, provide results, challenge dependencies and propose replanning without asking the steward to relay every message. The steward owns overall progress and synthesis, not a serial transit point for every message or commit.
