@@ -375,6 +375,17 @@ second assignment. This strengthens the optional request/intervention entry;
 real dual-card click-through remains post-install acceptance. It does not prove
 execution, result return or whole-team stopping.
 `consume_return` alone still means consumption, not version-bound adoption.
+Implementation checkpoint (2026-09-24): an on-demand correction path can
+cross-check the original, review response, revised output and downstream
+adoption against current version-bound delegation reads. It exposes actor
+identities and opens each accepted artifact; an unavailable adoption or rejected
+review clears the previously verified path. This is a presentation and
+readback slice, not L1 completion: the relation `responds_to` does not certify
+that the response is an objection, and current acceptance lacks an explicit
+verifier identity in this read model. The packaged browser scenario is
+synthetic; the existing real correction run must still be exercised through
+the packaged UI and independently read back, with the missing and lost-observation
+cases in Section 9.
 Motion is retained
 only when it clarifies these transitions;
 remove effects that obscure absent execution, absent acceptance or source loss.
