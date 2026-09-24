@@ -313,6 +313,8 @@ phase。先让本地/云端 managed 工作通过同一 governed Turn 合同，�
 
 R2 的一条依赖必须通过真实 LoopX Agent 间的请求/产物交接完成；这是 P0 小团队退出门槛，不能推迟到百 Agent 阶段。R3 补齐通用 peer 协作、持久返回和恢复迁移；R4/R6 再资格化有 lease 与跨主机转移。所有阶段禁止循环等待无人发现：依赖环、拒绝、超时与失效输入需成为管家可见阻塞，沿已有 replan owner 求解，不能另建全局调度器。前端与 Lark 应显示请求→采纳→工作→产物→验收→回报的关系和当前阻塞，不能只显示 Agent 在线数或消息历史。
 
+下一项可复用的对话检查点以管家为首个接入者，聚焦原始对话：问题得到相称、可读的结果，真实工作事件可查；停止和纠偏作用于正确的 Turn；实质请求到达上下文最合适的活跃 Agent；其评估和有证据的结论返回同一个前端或飞书受众。[展示 RFC §8.8](intelligent-review-presentation-surfaces-v0.zh-CN.md#88-可复用的对话工作界面)拥有共用交互；[管家 RFC §5.14](capable-manager-semantic-handoff-v0.zh-CN.md#514-管家接入可复用的对话工作界面)拥有管家接入与 A21–A24 旅程。沿既有 Chat、session、collaboration、presentation owner 作为 R2/R3 集成推进。候选列表、转圈提示、已排队的收件箱回执均不等于完成 worker 交接；该检查点不降低 R1–R3 或 G1 门槛。
+
 ## 6. 核心交付路径：R1–R7 执行卡
 
 | 卡 | 优先级 / 可验收结果 | 硬前置 | 可同时推进但无需等待 |
