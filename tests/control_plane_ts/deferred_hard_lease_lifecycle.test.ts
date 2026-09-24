@@ -72,7 +72,8 @@ function oldLease(status: "active" | "released", expires_at: string): JsonObject
 }
 
 for (const provider of ["file", "sqlite"] as const) {
-  test(`${provider}: deferred resume is one CAS transition and never grants execution`, async () => {
+  test(`${provider}: deferred resume is one CAS transition and never grants execution`,
+    async () => {
     const store = await seeded(provider);
     const before = await read(store);
     assert.equal(leaseOwnerRejection({status: "deferred", claimed_by: OWNER, excluded_agents: []}, OWNER, AGENTS),
@@ -99,7 +100,8 @@ for (const provider of ["file", "sqlite"] as const) {
       "coordination_operation_identity_mismatch");
   });
 
-  test(`${provider}: expired lease is retired atomically, while live execution and foreign edits fail closed`, async () => {
+  test(`${provider}: expired lease is retired atomically, while live execution and foreign edits fail closed`,
+    async () => {
     const expired = await seeded(provider, {}, oldLease("active", "2026-09-05T22:30:00Z"));
     const resumed = await executeCoordinationTodoUpdate(expired, resume("retire-expired"));
     assert.equal(resumed.status, "applied", JSON.stringify(resumed));
@@ -123,7 +125,8 @@ for (const provider of ["file", "sqlite"] as const) {
     }
   });
 
-  test(`${provider}: an unclaimed deferred Todo stays unclaimed; excluded actors cannot reopen it`, async () => {
+  test(`${provider}: an unclaimed deferred Todo stays unclaimed; excluded actors cannot reopen it`,
+    async () => {
     const unclaimed = await seeded(provider, {claimed_by: null});
     const applied = await executeCoordinationTodoUpdate(unclaimed, resume("unclaimed-resume"));
     assert.equal(applied.status, "applied", JSON.stringify(applied));
@@ -138,7 +141,8 @@ for (const provider of ["file", "sqlite"] as const) {
     assert.deepEqual(await read(excluded), before);
   });
 
-  test(`${provider}: deferred supersede closes one Todo and retires expired lease lineage`, async () => {
+  test(`${provider}: deferred supersede closes one Todo and retires expired lease lineage`,
+    async () => {
     const store = await seeded(provider, {}, oldLease("active", "2026-09-05T22:30:00Z"));
     const input = supersede("supersede-once");
     const before = await read(store);

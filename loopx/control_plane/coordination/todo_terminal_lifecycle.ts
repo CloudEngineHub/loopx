@@ -676,6 +676,43 @@ function acceptanceCompletionEvidence(head: JsonObject, input: ResolvedCoordinat
   return {source_binding: binding, ...evidence, validation_receipts: validationReceipts};
 }
 
+/** Keep the runner's typed failure at the public boundary without exposing its
+ * command, output, workspace path, or caller-controlled summary. */
+function acceptanceCriterionFailure(receipts: unknown): JsonObject | null {
+  if (!Array.isArray(receipts)) return null;
+  for (const value of receipts) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
+    const row = value as Record<string, unknown>;
+    const receipt = row.receipt;
+    if (receipt === null || typeof receipt !== "object" || Array.isArray(receipt)) continue;
+    const result = receipt as Record<string, unknown>;
+    if (result.passed !== false || typeof row.criterion_id !== "string") continue;
+    const status = typeof result.status === "string" ? result.status : "command_failed";
+    const nextActions: Record<string, string> = {
+      workspace_dirty: "Preserve unrelated Git-visible files in ignored private storage or outside the worktree, then retry completion from that clean worktree with the same Turn identity.",
+      workspace_unverified: "Re-enter a verifiable independent delivery worktree and retry with the same Turn identity.",
+      workspace_receipt_unavailable: "Recover the recorded delivery workspace receipt before retrying completion.",
+      workspace_receipt_invalid: "Inspect the recorded delivery workspace receipt before retrying completion.",
+      workspace_receipt_mismatch: "Re-enter the recorded delivery worktree before retrying completion.",
+      workspace_repository_mismatch: "Re-enter the recorded delivery repository and revision before retrying completion.",
+      workspace_unavailable: "Restore the declared validation workspace before retrying completion.",
+      validation_basis_changed: "Inspect the changed verifier files and ask the contract owner to review the acceptance basis.",
+      timeout: "Inspect the validator runtime and retry the same criterion without changing the acceptance binding.",
+      command_not_run: "Restore the configured validation executable and retry completion.",
+      command_malformed: "Ask the contract owner to repair the configured validation command.",
+      command_failed: "Inspect the configured criterion's evidence and validator, then retry completion without rebinding acceptance.",
+    };
+    const validationStatus = Object.hasOwn(nextActions, status) ? status : "unknown_failure";
+    const exitCode = typeof result.exit_code === "number" && Number.isInteger(result.exit_code)
+      ? result.exit_code : null;
+    return {schema_version: "goal_acceptance_validation_failure_v0",
+      criterion_id: row.criterion_id, validation_status: validationStatus,
+      exit_code: exitCode,
+      next_action: nextActions[validationStatus] ?? "Inspect the privacy-safe runner receipt and configured criterion before retrying completion."};
+  }
+  return null;
+}
+
 async function commitTerminalResult(
   store: AuthorityStore,
   input: ResolvedCoordinationTodoTerminalLifecycleInput,
@@ -1129,8 +1166,13 @@ export async function executeCoordinationTodoTerminalLifecycle(
     try {
       acceptanceEvidence = acceptanceCompletionEvidence(completionHead, input, acceptanceRequirements, acceptanceBinding);
     } catch (error) {
+      const criterionFailure = error instanceof Error && error.message === "acceptance completion criteria failed"
+        ? acceptanceCriterionFailure(input.goal_acceptance_validation_receipts) : null;
       return terminalFailure("goal_acceptance_validation_rejected",
-        error instanceof Error ? error.message : "Acceptance completion validation failed.", {}, "decision_rejection");
+        criterionFailure === null
+          ? error instanceof Error ? error.message : "Acceptance completion validation failed."
+          : `Goal acceptance criterion ${String(criterionFailure.criterion_id)} failed (${String(criterionFailure.validation_status)}). ${String(criterionFailure.next_action)}`,
+        criterionFailure === null ? {} : {goal_acceptance_validation_failure: criterionFailure}, "decision_rejection");
     }
   } else if (input.goal_acceptance_source_binding != null || input.goal_acceptance_validation_receipts != null) {
     return terminalFailure("goal_acceptance_validation_unexpected",
