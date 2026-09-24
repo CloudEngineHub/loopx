@@ -110,7 +110,7 @@ protection against clock manipulation.
 
 | Host path | Required contract | Initial boundary |
 | --- | --- | --- |
-| Managed `turn run-once` | Atomic admission before a new host attempt, including failed-result recovery | M2 candidate; isolated CLI and concurrency tests, no external host promotion |
+| Managed `turn run-once` | Atomic admission before a new host attempt, including failed-result recovery | M2 candidate; isolated CLI, concurrency and crash-recovery tests, no external host promotion |
 | Local legacy scheduler / external launchers | Route launches through admitted Turn or implement the same owner call | Not yet qualified; do not advertise enforcement |
 | Codex App automation | Apply floor-compatible timer, read actual schedule, ACK only matching facts | M1 schedule recommendation floor; hook coverage not qualified |
 | Attached interactive/manual session | Explicit manual intent; existing authority gates remain | Caller records reason; automatic continuation cannot masquerade as manual |
@@ -223,6 +223,14 @@ the interval. The local CLI remains a same-UID trust boundary.
 The App timer-to-hook path, non-Turn launchers, packaged settings UI and live
 model-host promotion remain unqualified. No existing automation is activated
 or rebound by this proposal.
+A managed start is two-phase in the same store: admission reserves the interval
+slot, and the Turn executor confirms that reservation only after the host
+attempt is durable in its journal. A crash between the two leaves the
+reservation resumable by the same Turn identity once the floor is reached, so a
+reserved-but-unstarted start never strands a Turn; a confirmed start stays
+fail-closed for the same identity, and an explicit manual reason cannot bypass
+that. A store record written without the phase field is read as an attempted
+start, so an older or hand-edited file fails closed rather than resuming.
 M1 policy files are read as v1 and upgraded in place to v2 on the first
 configuration write or admitted start. The path stays stable; older binaries
 reject the v2 schema rather than silently discarding start records. Pause the
