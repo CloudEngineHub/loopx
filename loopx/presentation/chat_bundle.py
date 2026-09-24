@@ -52,7 +52,8 @@ def source_inputs(root: Path) -> dict[str, str]:
         paths.extend(
             path
             for path in (root / name).rglob("*")
-            if path.is_file() and not path.name.endswith(".local.json")
+            if path.is_file() and path.name != ".gitkeep"
+            and not path.name.endswith(".local.json")
         )
     # Shared typed contracts imported by the frontend are build inputs too.
     paths.extend((root / "loopx/control_plane").rglob("*.ts"))

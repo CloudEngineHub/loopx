@@ -228,3 +228,20 @@ def test_source_fingerprints_normalize_windows_text_but_not_binary(tmp_path):
     assert builder.contract.source_digest(
         image, b"image\r\n"
     ) != builder.contract.source_digest(image, b"image\n")
+
+
+def test_frontend_source_inputs_ignore_placeholder_checkout_line_endings(tmp_path):
+    public = tmp_path / "apps/presentation/dashboard/public"
+    public.mkdir(parents=True)
+    placeholder = public / ".gitkeep"
+    asset = public / "icon.svg"
+    placeholder.write_bytes(b"\n")
+    asset.write_bytes(b"<svg/>\n")
+    original = builder.contract.source_inputs(tmp_path)
+
+    placeholder.write_bytes(b"\r\n")
+    assert builder.contract.source_inputs(tmp_path) == original
+    assert "apps/presentation/dashboard/public/.gitkeep" not in original
+
+    asset.write_bytes(b"<svg><path/></svg>\n")
+    assert builder.contract.source_inputs(tmp_path) != original
