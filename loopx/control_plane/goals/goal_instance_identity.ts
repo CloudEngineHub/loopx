@@ -5,14 +5,20 @@ const GOAL_BINDING_MATCH_SCHEMA_VERSION = "loopx_goal_binding_match_v1";
 const GOAL_ID = /^[A-Za-z0-9._:-]{1,200}$/;
 const GOAL_INSTANCE_ID = /^ginst_[0-9a-f]{32}$/;
 
-type GoalId = Readonly<{
+export type GoalId = Readonly<{
   kind: "goal_id";
   value: string;
 }>;
 
-type GoalInstanceId = Readonly<{
+export type GoalInstanceId = Readonly<{
   kind: "goal_instance_id";
   value: string;
+}>;
+
+export type ExactGoalRef = Readonly<{
+  kind: "goal_ref";
+  goalId: GoalId;
+  goalInstanceId: GoalInstanceId;
 }>;
 
 type GoalRef =
@@ -20,10 +26,16 @@ type GoalRef =
     kind: "legacy_goal_ref";
     goalId: GoalId;
   }>
+  | ExactGoalRef;
+
+export type ExactGoalRefParseResult =
+  | Readonly<{ kind: "parsed"; value: ExactGoalRef }>
   | Readonly<{
-    kind: "goal_ref";
-    goalId: GoalId;
-    goalInstanceId: GoalInstanceId;
+    kind: "invalid";
+    issue:
+      | "invalid_goal_id"
+      | "missing_goal_instance_id"
+      | "invalid_goal_instance_id";
   }>;
 
 type BindingOwner = "source_registry" | "global_projection";
@@ -42,9 +54,21 @@ type IdentityIssue =
     reason: UnavailableReason;
   }>;
 
+type GoalRefIssue = Extract<
+  IdentityIssue,
+  Readonly<{
+    kind: "invalid_goal_id" | "invalid_goal_instance_id";
+    side: IdentitySide;
+  }>
+>;
+
 type Parsed<Value> =
   | Readonly<{ kind: "parsed"; value: Value }>
   | Readonly<{ kind: "invalid"; issue: IdentityIssue }>;
+
+type ParsedGoalRef =
+  | Readonly<{ kind: "parsed"; value: GoalRef }>
+  | Readonly<{ kind: "invalid"; issue: GoalRefIssue }>;
 
 type Authority =
   | Readonly<{ kind: "present"; goal: GoalRef }>
@@ -59,7 +83,7 @@ function parseBindingOwner(value: unknown): Parsed<BindingOwner> {
   return { kind: "invalid", issue: { kind: "invalid_binding_owner" } };
 }
 
-function parseGoalRef(value: unknown, side: IdentitySide): Parsed<GoalRef> {
+function parseGoalRef(value: unknown, side: IdentitySide): ParsedGoalRef {
   const raw = jsonObject(value);
   if (!raw || typeof raw.goal_id !== "string" || !GOAL_ID.test(raw.goal_id)) {
     return {
@@ -91,6 +115,17 @@ function parseGoalRef(value: unknown, side: IdentitySide): Parsed<GoalRef> {
     kind: "parsed",
     value: { kind: "goal_ref", goalId, goalInstanceId },
   };
+}
+
+export function parseExactGoalRef(value: unknown): ExactGoalRefParseResult {
+  const parsed = parseGoalRef(value, "binding");
+  if (parsed.kind === "invalid") {
+    return { kind: "invalid", issue: parsed.issue.kind };
+  }
+  if (parsed.value.kind === "legacy_goal_ref") {
+    return { kind: "invalid", issue: "missing_goal_instance_id" };
+  }
+  return { kind: "parsed", value: parsed.value };
 }
 
 function parseAuthority(value: unknown): Parsed<Authority> {
