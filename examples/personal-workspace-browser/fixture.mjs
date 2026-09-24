@@ -862,6 +862,10 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
       await route.fulfill({ json: { ok: true, total, items, next_cursor: offset + 40 < total ? String(offset + 40) : null } });
       return;
     }
+    if (url.pathname === "/api/chat/goal-results") {
+      await route.fulfill({ json: { ok: true, items: [], total: 0, next_cursor: null, unavailable_count: 0 } });
+      return;
+    }
     const periodicConfiguration = {
       schema_version: "periodic_report_machine_defaults_v0",
       enabled: true,

@@ -10,6 +10,7 @@ export const managedGoalResultsScenario = {
     const {page, api} = context;
     const digest = "a".repeat(64);
     let stale = false;
+    let malformed = false;
     let reads = 0;
     await page.route("**/api/chat/goal-results**", route => {
       const request = new URL(route.request().url());
@@ -23,6 +24,7 @@ export const managedGoalResultsScenario = {
             text: "# Revised conclusion\n\n| Measure | Value |\n| --- | --- |\n| Free cash flow | 25 |\n",
           }});
       }
+      if (malformed) return route.fulfill({json: {ok: true}});
       return route.fulfill({json: {
         ok: true, items: [{todo_id: "todo_lead-report", title: "Revised cash flow",
           producer_agent_id: "lead", sha256: digest, content_type: "text/markdown", size_bytes: 80}],
@@ -45,6 +47,12 @@ export const managedGoalResultsScenario = {
       await results.getByRole("button", {name: "刷新", exact: true}).click();
       await results.getByRole("alert").waitFor();
       assert.equal(await results.getByRole("table").count(), 0, "Stale content must be cleared");
+      malformed = true;
+      await results.getByRole("button", {name: "刷新", exact: true}).click();
+      await results.getByRole("alert").filter({hasText: "报告列表响应不完整"}).waitFor();
+      assert.equal(await results.getByRole("table").count(), 0, "Malformed inventory must not restore stale content");
+      assert(await page.getByTestId("personal-goal-outputs").getByRole("button", {name: /Product Release milestone report/}).isVisible(),
+        "Malformed managed results must not crash the existing Files view");
       assert.equal(api.turnRequests.length, 0, "Report reading must not start a model");
       await page.screenshot({path: resolve(outputDir, "managed-goal-results-stale.png"), animations: "disabled"});
       return {note: "Packaged Files shows only exact-read reports and clears stale results", coverageEntries: await context.close()};

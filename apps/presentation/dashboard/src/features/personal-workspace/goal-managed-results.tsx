@@ -41,6 +41,11 @@ export function GoalManagedResults({goalId, zh}: {goalId: string; zh: boolean}) 
     try {
       const next = await fetchManagedGoalResults(goalId, cursor);
       if (current !== generation.current) return;
+      if (!Array.isArray(next.items) || !Number.isInteger(next.total) ||
+          !Number.isInteger(next.unavailable_count) ||
+          (next.next_cursor !== null && typeof next.next_cursor !== "string")) {
+        throw new Error(zh ? "报告列表响应不完整" : "Report inventory response is incomplete");
+      }
       setPage(next);
       const previous = chosen.current;
       const row = previous
@@ -52,7 +57,10 @@ export function GoalManagedResults({goalId, zh}: {goalId: string; zh: boolean}) 
         await read(row, current);
       }
     } catch (failure) {
-      if (current === generation.current) setError(`${zh ? "无法核验报告；旧内容已清除。" : "Cannot verify report; previous content was cleared."} ${String(failure)}`);
+      if (current === generation.current) {
+        setPage(null);
+        setError(`${zh ? "无法核验报告；旧内容已清除。" : "Cannot verify report; previous content was cleared."} ${String(failure)}`);
+      }
     } finally {
       if (current === generation.current) setBusy(false);
     }
