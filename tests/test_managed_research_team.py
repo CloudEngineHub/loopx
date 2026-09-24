@@ -108,10 +108,29 @@ def test_canonical_delivery_requires_completed_current_dependencies(team, monkey
     with pytest.raises(RuntimeError, match="goal_acceptance_validation_rejected"):
         demo.complete(root, "lead", "report")
     report.write_bytes(original_report)
-    demo.complete(root, "lead", "report")
+    lead_completion = demo.complete(root, "lead", "report")
+    assert lead_completion["completion_result"]["sha256"]
+    result_read = demo.cli(root, "todo", "result-read", "--goal-id", demo.GOAL,
+                           "--todo-id", "todo_lead-report")
+    assert json.loads(result_read["text"]) == json.loads(original_report)
+    assert result_read["result"]["sha256"] == lead_completion["completion_result"]["sha256"]
+    result_object = root / "runtime" / "goals" / demo.GOAL / "result-objects" / result_read["result"]["sha256"]
+    result_object.write_text("tampered")
+    with pytest.raises(RuntimeError, match="completion result bytes no longer match"):
+        demo.cli(root, "todo", "result-read", "--goal-id", demo.GOAL,
+                 "--todo-id", "todo_lead-report")
+    result_object.write_bytes(original_report)
     assert all(row["done"] for row in canonical_tasks(root).values())
     assert verify_goal_acceptance(**route, execute=True)["acceptance_ready"]
     assert json.loads((root / "registry.json").read_text())["goals"][0]["status"] == "active"
+    revised = json.loads((root / "bootstrap.json").read_text())["document"]
+    revised["objective"] = "Revised owner acceptance basis"
+    configure_goal_acceptance(**route, document=revised,
+                              expected_provider_revision=inspect_goal_acceptance(**route)["provider_revision"],
+                              execute=True)
+    with pytest.raises(RuntimeError, match="completion result acceptance basis is stale"):
+        demo.cli(root, "todo", "result-read", "--goal-id", demo.GOAL,
+                 "--todo-id", "todo_lead-report")
 
 
 def test_bootstrap_refuses_existing_state(team):

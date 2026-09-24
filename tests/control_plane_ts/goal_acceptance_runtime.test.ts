@@ -220,6 +220,47 @@ for (const provider of ["file", ...(process.env.LOOPX_TEST_POSTGRES_URL ? ["post
     assert.equal((await executeCoordinationTodoTerminalLifecycle(store, terminal)).status, "replayed");
   });
 
+  test(`${provider}: accepted result binds to the same Todo transaction and producer`, async t => {
+    const descriptor = {provider: "local_runtime_v0", sha256: "a".repeat(64),
+      size_bytes: 5, content_type: "text/plain"};
+    const withoutAcceptance = await seeded(t, provider, "off", {claimed_by: "agent-a"});
+    assert.equal((await executeCoordinationTodoTerminalLifecycle(withoutAcceptance.store, {...terminal,
+      completion_result: descriptor})).reason_code, "completion_result_rejected");
+    assert.equal(((await loaded(withoutAcceptance.store)).head.todos as JsonObject[])[0]!.done, false);
+    const unclaimed = await seeded(t, provider, "bound");
+    const unclaimedPlan = await executeCoordinationTodoTerminalLifecycle(unclaimed.store, {...terminal,
+      completion_result: descriptor});
+    assert.equal(unclaimedPlan.status, "execute_validation");
+    const receipts = [{criterion_id: "criterion-a", receipt: runnerReceipt()}];
+    const unclaimedAttempt = await executeCoordinationTodoTerminalLifecycle(unclaimed.store, {...terminal,
+      completion_result: descriptor,
+      goal_acceptance_source_binding: unclaimedPlan.goal_acceptance_source_binding as JsonObject,
+      goal_acceptance_validation_receipts: receipts});
+    assert.equal(unclaimedAttempt.reason_code, "completion_result_rejected");
+    assert.equal(((await loaded(unclaimed.store)).head.todos as JsonObject[])[0]!.done, false);
+
+    const {store} = await seeded(t, provider, "bound", {claimed_by: "agent-a"});
+    const plan = await executeCoordinationTodoTerminalLifecycle(store, {...terminal, completion_result: descriptor});
+    assert.equal(plan.status, "execute_validation");
+    const attempt = {...terminal, completion_result: descriptor,
+      goal_acceptance_source_binding: plan.goal_acceptance_source_binding as JsonObject,
+      goal_acceptance_validation_receipts: receipts};
+    const malformed = await executeCoordinationTodoTerminalLifecycle(store, {...attempt,
+      completion_result: {...descriptor, sha256: "not-a-digest"}});
+    assert.equal(malformed.reason_code, "completion_result_rejected");
+    const committed = await executeCoordinationTodoTerminalLifecycle(store, attempt);
+    assert.equal(committed.status, "applied");
+    const stored = ((await loaded(store)).head.todos as JsonObject[])[0]!.completion_result as JsonObject;
+    assert.equal(stored.sha256, descriptor.sha256);
+    assert.equal(stored.producer_agent_id, "agent-a");
+    assert.equal(stored.todo_id, "todo_work");
+    assert.equal(stored.acceptance_contract_digest, (await loaded(store)).head.goal_acceptance?.digest);
+    assert.equal(acceptanceWorkGuard((await loaded(store)).head, "goal-a", "todo_work")?.state, "ready");
+    assert.equal((await executeCoordinationTodoTerminalLifecycle(store, attempt)).status, "replayed");
+    assert.notEqual((await executeCoordinationTodoTerminalLifecycle(store, {...attempt,
+      completion_result: {...descriptor, sha256: "b".repeat(64)}})).status, "replayed");
+  });
+
   test(`${provider}: intervening head changes require fresh validation, not an old success`, async t => {
     const {store} = await seeded(t, provider, "bound");
     const plan = await executeCoordinationTodoTerminalLifecycle(store, terminal);

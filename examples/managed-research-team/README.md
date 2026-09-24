@@ -185,8 +185,15 @@ After reading all configured canonical completions and exact artifact hashes, th
 lead writes `lead/report.json` with the fields described by `scenario.py` and
 the acceptance table below. Run `validate-report`, then complete the report
 through ordinary `todo complete --todo-id todo_lead-report --agent-id lead
---no-follow-up` against this disposable registry/runtime. That command reruns
-the bound validator. Retain the original conversation; preparation does not
+--no-follow-up --result-file "$DEMO_ROOT/lead/report.json"` against this disposable
+registry/runtime. That command reruns the bound validator and binds the exact
+report bytes to the canonical completion. The local operator can then run
+`todo result-read --goal-id synthetic-managed-research --todo-id todo_lead-report`
+with the same registry and runtime to read the accepted report. Changed bytes,
+missing completion, or a changed acceptance contract reject the read. This
+local CLI read does not grant a remote audience access; Files and conversation
+delivery require their own authorized read surface. Retain the original
+conversation; preparation does not
 attach, resume, migrate or impersonate any existing production Agent.
 
 ### Member relationships
