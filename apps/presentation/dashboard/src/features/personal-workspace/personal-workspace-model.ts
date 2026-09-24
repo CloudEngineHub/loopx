@@ -260,6 +260,7 @@ export type WorkspaceActionPreview = {
 };
 
 export type WorkspaceMessage = {
+  activity?: string[];
   collaboration?: CollaborationReadback;
   agentLabel?: string;
   attachments?: WorkspaceImageAttachment[];
@@ -267,6 +268,7 @@ export type WorkspaceMessage = {
   pending?: boolean;
   returnDelivery?: WorkspaceReturnDelivery;
   role: "assistant" | "user" | "system";
+  sourceTurnId?: string;
   text: string;
   time?: string;
 };
@@ -389,6 +391,7 @@ export type PersonalWorkspaceCallbacks = {
   onExplainDecision?: (attention: WorkspaceAttention) => void | Promise<void>;
   onExportOutput?: (output: WorkspaceOutput) => void | Promise<void>;
   onInterruptRun?: (run: WorkspaceRun) => void | Promise<void>;
+  onInterruptConversationTurn?: (contextId: string, turnId: string) => Promise<void>;
   onOpenGoal?: (goalId: string) => void | Promise<void>;
   onOpenGoalView?: (tab: WorkspaceGoalTab) => void;
   onOpenRunSession?: (run: WorkspaceRun) => void | Promise<void>;

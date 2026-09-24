@@ -1,6 +1,6 @@
-import {Fragment} from "react";
+import {Fragment, useState} from "react";
 import { CollaborationCard } from "./collaboration-card";
-import { Activity, Bot, Sparkles } from "lucide-react";
+import { Activity, Bot, Sparkles, Square } from "lucide-react";
 
 import { AttentionRow } from "./cards/attention-row";
 import { MarkdownText } from "./markdown";
@@ -10,7 +10,39 @@ import { ScheduleRow } from "./cards/schedule-row";
 import { useWorkspaceI18n } from "./i18n";
 import { ReturnDeliveryStatus } from "./return-delivery-status";
 import {ManagerTeamResult} from "./manager-team-result";
-import type { WorkspaceDrawerSelection, WorkspaceGoal, WorkspaceTimelineItem } from "./personal-workspace-model";
+import type { WorkspaceDrawerSelection, WorkspaceGoal, WorkspaceMessage, WorkspaceTimelineItem } from "./personal-workspace-model";
+
+function MessageActivity({ message, onInterruptTurn }: {
+  message: WorkspaceMessage;
+  onInterruptTurn?: (turnId: string) => Promise<void>;
+}) {
+  const { locale, t } = useWorkspaceI18n();
+  const zh = locale === "zh-CN";
+  const [stopping, setStopping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const activity = message.activity ?? [];
+  async function interrupt() {
+    if (!message.sourceTurnId || !onInterruptTurn || stopping) return;
+    setStopping(true);
+    setError(null);
+    try { await onInterruptTurn(message.sourceTurnId); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : (zh ? "中断失败，请重试。" : "Could not interrupt. Try again.")); }
+    finally { setStopping(false); }
+  }
+  return <div className="personal-message-work">
+    {message.pending ? <div className="personal-message-work-current">
+      <span className="personal-message-pending">{activity.at(-1) || t("timeline.pending")}</span>
+      {message.sourceTurnId && onInterruptTurn ? <button type="button" disabled={stopping} onClick={() => void interrupt()}>
+        <Square size={12} aria-hidden="true"/>{stopping ? (zh ? "正在中断…" : "Interrupting…") : (zh ? "中断本轮" : "Interrupt turn")}
+      </button> : null}
+    </div> : null}
+    {activity.length ? <details className="personal-message-activity">
+      <summary>{zh ? "最近活动" : "Recent activity"}<span>{activity.length}</span></summary>
+      <ol>{activity.map((label, index) => <li key={`${index}:${label}`}>{label}</li>)}</ol>
+    </details> : null}
+    {message.pending && error ? <p className="personal-message-work-error" role="alert">{error}</p> : null}
+  </div>;
+}
 
 export function ChannelTimeline({
   items,
@@ -18,12 +50,14 @@ export function ChannelTimeline({
   selectedGoal,
   showManagerTeamResults = false,
   onOpenGoalEvidence,
+  onInterruptTurn,
 }: {
   items: WorkspaceTimelineItem[];
   onSelect: (selection: WorkspaceDrawerSelection) => void;
   selectedGoal: WorkspaceGoal | null;
   showManagerTeamResults?: boolean;
   onOpenGoalEvidence?: (goalId: string) => void;
+  onInterruptTurn?: (turnId: string) => Promise<void>;
 }) {
   const { locale, t } = useWorkspaceI18n();
   if (items.length === 0) {
@@ -41,7 +75,7 @@ export function ChannelTimeline({
     || (item.kind === "proposal" && ["applied", "stale", "error", "gated"].includes(item.proposal.status))
     || (item.kind === "run" && item.run.status === "completed"));
   const liveAnnouncement = latestAnnounceable?.kind === "message"
-    ? `${latestAnnounceable.message.agentLabel ?? t("header.manager")}：${latestAnnounceable.message.pending ? t("timeline.pending") : latestAnnounceable.message.text}`
+    ? `${latestAnnounceable.message.agentLabel ?? t("header.manager")}：${latestAnnounceable.message.pending ? latestAnnounceable.message.activity?.at(-1) || t("timeline.pending") : latestAnnounceable.message.text}`
     : latestAnnounceable?.kind === "proposal"
       ? `${latestAnnounceable.proposal.title}：${latestAnnounceable.proposal.status}`
       : latestAnnounceable?.kind === "run"
@@ -99,8 +133,8 @@ export function ChannelTimeline({
         <div>
           <header><strong>{item.message.role === "user" ? t("common.you") : item.message.agentLabel ?? t("header.manager")}</strong>{item.message.time ? <time>{item.message.time}</time> : null}</header>
           {item.message.attachments?.length ? <div className="personal-message-images">{item.message.attachments.map((attachment) => <img alt={attachment.name} key={attachment.id} src={attachment.dataUrl} />)}</div> : null}
-          {item.message.role === "user" ? <p>{item.message.text}</p> : <MarkdownText text={item.message.text} />}
-          {item.message.pending ? <span className="personal-message-pending">{t("timeline.pending")}</span> : null}
+          {item.message.role === "user" ? <p>{item.message.text}</p> : item.message.text ? <MarkdownText text={item.message.text} /> : null}
+          {item.message.role !== "user" && (item.message.pending || item.message.activity?.length) ? <MessageActivity message={item.message} onInterruptTurn={onInterruptTurn}/> : null}
           <CollaborationCard request={item.message.collaboration} />
               <ReturnDeliveryStatus delivery={item.message.returnDelivery} />
         </div>

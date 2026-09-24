@@ -2039,13 +2039,19 @@ export function PersonalWorkspacePage({
                         run={activeSessionRun}
                       />
                     ) : null}
-                    <ChannelTimeline items={visibleTimelineItems} onSelect={setSelection} selectedGoal={selectedGoal} />
+                    <ChannelTimeline items={visibleTimelineItems} onSelect={setSelection} selectedGoal={selectedGoal}
+                      onInterruptTurn={!readOnly && callbacks.onInterruptConversationTurn
+                        ? (turnId) => callbacks.onInterruptConversationTurn!(selectedGoal.goalId, turnId)
+                        : undefined} />
                   </>),
                 }} />
             ) : !managerChatOpen ? (
               <ManagerHomeBoard goals={workspaceGoals} onRetry={() => void callbacks.onRefresh?.()} onSelectGoal={selectGoal} systemHealth={model.systemHealth} />
             ) : (
               <ChannelTimeline items={managerChatItems} onSelect={setSelection} selectedGoal={null} showManagerTeamResults
+                onInterruptTurn={!readOnly && callbacks.onInterruptConversationTurn
+                  ? (turnId) => callbacks.onInterruptConversationTurn!("manager", turnId)
+                  : undefined}
                 onOpenGoalEvidence={(goalId) => { selectGoal(goalId); openGoalConversation(); }} />
             )}
           </div>
