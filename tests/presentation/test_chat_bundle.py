@@ -215,11 +215,15 @@ def test_windows_drive_paths_are_not_portable_bundle_names():
     assert not builder.contract.safe_relative("C:escape.js")
 
 
-def test_source_fingerprints_normalize_windows_pwa_text_but_not_binary(tmp_path):
+def test_source_fingerprints_normalize_windows_text_but_not_binary(tmp_path):
     manifest = tmp_path / "manifest.webmanifest"
     assert builder.contract.source_digest(
         manifest, b"{}\r\n"
     ) == builder.contract.source_digest(manifest, b"{}\n")
+    placeholder = tmp_path / ".gitkeep"
+    assert builder.contract.source_digest(
+        placeholder, b"\r\n"
+    ) == builder.contract.source_digest(placeholder, b"\n")
     image = tmp_path / "image.png"
     assert builder.contract.source_digest(
         image, b"image\r\n"

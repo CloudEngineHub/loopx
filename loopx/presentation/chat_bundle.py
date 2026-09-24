@@ -30,7 +30,7 @@ def digest(path: Path) -> str:
 def source_digest(path: Path, content: bytes | None = None) -> str:
     # Git may check text out with CRLF on Windows; binary assets remain exact.
     data = path.read_bytes() if content is None else content
-    if path.suffix in {
+    if path.name == ".gitkeep" or path.suffix in {
         ".ts",
         ".tsx",
         ".js",
