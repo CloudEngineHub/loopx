@@ -7,6 +7,8 @@ from collections.abc import Iterator
 from typing import Any
 
 REQUIRED_FINAL_SECTIONS = ["动机", "改动思路", "具体改动", "对主干的风险", "我的整体评价"]
+FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
 
 
 def review_body_requirements(*, behavior_bearing: bool) -> dict[str, int]:
@@ -36,7 +38,8 @@ def _visible_lines(body: str) -> Iterator[str]:
     comment_open = False
     for line in body.splitlines():
         if fence is not None:
-            if line.strip().startswith(fence):
+            closing = FENCE_CLOSE.match(line)
+            if closing and closing[1][0] == fence[0] and len(closing[1]) >= len(fence):
                 fence = None
             continue
         visible_parts: list[str] = []
@@ -57,9 +60,9 @@ def _visible_lines(body: str) -> Iterator[str]:
                 comment_open = True
                 offset = start + 4
         visible = "".join(visible_parts)
-        stripped = visible.strip()
-        if stripped.startswith(("```", "~~~")):
-            fence = stripped[:3]
+        opening = FENCE_OPEN.match(visible)
+        if opening and (opening[1][0] == "~" or "`" not in opening[2]):
+            fence = opening[1]
             continue
         yield visible
 

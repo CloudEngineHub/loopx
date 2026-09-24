@@ -51,6 +51,19 @@ def test_headings_inside_code_do_not_count_as_review_sections():
     assert "missing_section:具体改动" in result["invalid_reasons"]
 
 
+@pytest.mark.parametrize("invalid_closer", ["```", "````still-code"])
+def test_short_or_trailing_text_fence_cannot_expose_hidden_review(invalid_closer):
+    body = "````\n" + invalid_closer + "\n" + review_body() + "\n````"
+    result = check_review_body(body, head_oid=HEAD, behavior_bearing=True)
+    assert "missing_section:具体改动" in result["invalid_reasons"]
+    assert "missing_english_verdict" in result["invalid_reasons"]
+
+
+def test_closed_fence_and_comment_before_visible_review_still_pass():
+    body = "````\n<!-- ignored inside code -->\n````\n<!-- ignored -->\n" + review_body()
+    assert check_review_body(body, head_oid=HEAD, behavior_bearing=True)["valid"]
+
+
 def test_review_hidden_in_html_comment_cannot_claim_published_conclusion():
     result = check_review_body("<!--\n" + review_body() + "\n-->",
                                head_oid=HEAD, behavior_bearing=True)
