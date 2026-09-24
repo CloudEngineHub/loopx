@@ -230,3 +230,52 @@ def test_refused_delivery_boundary_is_published_as_a_typed_admission_fact() -> N
         "agent_must_attempt": True,
         "delivery_allowed": False,
     }
+
+
+def test_retained_selection_names_the_replan_obligation_that_owns_the_turn() -> None:
+    """A receipt-bound replan Turn cannot hand its settlement to another Todo."""
+
+    retained_todo_id = "todo_retained_selection"
+    replan_obligation_id = "replan-retained-selection-fixture"
+    with pytest.raises(QuotaActionSelectionConflictError) as raised:
+        _requested_quota_action_selection_preflight(
+            _payload(selected_todo={"todo_id": retained_todo_id}),
+            requested_todo_id=REQUESTED_TODO_ID,
+            receipt_bound_todo_id=None,
+            receipt_bound_replan_obligation_id=replan_obligation_id,
+            receipt_pending_action_todo_id=retained_todo_id,
+            receipt_identity_upgraded=True,
+        )
+    error = raised.value
+
+    assert error.kind is QuotaActionSelectionConflictKind.CONFLICT
+    assert error.retained_selection is True
+    assert error.receipt_replan_obligation_id == replan_obligation_id
+    assert retained_todo_id in str(error)
+    assert replan_obligation_id in str(error)
+    assert "retained pending selection" in str(error)
+    assert "own" in str(error.recommended_action)
+
+    args = argparse.Namespace(
+        quota_command="should-run",
+        goal_id="quota-conflict-fixture",
+        agent_id="agent-fixture",
+        runtime_root=None,
+        verbose=False,
+    )
+    payload = quota_failure_payload(
+        args,
+        registry_path=Path("/tmp/quota-conflict-registry.json"),
+        runtime_root_arg=None,
+        error=error,
+    )
+
+    assert payload["action_selection_conflict"] == {
+        "kind": "conflict",
+        "requested_todo_id": REQUESTED_TODO_ID,
+        "selected_todo_id": retained_todo_id,
+        "qualification_state": "retained_selection",
+        "retained_selection": True,
+        "retained_selection_todo_id": retained_todo_id,
+        "receipt_replan_obligation_id": replan_obligation_id,
+    }

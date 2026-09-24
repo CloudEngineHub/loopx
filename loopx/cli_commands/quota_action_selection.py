@@ -176,7 +176,10 @@ def _requested_quota_action_selection_preflight(
             QuotaActionSelectionConflictKind.CONFLICT,
             requested_todo_id=requested_todo_id,
             selected_todo_id=receipt_pending_action_todo_id,
-            qualification_state="retained_selection",
+            qualification_state=(
+                "retained_selection" if receipt_pending_action_todo_id else None
+            ),
+            receipt_replan_obligation_id=receipt_bound_replan_obligation_id,
         )
     if admitted:
         return None
