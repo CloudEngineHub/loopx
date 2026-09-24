@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import json
 from pathlib import Path
+import threading
 
 import pytest
 
 from loopx import chat_goal_lifecycle_actions
 from loopx.chat_action_store import ChatActionStore
 from loopx.chat_actions import ChatActionService
+from loopx.cli_commands import registry_admin
 from loopx.control_plane.goals import activation_service
 from loopx.control_plane.goals.activation import (
     GoalActivationState,
@@ -270,6 +273,102 @@ def test_stop_and_resume_sync_source_global_and_quota(
     assert resumed_quota["state"] == "eligible"
     assert resumed_quota["compute"] == 1
     assert resumed_quota["allowed_slots"] == 4
+
+
+def test_activation_and_agent_registration_share_source_to_global_lock_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_root = tmp_path / "a-runtime"
+    source_registry = tmp_path / "z-project" / ".loopx" / "registry.json"
+    source_payload: dict[str, object] = {
+        "schema_version": "0.1",
+        "common_runtime_root": str(runtime_root),
+        "goals": [
+            {
+                "id": "goal-one",
+                "display_name": "A public Goal",
+                "repo": str(source_registry.parent.parent),
+                "quota": {"compute": 1, "allowed_slots": 4, "spent_slots": 0},
+                "coordination": {
+                    "registered_agents": ["codex-existing"],
+                    "agent_model": "peer_v1",
+                },
+            }
+        ],
+    }
+    _write_json(source_registry, source_payload)
+    synced = sync_project_registry_to_global(
+        registry_path=source_registry,
+        runtime_root_override=str(runtime_root),
+        goal_id="goal-one",
+        dry_run=False,
+    )
+    assert synced["ok"] is True
+    global_registry = runtime_root / "registry.global.json"
+    assert str(global_registry) < str(source_registry)
+
+    source_lock_held = threading.Event()
+    activation_source_lock_attempted = threading.Event()
+    original_configure_goal = registry_admin.configure_goal
+    original_project_registry_transaction = (
+        activation_service.project_registry_transaction
+    )
+
+    def delayed_configure_goal(*args: object, **kwargs: object) -> dict[str, object]:
+        source_lock_held.set()
+        assert activation_source_lock_attempted.wait(timeout=5)
+        return original_configure_goal(*args, **kwargs)
+
+    @contextmanager
+    def observed_activation_source_transaction(*args: object, **kwargs: object):
+        activation_source_lock_attempted.set()
+        with original_project_registry_transaction(*args, **kwargs) as transaction:
+            yield transaction
+
+    monkeypatch.setattr(registry_admin, "configure_goal", delayed_configure_goal)
+    monkeypatch.setattr(
+        activation_service,
+        "project_registry_transaction",
+        observed_activation_source_transaction,
+    )
+
+    def register_agent() -> dict[str, object]:
+        return registry_admin.register_agent_via_source_registry(
+            runtime_root_arg=str(runtime_root),
+            goal_id="goal-one",
+            agent_ids=["codex-fresh"],
+            require_new=True,
+            execute=True,
+        )
+
+    def stop_goal() -> dict[str, object]:
+        return set_goal_activation_state(
+            registry_path=global_registry,
+            goal_id="goal-one",
+            state="stopped",
+            actor_kind="owner",
+            execute=True,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        registration_future = executor.submit(register_agent)
+        assert source_lock_held.wait(timeout=5)
+        activation_future = executor.submit(stop_goal)
+        registration = registration_future.result(timeout=10)
+        activation = activation_future.result(timeout=10)
+
+    assert registration["ok"] is True
+    assert registration["registration_readback"]["verified"] is True
+    assert activation["ok"] is True
+    assert activation["readback"]["verified"] is True
+    for registry in (source_registry, global_registry):
+        goal = _goal(registry)
+        assert goal_activation_state(goal) is GoalActivationState.STOPPED
+        assert goal["coordination"]["registered_agents"] == [
+            "codex-existing",
+            "codex-fresh",
+        ]
 
 
 def test_stopped_goal_and_zero_compute_keep_distinct_resume_authority() -> None:
