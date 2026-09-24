@@ -147,7 +147,7 @@ export function planStateEventReplay(value: unknown): JsonObject {
               todo.removedPolicy = null;
             } else delete todo.field_sources.continuation_policy;
           }
-          if (event.fields.includes("bound_agent")) delete todo.field_sources.goal_bound;
+          if (event.fields.includes("bound_agent") && event.goalBound === null) delete todo.field_sources.goal_bound;
           if (event.goalBound === true) delete todo.field_sources.bound_agent;
           if (event.role !== null) todo.role = event.role;
           if (event.priority !== null) todo.priority = event.priority;

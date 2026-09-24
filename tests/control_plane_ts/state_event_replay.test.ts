@@ -75,6 +75,12 @@ test("binding cannot change; owner addressing is exclusive and actor attribution
   const rebound = rows(plan([added, event("todo_updated", 2, {fields: ["bound_agent"]}),
     event("todo_updated", 3, {fields: ["goal_bound"], goal_bound: true})]))[0];
   assert.deepEqual(rebound.field_sources, {capability_binding_ref: 0, goal_bound: 2});
+  for (const flag of [false, true]) {
+    const both = rows(plan([added, event("todo_updated", 2, {fields: ["bound_agent", "goal_bound"], goal_bound: flag})]))[0];
+    assert.deepEqual(both.field_sources, flag
+      ? {capability_binding_ref: 0, goal_bound: 1}
+      : {capability_binding_ref: 0, bound_agent: 1, goal_bound: 1});
+  }
 });
 
 test("removed continuation remains blocked until an explicit independent handoff repair", () => {
