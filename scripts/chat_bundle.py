@@ -130,7 +130,7 @@ def finish_delivery(
         encoding="utf-8",
     )
     manifest = {
-        "schema_version": contract.SCHEMA,
+        "schema_version": contract.CHAT_BUNDLE_SCHEMA_VERSION,
         "source_revision": revision,
         "source_files": inputs,
         "current_assets": current,
@@ -207,6 +207,7 @@ def release_build(tag: str, repository: str) -> None:
         and not r["prerelease"]
         and re.fullmatch(r"v\d+\.\d+\.\d+", r["tag_name"])
     ]
+
     def number(value: str) -> tuple[int, ...]:
         return tuple(map(int, value.removeprefix("v").split(".")))
 

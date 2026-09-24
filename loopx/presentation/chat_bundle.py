@@ -8,7 +8,7 @@ import re
 from pathlib import Path, PurePosixPath
 
 MANIFEST = "bundle-manifest.json"
-SCHEMA = "loopx_chat_bundle_v1"
+CHAT_BUNDLE_SCHEMA_VERSION = "loopx_chat_bundle_v1"
 SOURCE_ROOTS = (
     "apps/presentation/dashboard/src",
     "apps/presentation/dashboard/chat",
@@ -39,6 +39,7 @@ def source_digest(path: Path, content: bytes | None = None) -> str:
         ".html",
         ".css",
         ".svg",
+        ".webmanifest",
         ".py",
     }:
         data = data.replace(b"\r\n", b"\n")
@@ -83,7 +84,10 @@ def safe_relative(value: str) -> bool:
 def validate_bundle(bundle: Path, *, source_root: Path | None = None) -> dict:
     try:
         manifest = json.loads((bundle / MANIFEST).read_text(encoding="utf-8"))
-        if not isinstance(manifest, dict) or manifest.get("schema_version") != SCHEMA:
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("schema_version") != CHAT_BUNDLE_SCHEMA_VERSION
+        ):
             raise ValueError("unsupported bundle manifest")
         files = manifest["files"]
         if (
