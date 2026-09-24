@@ -1508,7 +1508,17 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
       }
       if (body.operation === "read") {
         if (current.fixtureTeamReadDelayMs) await new Promise(resolveWait => setTimeout(resolveWait, current.fixtureTeamReadDelayMs));
-        if (body.operation_id === "accepted-synthesis") {
+        if (current.fixtureCorrectionEpisode && body.operation_id === "original-analysis") {
+          await route.fulfill({json: {ok: true, operation_id: body.operation_id, request_id: "request-original",
+            agent_id: "local-analyst", todo_id: "todo_original", status: "accepted", worker_active: false,
+            recovery_required: false, artifacts: [{ref: "report.json", sha256: "a".repeat(64), text: '{"cash_flow":90}'}]}});
+        } else if (current.fixtureCorrectionEpisode && body.operation_id === "review-objection") {
+          await route.fulfill({json: {ok: true, operation_id: body.operation_id, request_id: "request-review",
+            agent_id: "independent-reviewer", todo_id: "todo_review", status: "accepted", worker_active: false,
+            recovery_required: false, artifacts: [{ref: "objection.json", sha256: "b".repeat(64), text: '{"objection":"The source was superseded"}'}],
+            dependencies: [{operation_id: "original-analysis", ref: "report.json", sha256: "a".repeat(64),
+              input_ref: "original.json", relation: "responds_to", state: "current"}]}});
+        } else if (body.operation_id === "accepted-synthesis") {
           await route.fulfill({json: {ok: true, operation_id: body.operation_id, request_id: "request-synthesis",
             agent_id: "synthesizer", todo_id: "todo_synthesis", status: "accepted", worker_active: false,
             recovery_required: false, artifacts: [{ref: "synthesis.json", sha256: "e".repeat(64), text: '{"accepted_cash_flow":75}'},
@@ -1522,6 +1532,11 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
           await route.fulfill({json: {ok: true, operation_id: body.operation_id, request_id: "request-analysis",
             agent_id: "local-analyst", todo_id: current.fixturePlanTodoId ?? "todo_analysis", status: "accepted", worker_active: false,
             recovery_required: false,
+            ...(current.fixtureCorrectionEpisode ? {dependencies: [
+              {operation_id: "original-analysis", ref: "report.json", sha256: "a".repeat(64),
+                input_ref: "original.json", relation: "revises", state: "current"},
+              {operation_id: "review-objection", ref: "objection.json", sha256: "b".repeat(64),
+                input_ref: "objection.json", relation: "responds_to", state: "current"}]} : {}),
             ...(current.fixtureAdoptionState ? {adoptions: [{requester_agent_id: "lead", consumer_operation_id: "accepted-synthesis",
               consumer_request_id: "request-synthesis", consumer_agent_id: "synthesizer", consumer_todo_id: "todo_synthesis",
               source_artifacts: [{ref: "report.json", sha256: "d".repeat(64)}],

@@ -199,9 +199,57 @@ export const teamEvidenceScenario = {
       await evidence.getByRole("button", {name: "重新读取证据", exact: true}).click();
       await evidence.getByText("采用证据已失效或无法核验", {exact: true}).waitFor();
       assert.equal(await evidence.getByText("已记录采用 · 后续结果验收有效", {exact: true}).count(), 0);
+      mode.fixtureCorrectionEpisode = true;
+      await evidence.getByRole("button", {name: "重新读取证据", exact: true}).click();
+      const episode = evidence.getByRole("region", {name: "纠偏证据路径"});
+      await episode.getByRole("button", {name: "核验关联执行", exact: true}).click();
+      await episode.getByText(/采用证据无法核验/).waitFor();
+      delete mode.fixtureAdoptionState;
+      await evidence.getByRole("button", {name: "重新读取证据", exact: true}).click();
+      await episode.getByRole("button", {name: "核验关联执行", exact: true}).click();
+      await episode.getByText(/尚无请求方采用/).waitFor();
       mode.fixtureAdoptionState = "current";
       await evidence.getByRole("button", {name: "重新读取证据", exact: true}).click();
-      await evidence.getByText("已记录采用 · 后续结果验收有效", {exact: true}).waitFor();
+      assert.equal(await episode.getByText("independent-reviewer").count(), 0, "The path is not inferred before a deliberate read");
+      await episode.getByRole("button", {name: "核验关联执行", exact: true}).click();
+      await episode.getByText("independent-reviewer", {exact: true}).waitFor();
+      await episode.getByText("local-analyst", {exact: true}).first().waitFor();
+      await page.screenshot({path: resolve(outputDir, "team-correction-path.png"), animations: "disabled"});
+      await page.setViewportSize({width: 390, height: 844});
+      assert(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth), "Correction path fits the mobile dialog");
+      await page.screenshot({path: resolve(outputDir, "team-correction-path-mobile.png"), animations: "disabled"});
+      await page.setViewportSize({width: 1512, height: 982});
+      const rejectedSource = async route => {
+        const body = route.request().method() === "POST" ? route.request().postDataJSON() : {};
+        if (body.operation === "read" && body.operation_id === "review-objection") {
+          return route.fulfill({json: {operation_id: body.operation_id, agent_id: "independent-reviewer",
+            status: "rejected", recovery_required: false}});
+        }
+        return route.fallback();
+      };
+      await page.route("**/api/chat/sessions/*/loopx", rejectedSource);
+      await episode.getByRole("button", {name: "核验关联执行", exact: true}).click();
+      await episode.getByRole("alert").filter({hasText: "关联执行或版本已变化"}).waitFor();
+      assert.equal(await episode.getByText("independent-reviewer", {exact: true}).count(), 0,
+        "A rejected review clears the previously verified path");
+      await page.unroute("**/api/chat/sessions/*/loopx", rejectedSource);
+      let revisionRechecks = 0;
+      const changedRevision = async route => {
+        const body = route.request().method() === "POST" ? route.request().postDataJSON() : {};
+        if (body.operation === "read" && body.operation_id === "accepted-analysis") {
+          revisionRechecks++;
+          return route.fulfill({json: {operation_id: body.operation_id, agent_id: "local-analyst",
+            status: "accepted", recovery_required: false,
+            artifacts: [{ref: "report.json", sha256: "f".repeat(64), text: "newer revision"}]}});
+        }
+        return route.fallback();
+      };
+      await page.route("**/api/chat/sessions/*/loopx", changedRevision);
+      await episode.getByRole("button", {name: "核验关联执行", exact: true}).click();
+      await episode.getByRole("alert").filter({hasText: "关联执行或版本已变化"}).waitFor();
+      assert.equal(revisionRechecks, 1, "The selected revision is revalidated instead of trusting its earlier display");
+      assert.equal(await episode.getByText("newer revision").count(), 0);
+      await page.unroute("**/api/chat/sessions/*/loopx", changedRevision);
       assert.equal(api.turnRequests.length, 0, "Evidence reading must not start a model");
       await page.screenshot({path: resolve(outputDir, "team-evidence-desktop.png"), animations: "disabled"});
       // Lose the first acknowledgement; retry must preserve identity and content.
@@ -246,6 +294,7 @@ export const teamEvidenceScenario = {
       await evidence.getByRole("button", {name: "重新读取证据", exact: true}).click();
       await evidence.getByRole("alert").filter({hasText: "已清除上次证据"}).waitFor();
       assert.equal(await content.count(), 0);
+      assert.equal(await episode.count(), 0, "Lost observation removes the correction path");
       await page.screenshot({path: resolve(outputDir, "team-evidence-stale.png"), animations: "disabled"});
       await dialog.getByRole("button", {name: "暂停协调员", exact: true}).click();
       await dialog.getByText(/协调员已暂停。/).waitFor();
