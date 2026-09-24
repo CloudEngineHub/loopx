@@ -142,7 +142,7 @@ COORDINATION_STATE_CONTRACT: Final = _freeze({'schema_version': 'loopx_coordinat
                                      'outbox_commit_schema': 'loopx_local_authority_shadow_outbox_commit_v1',
                                      'drain_cursor_schema': 'loopx_local_authority_shadow_drain_cursor_v0',
                                      'transaction_projection_schema': 'loopx_coordination_runtime_shadow_projection_v0',
-                                     'commit_entry_request_schema': 'loopx_coordination_runtime_shadow_commit_entry_request_v1',
+                                     'commit_entry_request_schema': 'loopx_shadow_entry_delivery_request_v0',
                                      'commit_entry_result_schema': 'loopx_coordination_runtime_shadow_commit_entry_result_v0',
                                      'read_request_schema': 'loopx_coordination_runtime_shadow_outbox_read_v0',
                                      'read_result_schema': 'loopx_coordination_runtime_shadow_outbox_read_result_v0',
@@ -238,7 +238,7 @@ LOCAL_AUTHORITY_SHADOW_OUTBOX_ENTRY_SCHEMA: Final[str] = 'loopx_local_authority_
 LOCAL_AUTHORITY_SHADOW_OUTBOX_COMMIT_SCHEMA: Final[str] = 'loopx_local_authority_shadow_outbox_commit_v1'
 LOCAL_AUTHORITY_SHADOW_DRAIN_CURSOR_SCHEMA: Final[str] = 'loopx_local_authority_shadow_drain_cursor_v0'
 LOCAL_AUTHORITY_SHADOW_TRANSACTION_PROJECTION_SCHEMA: Final[str] = 'loopx_coordination_runtime_shadow_projection_v0'
-LOCAL_AUTHORITY_SHADOW_COMMIT_ENTRY_REQUEST_SCHEMA: Final[str] = 'loopx_coordination_runtime_shadow_commit_entry_request_v1'
+LOCAL_AUTHORITY_SHADOW_COMMIT_ENTRY_REQUEST_SCHEMA: Final[str] = 'loopx_shadow_entry_delivery_request_v0'
 LOCAL_AUTHORITY_SHADOW_COMMIT_ENTRY_RESULT_SCHEMA: Final[str] = 'loopx_coordination_runtime_shadow_commit_entry_result_v0'
 LOCAL_AUTHORITY_SHADOW_READ_REQUEST_SCHEMA: Final[str] = 'loopx_coordination_runtime_shadow_outbox_read_v0'
 LOCAL_AUTHORITY_SHADOW_READ_RESULT_SCHEMA: Final[str] = 'loopx_coordination_runtime_shadow_outbox_read_result_v0'
