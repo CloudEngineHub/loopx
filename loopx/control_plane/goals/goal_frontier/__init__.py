@@ -106,7 +106,7 @@ AUTONOMOUS_REPLAN_REQUIRED_MODE = "autonomous_replan_required"
 FRONTIER_EXHAUSTED_MONITOR_TRIGGER = "frontier_exhausted_monitor_lane"
 MONITOR_NO_CHANGE_STREAK_TRIGGER = "monitor_no_change_streak"
 VISION_PROFILE_MISSING_TRIGGER = "required_agent_vision_missing"
-GOAL_ACCEPTANCE_STALE_TRIGGER = "goal_acceptance_stale"
+GOAL_ACCEPTANCE_HOLD_TRIGGERS = frozenset({"goal_acceptance_stale", "goal_acceptance_unbound"})
 TODO_SUCCESSION_GAP_TRIGGER = TODO_SUCCESSION_WARNING_REASON_CODE
 
 
@@ -368,13 +368,13 @@ def acceptance_gaps_from_agent_profile_requirement(
     ]
 
 
-def acceptance_gaps_from_stale_goal_binding(
+def acceptance_gaps_from_held_goal_binding(
     agent_todo_summary: dict[str, Any] | None,
     source_items: list[dict[str, Any]] | None,
     *,
     agent_id: str | None,
 ) -> list[dict[str, Any]]:
-    """Route this agent's held semantic drift through the existing replan lane.
+    """Route missing or stale acceptance through this agent's replan lane.
 
     This is a read-only trigger, not an acceptance rebind. Other runnable work
     remains selectable; the frontier rule schedules a replan only when no
@@ -386,46 +386,51 @@ def acceptance_gaps_from_stale_goal_binding(
     contract = agent_todo_summary.get("goal_acceptance_contract")
     if not isinstance(contract, dict) or contract.get("enabled") is not True:
         return []
-    stale_ids = {
-        task.get("todo_id")
+    held_states = {
+        task.get("todo_id"): task.get("state")
         for task in contract.get("tasks", [])
         if isinstance(task, dict)
-        and task.get("state") == "stale"
+        and task.get("state") in {"stale", "unbound"}
         and task.get("applicable") is True
     }
     gaps: list[dict[str, Any]] = []
     for item in source_items or []:
         if (
             not isinstance(item, dict)
-            or item.get("todo_id") not in stale_ids
+            or item.get("todo_id") not in held_states
             or item.get("role") != "agent"
             or item.get("status") not in {"open", "blocked"}
             or not agent_scope_item_claimed_by_agent_or_unclaimed(item, agent_id=agent_id)
         ):
             continue
         todo_id = str(item["todo_id"])
+        state = held_states[todo_id]
+        kind = f"goal_acceptance_{state}"
+        generated_at = item.get("updated_at") or item.get("created_at")
         frontier_revision = hashlib.sha256(json.dumps(
-            [todo_id, item.get("updated_at"), contract.get("digest")],
+            [todo_id, generated_at, contract.get("digest"), contract.get("revision"), state],
             ensure_ascii=True, separators=(",", ":"), default=str,
         ).encode("utf-8")).hexdigest()
         gap = {
-            "kind": GOAL_ACCEPTANCE_STALE_TRIGGER,
+            "kind": kind,
             "source": "goal_acceptance_contract",
             "agent_id": agent_id,
-            "reason_code": GOAL_ACCEPTANCE_STALE_TRIGGER,
+            "reason_code": kind,
             "vision_todo_ids": [todo_id],
             "frontier_revision": frontier_revision,
-            "replan_trigger_summary": f"The acceptance association for {todo_id} is stale after a work change.",
+            "replan_trigger_summary": f"The acceptance association for {todo_id} is {state}.",
             "acceptance_summary": "Preserve the owner-confirmed criteria and the original Turn identity.",
             "resolution_hint": (
-                f"Inspect {todo_id} and its acceptance binding; restore an unintended edit, "
+                f"Inspect {todo_id} and its acceptance binding; "
+                + ("restore an unintended edit, " if state == "stale" else
+                   "prepare the missing association for owner review, ") +
                 "or record an evidence-linked path delta and continue via an eligible "
-                "successor. Escalate only a real change to owner-owned criteria or scope; "
+                "successor, or record a concrete blocker for the required owner confirmation. "
                 "never rebind or settle a different Todo under the original Turn."
             ),
         }
-        if isinstance(item.get("updated_at"), str):
-            gap["generated_at"] = item["updated_at"]
+        if isinstance(generated_at, str):
+            gap["generated_at"] = generated_at
         gaps.append(gap)
         if len(gaps) == 3:
             break
@@ -991,11 +996,11 @@ def _vision_gap_acknowledged(
     # The vision-patch shortcut below covers gaps authored by that same Turn.
     # A persisted Goal Acceptance drift is an independent Todo event: an older
     # vision patch cannot acknowledge a later semantic edit.
-    stale_bindings = [
+    held_bindings = [
         gap for gap in acceptance_gaps
-        if gap.get("kind") == GOAL_ACCEPTANCE_STALE_TRIGGER
+        if gap.get("kind") in GOAL_ACCEPTANCE_HOLD_TRIGGERS
     ]
-    if stale_bindings:
+    if held_bindings:
         semantic_delta = latest_replan_ack.get("semantic_delta")
         satisfying_outcomes = (
             semantic_delta.get("satisfying_outcomes")
@@ -1009,24 +1014,25 @@ def _vision_gap_acknowledged(
             and isinstance(semantic_delta.get("trigger_checkpoints"), list)
             else []
         )
-        exact_stale_checkpoints = all(
+        exact_hold_checkpoints = all(
             any(
                 isinstance(checkpoint, dict)
-                and checkpoint.get("kind") == GOAL_ACCEPTANCE_STALE_TRIGGER
+                and checkpoint.get("kind") == gap.get("kind")
                 and checkpoint.get("frontier_revision") == gap.get("frontier_revision")
                 for checkpoint in recorded_checkpoints
             )
-            for gap in stale_bindings
+            for gap in held_bindings
         )
         if (
             not _replan_evidence_acknowledged(
-                stale_bindings, latest_replan_ack, time_key="generated_at",
+                held_bindings, latest_replan_ack, time_key="generated_at",
             )
             or not isinstance(semantic_delta, dict)
             or latest_replan_ack.get("recorded") is not True
             or semantic_delta.get("accepted") is not True
-            or GOAL_ACCEPTANCE_STALE_TRIGGER not in (semantic_delta.get("trigger_kinds") or [])
-            or not exact_stale_checkpoints
+            or not all(gap.get("kind") in (semantic_delta.get("trigger_kinds") or [])
+                       for gap in held_bindings)
+            or not exact_hold_checkpoints
             or not any(
                 outcome in {"new_runnable_successor", "new_concrete_blocker"}
                 for outcome in satisfying_outcomes if isinstance(outcome, str)
@@ -1105,9 +1111,12 @@ def derive_goal_frontier_replan_obligation_from_summaries(
         if selectable_frontier_advancement == 0
         else None
     )
-    compact_acceptance_gaps = [
-        item for item in (acceptance_gaps or []) if isinstance(item, dict)
-    ]
+    compact_acceptance_gaps = sorted(
+        (item for item in (acceptance_gaps or []) if isinstance(item, dict)),
+        # An enforced hold must survive the bounded trigger projection. Its
+        # exact checkpoint is required to settle; generic vision gaps follow.
+        key=lambda gap: gap.get("kind") not in GOAL_ACCEPTANCE_HOLD_TRIGGERS,
+    )
     if any(gap.get("vision_todo_ids") for gap in compact_acceptance_gaps):
         # Diagnostic claim counts retain executor-excluded work. A causal
         # acceptance obligation needs an actually selectable Todo identity.
@@ -1268,6 +1277,9 @@ def derive_goal_frontier_replan_obligation_from_summaries(
             },
         )
     if replan_rule.rule is GoalFrontierReplanRule.VISION_ACCEPTANCE_GAP:
+        acceptance_held = any(
+            gap.get("kind") in GOAL_ACCEPTANCE_HOLD_TRIGGERS for gap in compact_acceptance_gaps
+        )
         rearmed_after_obligation_id = _acknowledged_replan_obligation_id(
             latest_replan_ack
         )
@@ -1305,13 +1317,14 @@ def derive_goal_frontier_replan_obligation_from_summaries(
                 }
                 for gap in compact_acceptance_gaps[:3]
             ],
-            guidance_actions=[
-                "create_successor",
-                "update_agent_vision",
-                "record_evidence_gap",
-                "record_no_followup",
-            ],
-            todo_actions=[
+            guidance_actions=(
+                ["inspect_acceptance_binding", "select_eligible_successor", "record_evidence_gap"]
+                if acceptance_held else
+                ["create_successor", "update_agent_vision", "record_evidence_gap", "record_no_followup"]
+            ),
+            # Another unbound advancement Todo cannot repair this admission
+            # hold. Keep authoring suggestions aligned with the typed exits.
+            todo_actions=[] if acceptance_held else [
                 {
                     "action": "add",
                     "role": "agent",
@@ -1339,11 +1352,6 @@ def derive_goal_frontier_replan_obligation_from_summaries(
                 "record no-follow-up"
             ),
             rearmed_after_obligation_id=rearmed_after_obligation_id,
-            extra_fields=(
-                {"satisfying_semantic_outcomes": ["new_runnable_successor", "new_concrete_blocker"]}
-                if any(gap.get("kind") == GOAL_ACCEPTANCE_STALE_TRIGGER for gap in compact_acceptance_gaps)
-                else None
-            ),
         )
     if replan_rule.rule is GoalFrontierReplanRule.LONG_TODO_CHAIN:
         assert long_chain_observation is not None
@@ -1641,7 +1649,7 @@ def build_goal_frontier_projection_context_from_status(
                 (project_asset or {}).get("execution_profile")
             ),
         )
-        + acceptance_gaps_from_stale_goal_binding(
+        + acceptance_gaps_from_held_goal_binding(
             agent_todo_summary, agent_todo_source_items, agent_id=agent_id,
         )
     )
@@ -1681,7 +1689,7 @@ def build_goal_frontier_projection_context_from_status(
         ),
     )
     acceptance_gaps = (
-        [gap for gap in source_acceptance_gaps if gap.get("kind") == GOAL_ACCEPTANCE_STALE_TRIGGER]
+        [gap for gap in source_acceptance_gaps if gap.get("kind") in GOAL_ACCEPTANCE_HOLD_TRIGGERS]
         if vision_wait_state else source_acceptance_gaps
     )
     declared_fallback_gaps = [
