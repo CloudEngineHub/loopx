@@ -191,10 +191,13 @@ report bytes to the canonical completion. The local operator can then run
 `todo result-read --goal-id synthetic-managed-research --todo-id todo_lead-report`
 with the same registry and runtime to read the accepted report. Changed bytes,
 missing completion, or a changed acceptance contract reject the read. This
-local CLI read does not grant a remote audience access; Files and conversation
-delivery require their own authorized read surface. Retain the original
-conversation; preparation does not
-attach, resume, migrate or impersonate any existing production Agent.
+local CLI read does not grant a remote audience access. On the same loopback
+Chat server, the packaged Goal **Files** tab now lists only reports that pass
+current acceptance and opens their exact text after another version check;
+stale content is cleared. This Goal-scoped local view does not yet deliver a
+reply to the original conversation or grant remote audience access. Retain the
+original conversation; preparation does not attach, resume, migrate or
+impersonate any existing production Agent.
 
 ### Member relationships
 

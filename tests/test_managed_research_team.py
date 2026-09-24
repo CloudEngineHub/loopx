@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -16,6 +19,8 @@ from test_managed_research_scenario import fixture  # noqa: E402
 from loopx.control_plane.goals.acceptance import (  # noqa: E402
     configure_goal_acceptance, inspect_goal_acceptance, verify_goal_acceptance,
 )
+from loopx.chat_completed_todos import CompletedTodoPages, _goal_result_rows  # noqa: E402
+from loopx.chat_server import ChatHTTPServer, ChatRequestHandler  # noqa: E402
 
 
 @pytest.fixture(params=["file", "sqlite"])
@@ -114,17 +119,47 @@ def test_canonical_delivery_requires_completed_current_dependencies(team, monkey
                            "--todo-id", "todo_lead-report")
     assert json.loads(result_read["text"]) == json.loads(original_report)
     assert result_read["result"]["sha256"] == lead_completion["completion_result"]["sha256"]
+    server = ChatHTTPServer(("127.0.0.1", 0), ChatRequestHandler)
+    server.registry_path = root / "registry.json"
+    server.runtime_root_override = str(root / "runtime")
+    server.completed_todo_pages = CompletedTodoPages()
+    server.verbose = False
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        listing_url = f"http://127.0.0.1:{server.server_port}/api/chat/goal-results?goal_id={demo.GOAL}"
+        report_url = f"http://127.0.0.1:{server.server_port}/api/chat/goal-results/todo_lead-report?goal_id={demo.GOAL}"
+        with urlopen(listing_url) as response:
+            listed = json.load(response)
+        assert [row["todo_id"] for row in listed["items"]] == ["todo_lead-report"]
+        with urlopen(report_url) as response:
+            assert json.load(response)["text"] == result_read["text"]
+        with pytest.raises(HTTPError) as forbidden:
+            urlopen(Request(report_url, headers={"Origin": "https://unrelated.example"}))
+        assert forbidden.value.code == 403
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join()
     report.unlink()
     assert demo.complete(root, "lead", "report")["idempotent_replay"] is True
     report.write_bytes(original_report)
     result_object = root / "runtime" / "goals" / demo.GOAL / "result-objects" / result_read["result"]["sha256"]
     result_object.write_text("tampered")
+    assert _goal_result_rows(registry_path=root / "registry.json", runtime_root=root / "runtime", goal_id=demo.GOAL) == []
     with pytest.raises(RuntimeError, match="completion result bytes no longer match"):
         demo.cli(root, "todo", "result-read", "--goal-id", demo.GOAL,
                  "--todo-id", "todo_lead-report")
     result_object.write_bytes(original_report)
     assert all(row["done"] for row in canonical_tasks(root).values())
     assert verify_goal_acceptance(**route, execute=True)["acceptance_ready"]
+    demo.cli(root, "todo", "archive-completed", "--goal-id", demo.GOAL,
+             "--max-active-done", "0", "--execute")
+    assert [row["todo_id"] for row in _goal_result_rows(
+        registry_path=root / "registry.json", runtime_root=root / "runtime", goal_id=demo.GOAL,
+    )] == ["todo_lead-report"]
+    assert demo.cli(root, "todo", "result-read", "--goal-id", demo.GOAL,
+                    "--todo-id", "todo_lead-report")["text"] == result_read["text"]
     assert json.loads((root / "registry.json").read_text())["goals"][0]["status"] == "active"
     revised = json.loads((root / "bootstrap.json").read_text())["document"]
     revised["objective"] = "Revised owner acceptance basis"
@@ -134,6 +169,7 @@ def test_canonical_delivery_requires_completed_current_dependencies(team, monkey
     with pytest.raises(RuntimeError, match="completion result acceptance basis is stale"):
         demo.cli(root, "todo", "result-read", "--goal-id", demo.GOAL,
                  "--todo-id", "todo_lead-report")
+    assert _goal_result_rows(registry_path=root / "registry.json", runtime_root=root / "runtime", goal_id=demo.GOAL) == []
 
 
 def test_bootstrap_refuses_existing_state(team):
