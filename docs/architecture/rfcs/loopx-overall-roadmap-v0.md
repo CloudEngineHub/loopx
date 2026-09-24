@@ -483,6 +483,15 @@ desktop/mobile checks pass on the proposed head; maintainer review and CI
 remain open. Return to the original requester conversation, mixed-team
 continuation and stop/recovery remain separate unqualified outcomes.
 
+The proposed managed-result readback binds a current accepted Todo report to
+canonical completion and its exact digest. Goal Files can open it, and a
+manager conversation can show one report only when its confirmed team-plan
+receipt names that Todo. Multiple matching reports require selection in the
+Goal; failed, stale or cross-Goal reads withdraw the text. This is a report
+return, not requester adoption or a synthesized final answer. The original
+coordinator still needs a real continuation and explicit adoption over the
+accepted result before the one-action research journey is qualified.
+
 **Live team experience is a core S5 outcome.** The [Live Team Workspace
 RFC](live-team-workspace-v0.md) joins a precise command surface with a spatial
 research studio: visible artifact exchange, sourced disagreement, conclusion
