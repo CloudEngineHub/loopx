@@ -672,6 +672,15 @@
 .personal-proposal-row.is-applied { border-color: #b5ddcc; background: #f3fbf7; }
 .personal-proposal-row.is-error, .personal-proposal-row.is-stale { border-color: #efc3c3; background: #fff7f7; }
 .personal-proposal-row.is-gated { border-color: #ead39c; background: #fffaf0; }
+.personal-manager-team-result { min-width: 0; margin: -4px 0 8px 14px; padding: 14px 16px; border-left: 2px solid #8aaba0; background: var(--pw-surface, #fff); }
+.personal-manager-team-result > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin-bottom: 10px; }
+.personal-manager-team-result > header strong { font-size: 13px; }
+.personal-manager-team-result > header small { color: var(--pw-muted); font-size: 11px; }
+.personal-manager-team-result > p { margin: 0 0 8px; color: var(--pw-muted); font-size: 12px; }
+.personal-manager-team-result-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.personal-manager-team-result-actions button { padding: 4px 0; border: 0; background: none; color: var(--pw-link, #0070f3); cursor: pointer; font-size: 12px; }
+.personal-manager-team-result .goal-team-report { max-height: 280px; overflow: auto; }
+.personal-manager-team-result .goal-team-artifact { min-width: 0; }
 .personal-gated-summary { border: 1px solid #ead39c; border-radius: 14px; background: #fffaf0; }
 .personal-gated-summary > summary { display: flex; align-items: center; gap: 9px; padding: 12px 14px; color: #6d5620; cursor: pointer; list-style: none; }
 .personal-gated-summary > summary::-webkit-details-marker { display: none; }
