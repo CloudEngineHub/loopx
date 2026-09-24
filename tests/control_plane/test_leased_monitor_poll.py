@@ -160,11 +160,36 @@ def test_current_lease_cli_transport_keeps_soft_claim_compatible(tmp_path, monke
         "--available-capability", "network", "--available-capability", "external_evidence_poll",
         registry_path=registry, runtime_root=runtime)
     assert guard["selected_todo"]["todo_id"] == monitor["todo_id"]
-    result = run_json_cli(*automatic_arguments(monitor, turn_id=turn_id),
-        "--available-capability", "network", "--available-capability", "external_evidence_poll",
-        registry_path=registry, runtime_root=runtime)
+    args = [*automatic_arguments(monitor, turn_id=turn_id),
+        "--available-capability", "network", "--available-capability", "external_evidence_poll"]
+    result = run_json_cli(*args, registry_path=registry, runtime_root=runtime)
     assert result["ok"] is True
     assert "lease_proof" not in result["todo_writeback"]
+    replay = run_json_cli(*args, registry_path=registry, runtime_root=runtime)
+    assert replay["replayed"] is True
+
+
+def test_existing_hard_lease_receipt_cannot_lose_its_proof(tmp_path):
+    registry, runtime, _state, monitor = _canonical(tmp_path, lease=LEASE)
+    turn_id = "hard-lease-proof-retained"
+    args = [*automatic_arguments(monitor, turn_id=turn_id),
+        "--available-capability", "network", "--available-capability", "external_evidence_poll"]
+    run_json_cli("quota", "should-run", "--goal-id", GOAL_ID, "--agent-id", AGENT_ID,
+        "--runtime-profile", "generic_cli", "--turn-instance-id", turn_id,
+        "--available-capability", "network", "--available-capability", "external_evidence_poll",
+        registry_path=registry, runtime_root=runtime)
+    assert run_json_cli(*args, registry_path=registry, runtime_root=runtime)["ok"] is True
+    receipt_dir = runtime / "goals" / GOAL_ID / "runs" / ".transactions" / "quota-monitor-poll"
+    receipt_path, = receipt_dir.glob("*.json")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["record"]["monitor_event"]["todo_writeback"].pop("lease_proof")
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(QuotaCommandValidationError, match="no lease proof"):
+        current_monitor_lease_proof(
+            runtime_root=runtime, goal_id=GOAL_ID, todo_id=monitor["todo_id"],
+            agent_id=AGENT_ID, effect_id=receipt["effect_id"],
+        )
 
 
 def test_current_lease_cli_transport_rejects_ambiguous_proof_arguments(tmp_path):
