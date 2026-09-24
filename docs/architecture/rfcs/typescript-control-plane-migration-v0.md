@@ -14,6 +14,13 @@
 
 ---
 
+## Current delivery frontier (2026-09-24)
+
+The `d64c4d377`/open-PR audit withdraws earlier “5–8 / 6–8 / 7–9” estimates.
+Implemented code, six relevant open PRs, four proposed new batches (including
+complete-source transport) and D1–D3 evidence are separate units; four batches
+are not a guaranteed total PR count. Use the [reconciled inventory and exits](ledger/shared-goal-authority-state-provider-v0/2026-09-24-default-cutover-reconciliation.md) as the current plan.
+
 ## Cross-RFC execution priority (2026-09-16)
 
 [Roadmap](loopx-overall-roadmap-v0.md) R1–R5 are current product consumers of T0–T4, not another migration ladder. The team confirmation path now uses `work_items/team_plan.ts` for preview, batch planning and immutable operation identity, plus the existing AuthorityStore receipt/CAS boundary. Python retains public-safety and legacy Markdown IO adaptation; the per-lane writer loop is retired. The R1 checkpoint records the delivered assignment/retry delta and remaining receiver/execution boundaries.
@@ -29,9 +36,8 @@ This replaces the one-shot cross-language read without raising its 2 MiB budget
 or duplicating Todo/acceptance semantics in Python. Concurrent revisions fail the
 whole read; File read opening cannot create a missing authority. See the
 [paging contract](../../reference/canonical-snapshot-pagination.md) for limits
-and cost, and the shared-authority implementation sequence for the current
-**7–9 PR plan including this slice (6–8 after it lands)**. The more explicit split supersedes the earlier broad-package
-estimate; it does not claim D1–D3 closure.
+and cost. The current shared-authority inventory separates shipped pagination
+from open implementation work and D1–D3 qualification.
 
 
 Canonical command observation now has one typed receipt/head boundary. Team,
@@ -53,8 +59,8 @@ removed; its retained boundary is source projection/locking and capture IO.
 The legacy scan includes event-only claims, and canonical mode receipts reuse
 command recovery with strict historical decisions. Full-source snapshot and
 real-provider validation guard this T1/T2 replacement. This closes a rule and
-caller discrepancy, not a whole default-cutover package; the conditional 7–9
-package estimate remains. [Changed behavior and recovery](../../reference/handoff-mode.md).
+caller discrepancy, not a whole default-cutover package; use the current
+reconciled inventory for remaining work. [Changed behavior and recovery](../../reference/handoff-mode.md).
 
 Terminal review and validation now converge in the existing TS terminal owner.
 Agent completion and Monitor stop reuse Chat's canonical receipt-first recovery
@@ -857,7 +863,7 @@ explicit runtime-root applies to both intent and Todo IO. Frozen editorial
 requests retain their original basis. See [operation and boundaries](../../../loopx/capabilities/periodic_report/README.md#todo-authority-and-report-retries).
 This closes that T3/L5 consumer family, not D1 permanent display freshness,
 D2 durability, D3 whole-Goal qualification or default-provider selection. The
-conditional 7–9 remaining delivery-package estimate is unchanged.
+remaining work is classified in the current reconciled inventory.
 
 Todo summary lanes and pre-limit work counts now share `todos/summary_lanes.ts`.
 Python's lane classification and hidden-work inference loops are removed; quota
