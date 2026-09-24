@@ -31,8 +31,9 @@ import { stewardJourneyScenario } from "./personal-workspace-browser/steward-jou
 import { teamPlanScenario } from "./personal-workspace-browser/team-plan.mjs";
 import { typedActionsScenario } from "./personal-workspace-browser/typed-actions.mjs";
 import { stewardModelSettingsScenario } from "./personal-workspace-browser/steward-model-settings.mjs";
+import { workspaceLocaleScenario } from "./personal-workspace-browser/workspace-locale.mjs";
 
-const scenarioCatalog = [navigationSortingScenario, automationCadenceScenario, chatRecoveryScenario, loopxModeScenario, teamEvidenceScenario, managedGoalResultsScenario, typedActionsScenario, teamPlanScenario, stewardJourneyScenario, executionChipScenario, stewardModelSettingsScenario, progressiveLoadingScenario];
+const scenarioCatalog = [navigationSortingScenario, automationCadenceScenario, chatRecoveryScenario, loopxModeScenario, teamEvidenceScenario, managedGoalResultsScenario, typedActionsScenario, teamPlanScenario, stewardJourneyScenario, executionChipScenario, stewardModelSettingsScenario, progressiveLoadingScenario, workspaceLocaleScenario];
 const requestedScenario = process.env.LOOPX_PERSONAL_WORKSPACE_SCENARIO;
 const scenarios = requestedScenario
   ? scenarioCatalog.filter((scenario) => scenario.id === requestedScenario)
@@ -59,7 +60,12 @@ async function main() {
     for (const scenario of scenarios) {
       const startedAt = Date.now();
       try {
-        const result = await scenario.run({ browser, collectCoverage, url });
+        // Existing scenarios assert Chinese copy; the locale scenario exercises
+        // browser preferences explicitly and receives the unmodified browser.
+        const scenarioBrowser = scenario.id === "workspace-locale"
+          ? browser
+          : { newPage: (options = {}) => browser.newPage({ locale: "zh-CN", ...options }) };
+        const result = await scenario.run({ browser: scenarioBrowser, collectCoverage, url });
         coverageEntries.push(...result.coverageEntries);
         results[scenario.id] = {
           status: "PASS",

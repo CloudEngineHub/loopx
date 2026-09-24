@@ -151,6 +151,7 @@ import {
   addSshTunnelStatusSource,
   bindConfiguredSshHostAliases,
   defaultLocalStatusSourceUrl,
+  emptyStatusSourceCatalog,
   loadStatusSourceCatalog,
   localStatusSource,
   activeStatusSourceForUrl,
@@ -2983,9 +2984,14 @@ export function DashboardPage() {
   preferredGoalRef.current = search.goalId;
   const [payload, setPayload] = useState<StatusPayload>(exampleStatusPayload);
   const [source, setSource] = useState<DataSource>({ kind: "example", label: "bundled example" });
-  const [statusSourceCatalog, setStatusSourceCatalog] = useState(() =>
-    loadStatusSourceCatalog(window.localStorage, window.location.href)
-  );
+  const [statusSourceCatalog, setStatusSourceCatalog] = useState(() => {
+    try {
+      return loadStatusSourceCatalog(window.localStorage, window.location.href);
+    } catch {
+      // Browsers may reject access to the storage object itself.
+      return emptyStatusSourceCatalog();
+    }
+  });
   const statusSourceCatalogRef = useRef(statusSourceCatalog);
   statusSourceCatalogRef.current = statusSourceCatalog;
   const [statusUrl, setStatusUrl] = useState(search.statusUrl);
