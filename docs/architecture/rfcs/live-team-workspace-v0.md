@@ -328,15 +328,15 @@ are revalidated by operation, reference and hash; automatic reads do not take
 keyboard focus. Acceptance and requester adoption remain separate in details.
 This qualifies report readback, not mixed-team launch or stop/recovery.
 
-**Managed runs need a separate result readback.** The current report reader is
-requester-scoped to an original Goal Chat delegation operation. A managed
-non-Chat Turn has no such conversation, and a run-history entry or completed
-Todo does not identify a readable, currently accepted deliverable. The managed
-result slot in Goal Files must therefore remain empty until an accepted result
-is actually projected; it must not turn a run observation into a file or
-attach an unrelated open Todo to it.
+**Managed runs need a separate result readback.** The original Goal Chat report
+reader is requester-scoped to a delegation operation. A managed non-Chat Turn
+has no such conversation, and a run-history entry or completed Todo alone does
+not identify a readable, currently accepted deliverable. The managed result
+slot in Goal Files must remain empty for a Todo without a verified output;
+it must not turn a run observation into a file or attach an unrelated open
+Todo to it.
 
-The next result slice should capture a bounded, public-safe result reference
+The managed result slice captures a bounded, public-safe result reference
 at the managed Todo completion and acceptance boundary: Goal, accountable
 producer, exact output reference and digest, current acceptance identity, and
 the requester/audience allowed to read it. A read-only Goal result projection
@@ -350,25 +350,24 @@ text, run history or a Chat session belonging to another requester. Reuse the
 existing authority and artifact-read boundaries; do not create a second result
 writer or broaden Goal access as a side effect of presentation.
 
-The producer contract is still missing. `goals/acceptance_authority.ts` owns
-criterion verification but does not bind report bytes to a completed Todo;
-`runtime/run_artifacts.py` reserves private run records without acceptance or
-audience; delegation artifact reads require an existing requester operation.
-A standalone managed lead has none of those result identities. The first
-implementation must therefore bind an explicitly declared output handle and
-its digest to the canonical completion/acceptance receipt, under the existing
-Goal/Todo writer. The executor's output provider owns bytes; canonical state
-holds only the bounded reference, digest, producer/Todo identity and read
-audience. Completion without a declared, currently verified output creates no
-result row. This contract should be proven for one local managed output before
-adding a provider-neutral catalog or a Files renderer.
+[PR #4978](https://github.com/loopx-project/loopx/pull/4978) proposes that first
+local producer and reader. `todo complete --result-file` binds declared output
+bytes and their digest to the canonical completion/acceptance receipt under the
+existing Goal/Todo writer; `todo result-read` verifies the current acceptance
+basis and exact bytes. A loopback-only Goal-scoped API revalidates each requested
+page and exact read, and the packaged Goal Files view opens a readable report.
+Missing, changed or stale output is withheld and clears an earlier displayed
+body. Completion without a declared, currently verified output creates no
+result row. This proposal does not grant a remote audience or create a second
+writer.
 
-Qualify one managed non-Chat report end to end: canonical completion and
-independent acceptance, Goal-scoped list and exact-version read, original
-requester display, restart, stale/rejected result, pagination and unauthorized
-read. Verify the same facts through CLI and packaged UI. This is a prerequisite
-for showing managed output in Files and for the one-action mixed-team showcase;
-it does not by itself prove requester adoption or whole-team stop.
+Local File/SQLite producer and CLI readback, packaged desktop/mobile Files
+readback, stale/rejected output and bounded pagination have focused validation
+on the proposed head. Maintainer review and exact-head CI remain open. The
+original requester conversation still lacks a return route for managed runs;
+that route needs its own audience identity, restart and unauthorized-read
+qualification. Neither this local Files reader nor acceptance of one Todo
+proves requester adoption, mixed-team launch or whole-team stop/recovery.
 Merged [#4814](https://github.com/loopx-project/loopx/pull/4814) adds confirmation
 of one canonical team plan from manager and Goal Lark cards. Authenticated card
 bindings and the shared decision owner prevent a second click from creating a

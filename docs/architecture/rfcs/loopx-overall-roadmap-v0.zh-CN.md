@@ -391,11 +391,12 @@ executor/profile 检查启动条件。任务准入、当前 pinned 验收绑定�
 验收；包含独立异议和有效综合结论的 L1 仍未通过。
 这只验收本地执行事实的读回；计划分配回执
 整合、通用创建、远端探针、两轮持续协作及 Lark 等价仍由原 owner 继续推进。
-对于托管非 Chat 工作，S5 还需要已验收、精确版本的 Goal 成果回读，才能在「文件」
-显示报告。[团队实时工作区 RFC](live-team-workspace-v0.zh-CN.md) 定义产出到读取的
-边界；运行历史与 Todo 完成状态不能代替它。
-首个依赖是在 canonical Todo 完成 / 验收时绑定托管输出：当前运行记录和 Goal 验收
-还没有共享的产物身份。先验证一个本地产出者与精确读取，再让成果进入「文件」。
+对于托管非 Chat 工作，[PR #4978](https://github.com/loopx-project/loopx/pull/4978)
+提议已验收、精确版本的 Goal 成果回读：canonical Todo 完成时绑定本地报告字节，
+CLI 重新核验，打包 Goal「文件」读取按 Goal 限定的本机回环投影。
+[团队实时工作区 RFC](live-team-workspace-v0.zh-CN.md) 定义产出到读取的边界。
+提议版本已通过本地 File/SQLite 和桌面 / 手机的针对性检查；维护者评审与 CI
+仍待完成。向原请求方对话回送、混合团队持续协作及整队停止 / 恢复仍需另行验收。
 
 **团队现场是 S5 核心产品目标。** [团队实时工作区 RFC](live-team-workspace-v0.zh-CN.md)
 融合精确指挥台与空间研究工作室：展示产物交换、有来源的分歧、结论修订、回放与

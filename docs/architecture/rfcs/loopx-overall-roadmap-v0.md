@@ -457,13 +457,14 @@ including independent objection and useful synthesis, remains open.
 This qualifies a local execution-facts readback, not the full R2 ladder: assignment
 receipt integration, provisioning, remote probes, two-cycle continuation and Lark
 qualification remain open under their existing owners.
-For managed non-Chat work, S5 also needs an accepted, exact-version Goal result
-readback before Files can show a report. The [Live Team Workspace RFC](live-team-workspace-v0.md)
-defines that producer-to-reader boundary; run history and Todo completion alone
-cannot fill it. The first dependency is a managed-output binding at canonical
-Todo completion/acceptance; current run records and Goal acceptance do not yet
-share an output identity. Qualify one local producer and exact read before
-promoting the result to Files.
+For managed non-Chat work, [PR #4978](https://github.com/loopx-project/loopx/pull/4978)
+proposes an accepted, exact-version Goal result readback: canonical Todo
+completion binds local report bytes, the CLI verifies them, and packaged Goal
+Files reads a Goal-scoped loopback projection. The [Live Team Workspace RFC](live-team-workspace-v0.md)
+defines this producer-to-reader boundary. Focused local File/SQLite and
+desktop/mobile checks pass on the proposed head; maintainer review and CI
+remain open. Return to the original requester conversation, mixed-team
+continuation and stop/recovery remain separate unqualified outcomes.
 
 **Live team experience is a core S5 outcome.** The [Live Team Workspace
 RFC](live-team-workspace-v0.md) joins a precise command surface with a spatial
