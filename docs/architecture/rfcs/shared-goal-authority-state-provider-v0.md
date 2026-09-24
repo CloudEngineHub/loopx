@@ -3412,3 +3412,5 @@ not assumed — see
 
 `examples/docs-governance-smoke.py` checks the entry naming, the Chinese mirror
 beside each entry, and that this appendix exists for the directory it names.
+
+2026-09-24: [Typed complete-source assembly and remaining delivery packages](ledger/shared-goal-authority-state-provider-v0/2026-09-24-source-capture.md) unify source construction, identity rejection and current-graph membership; L7/D2/D3 and provider defaults remain open.
