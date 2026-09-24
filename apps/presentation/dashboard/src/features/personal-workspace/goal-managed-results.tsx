@@ -43,6 +43,8 @@ export function GoalManagedResults({goalId, zh}: {goalId: string; zh: boolean}) 
       if (current !== generation.current) return;
       if (!Array.isArray(next.items) || !Number.isInteger(next.total) ||
           !Number.isInteger(next.unavailable_count) ||
+          !Array.isArray(next.unavailable_todo_ids) ||
+          next.unavailable_count !== next.unavailable_todo_ids.length ||
           (next.next_cursor !== null && typeof next.next_cursor !== "string")) {
         throw new Error(zh ? "报告列表响应不完整" : "Report inventory response is incomplete");
       }

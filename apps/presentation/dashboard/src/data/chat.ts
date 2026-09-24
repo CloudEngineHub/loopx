@@ -929,7 +929,7 @@ export type ManagedGoalResultRow = {
 };
 export type ManagedGoalResultPage = {
   ok: true; items: ManagedGoalResultRow[]; total: number; next_cursor: string | null;
-  unavailable_count: number;
+  unavailable_count: number; unavailable_todo_ids: string[];
 };
 export type ManagedGoalResultRead = {
   ok: true; goal_id: string; todo_id: string; text: string;

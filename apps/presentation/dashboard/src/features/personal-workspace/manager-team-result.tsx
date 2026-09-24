@@ -24,7 +24,9 @@ const WORK_INDEX_WINDOW_MS = 30_000;
 const RELATED_SESSION_LIMIT = 8;
 const workIndexes = new Map<string, GoalWorkIndex>();
 const workIndexReads = new Map<string, Promise<GoalWorkIndex>>();
-type ManagedGoalIndex = {readAt: number; rows: ManagedGoalResultRow[]};
+/** Goal-wide inventory plus the exact Todo ids the server could not verify, so a
+ *  plan scopes its readback to its own ids instead of the whole Goal's health. */
+type ManagedGoalIndex = {readAt: number; rows: ManagedGoalResultRow[]; unavailableTodoIds: Set<string>};
 const managedIndexes = new Map<string, ManagedGoalIndex>();
 const managedIndexReads = new Map<string, Promise<ManagedGoalIndex>>();
 
@@ -164,21 +166,32 @@ async function collectManagedGoalIndex(goalId: string): Promise<ManagedGoalIndex
   let cursor: string | undefined;
   let total: number | undefined;
   const rows: ManagedGoalResultRow[] = [];
-  for (let pageNumber = 0; pageNumber < 8; pageNumber++) {
+  const unavailableTodoIds = new Set<string>();
+  // Page until the snapshot ends. The previous fixed eight-page budget hid a
+  // matching report that happened to sort later in the Goal's history.
+  for (;;) {
     const page = await fetchManagedGoalResults(goalId, cursor);
     if (!Array.isArray(page.items) || !Number.isInteger(page.total) || page.total < 0 ||
       (total !== undefined && page.total !== total) ||
-      !Number.isInteger(page.unavailable_count) || page.unavailable_count !== 0 ||
+      !Number.isInteger(page.unavailable_count) || page.unavailable_count < 0 ||
+      !Array.isArray(page.unavailable_todo_ids) ||
+      page.unavailable_count !== page.unavailable_todo_ids.length ||
       (page.next_cursor !== null && (!page.next_cursor || typeof page.next_cursor !== "string"))) {
       throw new Error("managed inventory incomplete");
     }
     total = page.total;
     rows.push(...page.items);
-    if (!page.next_cursor) return {readAt: Date.now(), rows};
+    for (const todoId of page.unavailable_todo_ids) {
+      if (typeof todoId !== "string" || !todoId) throw new Error("managed inventory incomplete");
+      unavailableTodoIds.add(todoId);
+    }
+    if (!page.next_cursor) return {readAt: Date.now(), rows, unavailableTodoIds};
     if (page.next_cursor === cursor) throw new Error("managed cursor repeated");
+    if (page.items.length === 0 && page.unavailable_count === 0) {
+      throw new Error("managed inventory made no progress");
+    }
     cursor = page.next_cursor;
   }
-  throw new Error("managed inventory exceeded page budget");
 }
 
 /** Share the Goal inventory across plan cards; manual refresh always bypasses the short cache. */
@@ -198,6 +211,11 @@ async function readManagedGoalIndex(goalId: string, force: boolean): Promise<Man
 async function readManagedPlanResult(goalId: string, todoIds: Set<string>, force: boolean): Promise<ManagedReadback> {
   try {
     const index = await readManagedGoalIndex(goalId, force);
+    // Only a plan-owned unreadable row can hide this plan's report; unrelated
+    // historical rows stay the server's and the Files view's concern.
+    for (const todoId of todoIds) {
+      if (index.unavailableTodoIds.has(todoId)) return {kind: "unavailable"};
+    }
     const matched = new Map<string, ManagedGoalResultRow>();
     for (const row of index.rows) {
       if (!todoIds.has(row.todo_id)) continue;

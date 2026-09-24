@@ -28,7 +28,7 @@ export const managedGoalResultsScenario = {
       return route.fulfill({json: {
         ok: true, items: [{todo_id: "todo_lead-report", title: "Revised cash flow",
           producer_agent_id: "lead", sha256: digest, content_type: "text/markdown", size_bytes: 80}],
-        total: 1, next_cursor: null, unavailable_count: 0,
+        total: 1, next_cursor: null, unavailable_count: 0, unavailable_todo_ids: [],
       }});
     });
     try {

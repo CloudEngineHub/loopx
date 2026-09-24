@@ -44,6 +44,7 @@ def _verify_goal_result_page(*, page, registry_path, runtime_root, goal_id):
     from .control_plane.todos.completion_result import read_completion_result
 
     rows = []
+    unavailable_todo_ids = []
     for todo in page["items"]:
         todo_id = todo.get("todo_id")
         try:
@@ -52,9 +53,14 @@ def _verify_goal_result_page(*, page, registry_path, runtime_root, goal_id):
                 goal_id=goal_id, todo_id=todo_id,
             )["result"]
         except (OSError, ValueError):
+            # Name the unverified rows instead of only counting them: a reader
+            # that only needs its own Todo ids must not be blocked by an
+            # unrelated unreadable report.
+            unavailable_todo_ids.append(todo_id)
             continue
         if (result["sha256"] != todo["sha256"] or
                 result["producer_agent_id"] != todo["producer_agent_id"]):
+            unavailable_todo_ids.append(todo_id)
             continue
         rows.append({
             "todo_id": todo_id,
@@ -65,7 +71,8 @@ def _verify_goal_result_page(*, page, registry_path, runtime_root, goal_id):
             "size_bytes": result["size_bytes"],
             "completed_at": todo["completed_at"],
         })
-    return {**page, "items": rows, "unavailable_count": len(page["items"]) - len(rows)}
+    return {**page, "items": rows, "unavailable_count": len(unavailable_todo_ids),
+            "unavailable_todo_ids": unavailable_todo_ids}
 
 
 class CompletedTodoPages:

@@ -295,11 +295,27 @@ export const teamPlanScenario = {
             result: {sha256: managedDigest, content_type: "text/markdown", producer_agent_id: "lead"},
           }});
         }
+        const planRow = {todo_id: "todo_a1a1a1a1a1a1", title: "Cash flow review",
+          producer_agent_id: "lead", sha256: managedDigest, content_type: "text/markdown", size_bytes: 75};
+        if (managedState === "paged-plan-report") {
+          // A matching report behind the retired eight-page budget: 360 unrelated
+          // rows first, then the plan's own row on the tenth page.
+          const unrelated = Array.from({length: 360}, (_, index) => ({todo_id: `todo_history_${index}`,
+            title: "Historical report", producer_agent_id: "lead", sha256: managedDigest,
+            content_type: "text/markdown", size_bytes: 75}));
+          const all = [...unrelated, planRow];
+          const offset = Number(request.searchParams.get("cursor") ?? "0");
+          return route.fulfill({json: {ok: true, items: all.slice(offset, offset + 40),
+            total: all.length, unavailable_count: 0, unavailable_todo_ids: [],
+            next_cursor: offset + 40 < all.length ? String(offset + 40) : null}});
+        }
+        const unavailableTodoIds = managedState === "unrelated-unavailable" ? ["todo_history_unreadable"] : [];
         const items = [{todo_id: managedState === "other-todo" ? "todo_unrelated" : "todo_a1a1a1a1a1a1",
-            title: "Cash flow review", producer_agent_id: "lead", sha256: managedDigest,
-            content_type: "text/markdown", size_bytes: 75}];
-        return route.fulfill({json: {ok: true, items, total: items.length,
-          next_cursor: null, unavailable_count: 0}});
+          title: "Cash flow review", producer_agent_id: "lead", sha256: managedDigest,
+          content_type: "text/markdown", size_bytes: 75}];
+        return route.fulfill({json: {ok: true, items, total: items.length + unavailableTodoIds.length,
+          next_cursor: null, unavailable_count: unavailableTodoIds.length,
+          unavailable_todo_ids: unavailableTodoIds}});
       });
       await managerResult.getByRole("button", {name: "刷新结果"}).click();
       await managerResult.getByText("托管团队报告 · 已验收，采用尚未核验").waitFor();
@@ -328,6 +344,26 @@ export const teamPlanScenario = {
       await managerResult.getByText("团队任务已分配，尚无可核验的已采用结果。").waitFor();
       check(!(await managerResult.innerText()).includes("Verified managed conclusion"),
         "a report from another Todo cannot appear in this plan");
+      managedState = "unrelated-unavailable";
+      await managerResult.getByRole("button", {name: "刷新结果"}).click();
+      await managerResult.getByText("托管团队报告 · 已验收，采用尚未核验").waitFor();
+      check((await managerResult.innerText()).includes("Verified managed conclusion"),
+        "an unrelated unreadable Goal result must not hide this plan's accepted report");
+      // Withdraw first, so the paginated case can only pass on a fresh read
+      // rather than on the report left over from the previous state.
+      managedState = "other-todo";
+      await managerResult.getByRole("button", {name: "刷新结果"}).click();
+      await managerResult.getByText("团队任务已分配，尚无可核验的已采用结果。").waitFor();
+      managedState = "paged-plan-report";
+      await managerResult.getByRole("button", {name: "刷新结果"}).click();
+      await managerResult.getByText("托管团队报告 · 已验收，采用尚未核验").waitFor();
+      check((await managerResult.innerText()).includes("Verified managed conclusion"),
+        "a matching report beyond the retired eight-page budget stays discoverable");
+      // Return the fixture to the no-managed-result state the later adoption
+      // checks were written against.
+      managedState = "other-todo";
+      await managerResult.getByRole("button", {name: "刷新结果"}).click();
+      await managerResult.getByText("团队任务已分配，尚无可核验的已采用结果。").waitFor();
       const goalSession = [...page.__loopxRuntime.sessions.values()].find(session => session.channel_id === `goal.${GOAL_ID}`);
       check(Boolean(goalSession), "the original Goal conversation has a session for result readback");
       let goalSessionId = "";

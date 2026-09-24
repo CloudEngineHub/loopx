@@ -863,7 +863,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
       return;
     }
     if (url.pathname === "/api/chat/goal-results") {
-      await route.fulfill({ json: { ok: true, items: [], total: 0, next_cursor: null, unavailable_count: 0 } });
+      await route.fulfill({ json: { ok: true, items: [], total: 0, next_cursor: null, unavailable_count: 0, unavailable_todo_ids: [] } });
       return;
     }
     const periodicConfiguration = {
