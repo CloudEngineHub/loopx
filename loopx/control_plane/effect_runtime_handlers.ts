@@ -1,5 +1,7 @@
+import {admitAutomationStart, confirmAutomationStart, manageAutomationCadence, projectCadenceSchedule} from "./quota/automation_cadence.ts";
+import {deliverShadowEntry} from "./coordination/shadow_entry_delivery.ts";
 import {readShadowDrainPlan} from "./coordination/shadow_drain_plan.ts";
-import {manageAutomationCadence, projectCadenceSchedule} from "./quota/automation_cadence.ts";
+import {readCanonicalSnapshotPage} from "./coordination/canonical_snapshot_page.ts";
 import {manageLocalAuthorityArchive} from "./coordination/local_authority_archive.ts";
 import {selectPeriodicReportProgress, selectPeriodicReportApprovalRetry} from "./capabilities/periodic_report_progress.ts";
 import {planIssueFixMonitorReconciliation} from "./capabilities/issue_fix_monitor_reconciliation.ts";
@@ -147,7 +149,6 @@ import {
 import {executeTaskLeaseAcquire} from "./work_items/task_lease_acquire.ts";
 import { executeTaskLeaseLifecycle } from "./work_items/task_lease_lifecycle.ts";
 import {
-  commitLocalAuthorityShadowEntry,
   readLocalAuthorityShadow,
   recordLocalAuthorityShadow,
 } from "./coordination/local_authority_shadow.ts";
@@ -173,7 +174,8 @@ import {
   executeReviewedCoordinationPromotion,
   terminalLifecycleLocalCoordinationTodo,
 } from "./coordination/local_authority_runtime.ts";
-import {listLocalCoordinationTodos, readLocalCoordinationTodo} from "./coordination/local_authority_read.ts";
+import {listLocalCoordinationTodos, readLocalCoordinationTodo,
+  readLocalCoordinationOperationReceipt} from "./coordination/local_authority_read.ts";
 import { evaluateCoordinationTodoClaimDecision } from "./coordination/todo_claim.ts";
 import {
   evaluateCoordinationTodoTerminalDecision,
@@ -483,6 +485,8 @@ export function createEffectRuntimeHandlers(
     ["todo.external_wait.plan", planTodoExternalWaitTransition],
     ["scheduler.state_transition.evaluate", evaluateSchedulerStateTransition],
     ["quota.automation_cadence.manage", manageAutomationCadence],
+    ["quota.automation_cadence.admit", admitAutomationStart],
+    ["quota.automation_cadence.confirm_start", confirmAutomationStart],
     ["quota.automation_cadence.schedule", projectCadenceSchedule],
     ["scheduler.state.evaluate", evaluateSchedulerStateOperation],
     ["scheduler.state.load", loadSchedulerState],
@@ -566,8 +570,10 @@ export function createEffectRuntimeHandlers(
     ["coordination.local_authority.todo_archive", archiveLocalCoordinationTodos],
     ["coordination.local_authority.todo_archive_ack", acknowledgeLocalCoordinationTodoArchive],
     ["coordination.local_authority.todo_read", readLocalCoordinationTodo],
+    ["coordination.local_authority.operation_receipt", readLocalCoordinationOperationReceipt],
     ["coordination.ownership_observation", projectOwnershipObservation],
     ["coordination.local_authority.ownership_observation", observeLocalCoordinationOwnership],
+    ["coordination.local_authority.todo_snapshot_page", readCanonicalSnapshotPage],
     ["coordination.local_authority.todo_list", listLocalCoordinationTodos],
     [
       "coordination.local_authority.legacy_writer_fence.engage",
@@ -585,7 +591,7 @@ export function createEffectRuntimeHandlers(
     ["scheduler.monitor_target.select", selectMonitorTodoRequest],
     ["capabilities.issue_fix.monitor_reconciliation.plan", planIssueFixMonitorReconciliation],
     ["coordination.local_authority_shadow.record", recordLocalAuthorityShadow],
-    ["coordination.runtime_shadow.commit_entry", commitLocalAuthorityShadowEntry],
+    ["coordination.runtime_shadow.commit_entry", deliverShadowEntry],
     ["coordination.runtime_shadow.outbox_read", readLocalAuthorityShadow],
     ["coordination.runtime_shadow.plan_drain", readShadowDrainPlan],
     [

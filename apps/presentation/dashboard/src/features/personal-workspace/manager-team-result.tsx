@@ -97,11 +97,11 @@ async function readAdoptedResult(goalId: string, todoIds: Set<string>, force: bo
     do {
       if (!remainingPages--) return {kind: "unavailable"};
       try {
-        const page = await fetchLoopXTeamWork(session.session_id, cursor);
+        const page = await fetchLoopXTeamWork(session.sessionId, cursor);
         incomplete ||= !page.page_readback_complete;
         for (const row of page.items) {
           if (!row.operation_id || !row.todo_id || !todoIds.has(row.todo_id) || row.status !== "accepted") continue;
-          const source = await readLoopXTeamWork(session.session_id, row.operation_id);
+          const source = await readLoopXTeamWork(session.sessionId, row.operation_id);
           if (source.operation_id !== row.operation_id || source.todo_id !== row.todo_id
             || source.status !== "accepted" || source.recovery_required || source.error) {
             incomplete = true;
@@ -119,7 +119,7 @@ async function readAdoptedResult(goalId: string, todoIds: Set<string>, force: bo
             }
             let verified = false;
             try {
-              const consumer = await readLoopXTeamWork(session.session_id, adoption.consumer_operation_id);
+              const consumer = await readLoopXTeamWork(session.sessionId, adoption.consumer_operation_id);
               const artifact = consumer.artifacts?.find(item =>
                 adoption.consumer_artifacts.some(version => version.ref === item.ref && version.sha256 === item.sha256)
                 && isMarkdownArtifact(item.ref))
@@ -130,7 +130,7 @@ async function readAdoptedResult(goalId: string, todoIds: Set<string>, force: bo
                 && consumer.agent_id === adoption.consumer_agent_id
                 && consumer.todo_id === adoption.consumer_todo_id
                 && consumer.status === "accepted" && !consumer.recovery_required && !consumer.error && artifact) {
-                const key = `${session.session_id}:${consumer.operation_id}`;
+                const key = `${session.sessionId}:${consumer.operation_id}`;
                 const earlier = adopted.get(key);
                 if (!earlier || (!isMarkdownArtifact(earlier.artifact.ref) && isMarkdownArtifact(artifact.ref))) {
                   adopted.set(key, {kind: "adopted", artifact, agentId: adoption.consumer_agent_id});
