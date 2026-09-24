@@ -20,7 +20,9 @@ This advances native long-horizon recovery, not provider default selection or
 D3 promotion. Real File/SQLite CLI regressions exercise acquire, stale edit,
 release, rejected reacquire, restoration and fresh acquire; provider tests also
 exercise a disposable PostgreSQL server. Managed frontier projection drops the
-stale hold after restoration. #5000 remains separately owned by Turn settlement
+stale hold after restoration. The original managed Turn then completes its Todo,
+writes back and settles; replaying restoration and spend consumes quota once.
+#5000 remains separately owned by Turn settlement
 and its retry policy; restoring acceptance does not settle a Turn.
 
 See the [caller contract](../../../../reference/goal-acceptance-observations.md#restore-an-unintended-textwait-edit-after-lease-release).

@@ -14,7 +14,8 @@
 
 此项推进原生长程恢复，不改变默认 provider 或 D3 晋升结论。真实 File/SQLite CLI
 覆盖获取租约、误改、释放、拒绝重取、恢复、再次获取；provider 用例还覆盖隔离的
-真实 PostgreSQL。恢复后 managed frontier 不再投影 stale hold。#5000 的 Turn
+真实 PostgreSQL。恢复后 managed frontier 不再投影 stale hold；原 managed Turn 随后完成 Todo、写回与结算，重复恢复和结算只消费一次
+配额。#5000 的 Turn
 结算及重试策略仍属独立边界；恢复验收声明不等于结算 Turn。
 
 参见[调用方合同](../../../../reference/goal-acceptance-observations.md#restore-an-unintended-textwait-edit-after-lease-release)。

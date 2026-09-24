@@ -19,16 +19,19 @@ def test_cli_restore_then_reacquire_preserves_acceptance_and_exact_retry(tmp_pat
     isolate_sqlite_runtime(tmp_path, monkeypatch)
     runtime, state, registry = tmp_path / "runtime", tmp_path / "state.md", tmp_path / "registry.json"
     goal, target = "acceptance-restoration", "todo_artifact"
-    state.write_text("# Goal\n\n## Agent Todo\n")
+    state.write_text("---\nstatus: active-read-only\nowner_mode: goal\nobjective: Validate a bounded artifact\n---\n# Goal\n\n## Agent Todo\n")
     registry.write_text(json.dumps({"common_runtime_root": str(runtime), "goals": [{
         "id": goal, "repo": str(tmp_path), "state_file": state.name,
+        "domain": "acceptance-restoration", "status": "active-read-only",
+        "adapter": {"kind": "read_only_project_map_v0", "status": "connected-read-only"},
+        "quota": {"compute": 1.0, "window_hours": 24, "allowed_slots": 2},
         "coordination": {"registered_agents": ["agent-a", "agent-b"]},
     }]}))
     wait = "resume_at:2020-01-01T00:00:00Z"
     todo = {"schema_version": "todo_item_v0", "todo_id": target, "role": "agent", "status": "open",
             "done": False, "text": "Deliver the artifact", "archive_state": "active",
             "source_section": "Agent Todo", "index": 1, "task_class": "advancement_task",
-            "claimed_by": "agent-a", "resume_when": wait}
+            "claimed_by": "agent-a", "resume_when": wait, "action_kind": "validate"}
     projection = build_todo_runtime_shadow_projection(goal_id=goal, handoff_mode="hard_lease", todos=[todo])
     initialize_canonical_authority(runtime, goal, projection, state_path=state, provider=provider)
     document = tmp_path / "acceptance.json"
@@ -56,6 +59,10 @@ def test_cli_restore_then_reacquire_preserves_acceptance_and_exact_retry(tmp_pat
     lease_args = ["--todo-id", target, "--owner", "agent-a", "--idempotency-key", "execution-one"]
     first = cli("task-lease", "acquire", *lease_args, "--expected-version", "0", "--ttl-seconds", "600")
     assert first["acquired"]
+    turn_binding = ["--agent-id", "agent-a", "--todo-id", target,
+                    "--turn-instance-id", "turn-restore-acceptance"]
+    guard = cli("quota", "should-run", "--codex-app", *turn_binding, "--scan-path", str(tmp_path))
+    assert guard["heartbeat_receipt"]["settlement_identity"]["todo_id"] == target
     cli("todo", "update", "--todo-id", target, "--agent-id", "agent-a", "--clear-resume-when",
         "--task-lease-idempotency-key", "execution-one", "--task-lease-expected-version", "1")
     assert inspect()["goal_acceptance_contract"]["tasks"][0]["state"] == "stale"
@@ -97,3 +104,24 @@ def test_cli_restore_then_reacquire_preserves_acceptance_and_exact_retry(tmp_pat
     assert inspect() == after_acquire
     assert cli("task-lease", "inspect", "--todo-id", target)["lease"] == next_lease["lease"]
     assert cli("todo", "list")["todos"][0]["status"] == "open"
+
+    completed = cli("todo", "complete", *turn_binding, "--task-lease-idempotency-key", "execution-two",
+                    "--task-lease-expected-version", "2", "--evidence", "fixture:restoration-check",
+                    "--next-agent-todo", "Validate the next artifact", "--next-claimed-by", "agent-a",
+                    "--next-action-kind", "validate")
+    assert completed["ok"]
+    refresh = cli("refresh-state", *turn_binding, "--classification", "validated_recovery",
+                  "--delivery-batch-scale", "single_surface", "--delivery-outcome", "outcome_progress",
+                  "--no-global-sync", "--suppress-external-sinks")
+    assert refresh["ok"]
+    spend_args = ["quota", "spend-slot", *turn_binding, "--slots", "1", "--source", "heartbeat",
+                  "--execute", "--scan-path", str(tmp_path)]
+    first_spend = cli(*spend_args)
+    assert first_spend["settlement_result"]["ok"]
+    assert cli(*restore)["status"] == "replayed"
+    repeated_spend = cli(*spend_args)
+    assert repeated_spend["settlement_result"]["ok"]
+    runs = runtime / "goals" / goal / "runs/index.jsonl"
+    assert sum(json.loads(line).get("classification") == "quota_slot_spent"
+               for line in runs.read_text().splitlines()) == 1
+    assert next(todo for todo in cli("todo", "list")["todos"] if todo["todo_id"] == target)["status"] == "done"
