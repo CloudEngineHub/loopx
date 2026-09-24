@@ -632,11 +632,12 @@ def next_seq(
 
 
 def runtime_root_digest(runtime_root: Path) -> str:
-    """Digest of the absolute, dot-normalized root; must match the TypeScript writer.
+    """Digest of the absolute, dot-normalized root as this process spells it.
 
-    Symlinks are deliberately not resolved: both runtimes normalize the string
-    they were given, so a root passed through the effect runtime hashes the
-    same on either side.
+    Diagnostic only (drain evidence). Outbox entries and receipts carry the
+    active binding's ``source_root_digest`` instead, which the TypeScript owner
+    derives from the resolved root, so a root reached through a symlink hashes
+    differently from this lexical spelling (#4892).
     """
 
     return text_digest(os.path.abspath(str(runtime_root)))
