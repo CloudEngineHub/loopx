@@ -19,6 +19,10 @@ from loopx.control_plane.work_items.delivery_outcome import (
 from loopx.control_plane.status.autonomous_replan_projection import (
     AUTONOMOUS_REPLAN_PERIODIC_RUN_THRESHOLD,
 )
+from loopx.control_plane.quota.settlement_validation import (
+    completion_validation_spend_error,
+)
+from loopx.control_plane.todos.active_state_todo_parser import parse_active_state_todos
 from loopx.heartbeat_prompt import build_heartbeat_prompt
 from loopx.rollout_event_log import build_rollout_event
 
@@ -1220,6 +1224,106 @@ def test_in_flight_progress_settles_while_completion_validation_todo_is_open(
     assert refresh["settlement_result"]["ok"] is True
     assert refresh["vision_checkpoint"]["delivery_boundary"] == (
         "in_flight_continuation"
+    )
+
+    spend_rc, spend = _run_cli(
+        registry_path,
+        runtime,
+        "quota",
+        "spend-slot",
+        "--goal-id",
+        GOAL_ID,
+        "--slots",
+        "1",
+        "--source",
+        "heartbeat",
+        "--execute",
+        "--agent-id",
+        AGENT_ID,
+        "--todo-id",
+        TODO_ID,
+        "--turn-instance-id",
+        turn_id,
+    )
+    assert spend_rc == 0, spend
+    assert spend["settlement_progress"]["state"] == "settled", spend
+    state_path = project / f".codex/goals/{GOAL_ID}/ACTIVE_GOAL_STATE.md"
+    current_todo = next(
+        item for item in parse_active_state_todos(
+            state_path.read_text(encoding="utf-8"), item_limit=None
+        )["agent_todos"]["items"]
+        if item["todo_id"] == TODO_ID
+    )
+    assert current_todo["status"] == "open", current_todo
+
+
+def test_open_completion_todo_accepts_only_matching_in_flight_writeback(
+    tmp_path: Path,
+) -> None:
+    project, _runtime, _registry_path = _write_fixture(tmp_path)
+    _configure_completion_validation_todo(project)
+    state_path = project / f".codex/goals/{GOAL_ID}/ACTIVE_GOAL_STATE.md"
+    selected = next(
+        item for item in parse_active_state_todos(
+            state_path.read_text(encoding="utf-8"), item_limit=None
+        )["agent_todos"]["items"]
+        if item["todo_id"] == TODO_ID
+    )
+    status = {"attention_queue": {"items": [{
+        "goal_id": GOAL_ID, "agent_todos": {"items": [selected]},
+    }]}}
+    delivery = {
+        "goal_id": GOAL_ID,
+        "todo_id": TODO_ID,
+        "agent_id": AGENT_ID,
+        "settlement_identity": {
+            "goal_id": GOAL_ID, "todo_id": TODO_ID, "agent_id": AGENT_ID,
+        },
+        "delivery_outcome": "outcome_progress",
+        "vision_checkpoint": {
+            "schema_version": "vision_checkpoint_v0",
+            "agent_id": AGENT_ID,
+            "satisfied": True,
+            "delivery_boundary": "in_flight_continuation",
+            "triggers": [{"kind": "in_flight_continuation", "todo_id": TODO_ID}],
+        },
+    }
+
+    def error(run: dict) -> str | None:
+        return completion_validation_spend_error(
+            status, goal_id=GOAL_ID, todo_id=TODO_ID, agent_id=AGENT_ID,
+            selected_todo=selected, delivery_run=run,
+        )
+
+    assert error(delivery) is None
+    for field, value in (
+        ("goal_id", "another-goal"),
+        ("delivery_outcome", "surface_only"),
+        ("agent_id", "another-agent"),
+        ("todo_id", "todo_other"),
+    ):
+        assert "completion validation" in error({**delivery, field: value})
+    for field, value in (
+        ("satisfied", False),
+        ("agent_id", "another-agent"),
+        ("delivery_boundary", "semantic_closeout"),
+        ("triggers", []),
+        ("triggers", None),
+    ):
+        altered = json.loads(json.dumps(delivery))
+        altered["vision_checkpoint"][field] = value
+        assert "completion validation" in error(altered)
+    for field, value in (
+        ("goal_id", "another-goal"),
+        ("agent_id", "another-agent"),
+        ("todo_id", "todo_other"),
+    ):
+        altered = json.loads(json.dumps(delivery))
+        altered["settlement_identity"][field] = value
+        assert "completion validation" in error(altered)
+    assert "completion validation" in completion_validation_spend_error(
+        status, goal_id=GOAL_ID, todo_id=TODO_ID, agent_id=None,
+        selected_todo=selected, delivery_run=delivery,
     )
 
 
