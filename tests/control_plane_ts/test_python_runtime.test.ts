@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -18,7 +18,8 @@ test("test subprocess discovery selects a compatible checkout Python", () => {
   assert.equal(probe.status, 0, probe.stderr);
   const result = JSON.parse(probe.stdout);
   assert.ok(result.version[0] > 3 || result.version[0] === 3 && result.version[1] >= 11);
-  assert.ok(resolve(result.source).startsWith(root), result.source);
+  const sourceInCheckout = relative(root, resolve(result.source));
+  assert.ok(sourceInCheckout && !sourceInCheckout.startsWith("..") && !isAbsolute(sourceInCheckout), result.source);
 });
 
 test("an invalid explicit test Python never falls back silently", t => {
@@ -77,12 +78,14 @@ test("test and browser smokes may not introduce bare python3 subprocess fallback
   const directories = ["tests/control_plane_ts", "examples", "apps/presentation/dashboard/smoke"];
   const offenders: string[] = [];
   const direct = /\b(?:spawn|spawnSync|execFile|execFileSync)\s*\(\s*["']python3["']/;
-  const fallback = /\b(?:LOOPX_TEST_PYTHON|LOOPX_PYTHON_BIN|LOOPX_PYTHON)\s*(?:\?\?|\|\|)\s*["']python3["']/;
-  const assigned = /\b(?:const|let)\s+(?:PYTHON|python)\s*=\s*["']python3["']/;
+  const fallback = /(?:\?\?|\|\|)\s*["']python3["']/;
+  const assigned = /\b(?:const|let)\s+\w+\s*=\s*["']python3["']/;
   const bare = JSON.stringify("python3");
   assert.ok(direct.test(`spawn(${bare}, ["-m", "loopx.cli"])`));
   assert.ok(fallback.test(`process.env.LOOPX_TEST_PYTHON ?? ${bare}`));
+  assert.ok(fallback.test(`process.env.NEW_TEST_PYTHON || ${bare}`));
   assert.ok(assigned.test(`const PYTHON = ${bare}`));
+  assert.ok(assigned.test(`const testInterpreter = ${bare}`));
   assert.equal(direct.test(`validation_command_argv: [${bare}, "-m", "pytest"]`), false);
   function inspect(directory: string) {
     for (const entry of readdirSync(join(root, directory), { withFileTypes: true })) {
