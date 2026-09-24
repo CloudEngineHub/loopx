@@ -3,7 +3,7 @@ import {readFile} from "node:fs/promises";
 import {createHash} from "node:crypto";
 import type {JsonObject} from "../effect_program.ts";
 import {atomicWriteJson, withFileMutationLock} from "../effect_runtime_io.ts";
-import {EffectRuntimeRequestError} from "../effect_runtime_errors.ts";
+import {EffectRuntimeConflictError, EffectRuntimeRequestError} from "../effect_runtime_errors.ts";
 import {requireJsonObject, requireNonEmptyString, requireInteger, requireStringLiteral} from "../runtime_decode.ts";
 import {schedulerStatePath} from "../scheduler/state_store.ts";
 
@@ -21,6 +21,10 @@ type Start = Scope & {started_at_ms: number; trigger_at_ms: number; request_id: 
   manual_reason: string | null; state: StartState};
 type Store = {schema_version: typeof SCHEMA; goal_id: string; revision: number; rules: Rule[]; starts: Start[]};
 const fail = (message: string): never => {throw new EffectRuntimeRequestError(message, "automation_cadence_invalid");};
+/** Stale configuration intent is a typed conflict, never a rejected request. */
+const conflict = (message: string): never => {
+  throw new EffectRuntimeConflictError(message, "automation_cadence_revision_conflict");
+};
 function text(value: unknown, name: string): string {
   const s = requireNonEmptyString(value, name).trim();
   if (!s || s.length > 256 || /[\u0000-\u001f]/.test(s)) fail(`${name} is invalid`);
@@ -226,7 +230,8 @@ export async function manageAutomationCadence(p: JsonObject): Promise<JsonObject
     const store = await load(path, goal);
     if (operation === "read") return projection(store, s);
     if (operation === "configure") {
-      if (integer(p.expected_revision, "expected_revision") !== store.revision) fail("configuration revision conflict; read current policy before changing it");
+      if (integer(p.expected_revision, "expected_revision") !== store.revision)
+        conflict("configuration revision conflict; read current policy before changing it");
       const value = minutes(p.min_interval_minutes), reference = text(p.owner_reference, "owner_reference");
       const old = store.rules.find(r => key(r) === key(s));
       if (value < (old?.min_interval_minutes ?? 0) && p.approve_reduction !== true) fail("lowering or disabling the floor requires explicit owner-approved reduction");
