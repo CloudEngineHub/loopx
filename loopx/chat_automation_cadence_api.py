@@ -19,6 +19,22 @@ CHAT_AUTOMATION_CADENCE_PREVIEW_PATH = f"{CHAT_AUTOMATION_CADENCE_PATH}/preview"
 CHAT_AUTOMATION_CADENCE_APPLY_PATH = f"{CHAT_AUTOMATION_CADENCE_PATH}/apply"
 
 
+class SupersededCadencePreview(Exception):
+    """An apply carried a preview that no longer matches its own request.
+
+    Typed on purpose: the HTTP status and error code must come from the failure
+    kind, never from whether the message happens to contain a keyword.
+    """
+
+
+def _cadence_failure_status(exc: Exception) -> tuple[int, str]:
+    """Map a cadence failure to its stable HTTP contract by type, not wording."""
+
+    if isinstance(exc, (EffectRuntimeConflict, SupersededCadencePreview)):
+        return 409, "automation_cadence_conflict"
+    return 400, "invalid_automation_cadence_request"
+
+
 def _scope(body: dict[str, Any]) -> tuple[str, str | None, str | None]:
     goal_id = body.get("goal_id")
     agent_id = body.get("agent_id")
@@ -117,7 +133,7 @@ def _request(
         json.dumps(values, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     if execute and body.get("preview_revision") != digest:
-        raise ValueError(
+        raise SupersededCadencePreview(
             "preview is stale; inspect and preview the current policy again"
         )
     return {
@@ -216,18 +232,15 @@ class AutomationCadenceRequestMixin:
         except (
             EffectRuntimeConflict,
             EffectRuntimeRejected,
+            SupersededCadencePreview,
             TypeError,
             ValueError,
         ) as exc:
-            message = str(exc)
+            status, error_code = _cadence_failure_status(exc)
             self._send_error(
-                message,
-                status=409
-                if "revision conflict" in message or "stale" in message
-                else 400,
-                error_code="automation_cadence_conflict"
-                if "revision conflict" in message or "stale" in message
-                else "invalid_automation_cadence_request",
+                str(exc),
+                status=status,
+                error_code=error_code,
             )
         except Exception:  # noqa: BLE001 - write may have reached the store; force readback.
             self._send_error(
