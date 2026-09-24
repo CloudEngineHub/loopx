@@ -19,6 +19,8 @@ on:
       - "package.json"
       - "package-lock.json"
       - "pyproject.toml"
+      - "setup.py"
+      - "MANIFEST.in"
       - "tsconfig.control-plane.json"
 
 permissions:
@@ -83,8 +85,32 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  kernel-static-checks:
+  chat-bundle:
     needs: changes
+    if: needs.changes.outputs.core_tests == 'true' || needs.changes.outputs.python_tests == 'true' || needs.changes.outputs.presentation_tests == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/presentation/dashboard/package-lock.json
+      - run: python scripts/chat_bundle.py build --install
+      - run: python scripts/chat_bundle.py verify --source
+      - uses: actions/upload-artifact@v7
+        with:
+          name: chat-bundle-${{ github.sha }}
+          path: loopx/web/chat/
+          if-no-files-found: error
+          retention-days: 7
+
+  kernel-static-checks:
+    needs: [changes, chat-bundle]
     if: needs.changes.outputs.core_tests == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -93,6 +119,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: chat-bundle-${{ github.sha }}
+          path: loopx/web/chat/
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -154,13 +185,18 @@ jobs:
         run: python examples/control_plane/cli-output-budget-regression-smoke.py
 
   dashboard-acceptance:
-    needs: changes
+    needs: [changes, chat-bundle]
     if: needs.changes.outputs.core_tests == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: chat-bundle-${{ github.sha }}
+          path: loopx/web/chat/
 
       - name: Set up the qualified Node.js runtime
         uses: actions/setup-node@v6
@@ -261,7 +297,7 @@ jobs:
           npm run test:control-plane
 
   test-shard:
-    needs: changes
+    needs: [changes, chat-bundle]
     if: needs.changes.outputs.python_tests == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -273,6 +309,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - uses: actions/download-artifact@v7
+        with:
+          name: chat-bundle-${{ github.sha }}
+          path: loopx/web/chat/
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
@@ -381,7 +422,7 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   stage2c-suite:
-    needs: changes
+    needs: [changes, chat-bundle]
     if: needs.changes.outputs.stage2c_tests == 'true'
     name: stage2c (${{ matrix.suite }} ${{ matrix.shard }})
     runs-on: ubuntu-latest
@@ -396,6 +437,11 @@ jobs:
           - {suite: installed, shard: 0}
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: chat-bundle-${{ github.sha }}
+          path: loopx/web/chat/
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
@@ -475,7 +521,7 @@ jobs:
         run: test "$STAGE2C_RESULT" = success
 
   windows-powershell:
-    needs: changes
+    needs: [changes, chat-bundle]
     if: needs.changes.outputs.python_tests == 'true'
     runs-on: windows-latest
     timeout-minutes: 20
@@ -484,6 +530,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: chat-bundle-${{ github.sha }}
+          path: loopx/web/chat/
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -531,12 +582,17 @@ jobs:
           tests/control_plane_ts/sqlite_runtime_admission.test.ts
 
   presentation:
-    needs: changes
+    needs: [changes, chat-bundle]
     if: needs.changes.outputs.presentation_tests == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: chat-bundle-${{ github.sha }}
+          path: loopx/web/chat/
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
@@ -551,13 +607,10 @@ jobs:
         working-directory: apps/presentation/dashboard
         run: |
           npm ci --ignore-scripts
-          npm run build:chat
-          if [[ -n "$(git -C ../../.. status --short --untracked-files=all -- loopx/web/chat)" ]]; then
-            echo "Packaged Dashboard differs from its source build." >&2
-            exit 1
-          fi
+          python ../../../scripts/chat_bundle.py verify --source
           ./node_modules/.bin/playwright install --with-deps chromium
           npm run smoke:personal-workspace-packaged
+          npm run smoke:chat-upgrade
 
   merge-gate:
     # Always publish one stable outcome, including documentation-only PRs.
