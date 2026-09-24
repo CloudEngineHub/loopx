@@ -286,10 +286,9 @@ def handle_lark_review_callback_for_profile(
     *,
     action_service: Any,
     action_store_root: Path,
-    profile: str,
     profile_config: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    """Bind a callback to the exact configured sender identity."""
+    """Bind a callback to the App identity of the configured listener."""
 
     if not isinstance(profile_config, Mapping):
         raise ValueError("Lark manager profile is unavailable")
@@ -298,8 +297,6 @@ def handle_lark_review_callback_for_profile(
         action_service=action_service,
         action_store_root=action_store_root,
         profile_app_id=str(profile_config.get("bot_app_id") or ""),
-        cli_bin=str(profile_config.get("cli_bin") or "lark-cli"),
-        profile=profile,
     )
 
 
@@ -676,17 +673,14 @@ def handle_team_plan_review_callback(
     action_service: Any,
     action_store_root: Path,
     profile_app_id: str,
-    cli_bin: str,
-    profile: str,
     runner: CommandRunner = default_subprocess_runner,
 ) -> dict[str, Any]:
     """Apply one authenticated decision and patch every audience readback.
 
     The card's sending identity is authoritative from the authenticated
-    delivery record. One App-scoped consumer may handle several local profile
-    aliases, so ``profile``/``cli_bin`` describe the listening alias and must
-    never be treated as the sender when they differ (see
-    :func:`active_profile_chat_ids`).
+    delivery record: one App-scoped consumer may handle several local profile
+    aliases, so the alias that receives a callback can differ from the alias
+    that sent the card (see :func:`active_profile_chat_ids`).
     """
 
     action = _callback_action(event)

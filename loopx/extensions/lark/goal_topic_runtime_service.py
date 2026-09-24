@@ -220,7 +220,6 @@ class LarkGoalTopicRuntimeService:
                             action_store_root=self.runtime_root
                             / "chat"
                             / "actions",
-                            profile=profile,
                             profile_config=profile_config,
                         )
 

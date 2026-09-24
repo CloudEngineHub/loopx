@@ -196,8 +196,6 @@ def test_two_lark_audiences_apply_one_canonical_team_plan(
         action_service=service,
         action_store_root=store.root,
         profile_app_id="cli_public_fixture",
-        cli_bin="fake-lark",
-        profile="fixture",
     )
     assert first["ok"] is True
     assert first["proposal_status"] == "applied"
@@ -215,8 +213,6 @@ def test_two_lark_audiences_apply_one_canonical_team_plan(
         action_service=service,
         action_store_root=store.root,
         profile_app_id="cli_public_fixture",
-        cli_bin="fake-lark",
-        profile="fixture",
     )
     assert replay["ok"] is True
     assert service.calls == 1
@@ -247,8 +243,9 @@ def test_standby_app_alias_applies_a_card_another_alias_delivered(
         audience_ids=["manager", "goal:goal-alpha"],
         authorized_principal="lark:ou_owner",
     )
-    # Alias ``bravo`` delivered both audiences; alias ``alpha`` holds the
-    # App-scoped consumer lease and therefore receives bravo's callbacks.
+    # Alias ``bravo`` delivered both audiences, but one App-scoped consumer
+    # holds the lease and therefore receives bravo's callbacks while listening
+    # under a different local alias.
     manager_card = _record_delivery(
         store,
         proposal,
@@ -328,8 +325,6 @@ def test_standby_app_alias_applies_a_card_another_alias_delivered(
         action_service=service,
         action_store_root=store.root,
         profile_app_id="cli_public_fixture",
-        cli_bin="lark-cli-alpha",
-        profile="alias-alpha",
     )
     assert first["ok"] is True
     assert first["proposal_status"] == "applied"
@@ -348,8 +343,6 @@ def test_standby_app_alias_applies_a_card_another_alias_delivered(
         action_service=service,
         action_store_root=store.root,
         profile_app_id="cli_public_fixture",
-        cli_bin="lark-cli-alpha",
-        profile="alias-alpha",
     )
     assert replay["ok"] is True
     assert service.calls == 1
@@ -413,8 +406,6 @@ def test_team_plan_callback_rejects_drifted_delivery_binding(
             action_service=service,
             action_store_root=store.root,
             profile_app_id=app_id,
-            cli_bin="lark-cli-alpha",
-            profile="alias-alpha",
         )
 
     with pytest.raises(ActionConflictError):
@@ -742,8 +733,6 @@ def test_recovery_uses_the_first_durable_decision_not_a_later_click(
         action_service=service,
         action_store_root=store.root,
         profile_app_id="cli_public_fixture",
-        cli_bin="fake-lark",
-        profile="fixture",
     )
 
     assert result["decision"] == "confirm"
