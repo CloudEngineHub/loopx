@@ -425,6 +425,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
     goalConfigurationRequests: [],
     machineConfigurationRequests: [],
     machineInspectionStatus: "configured",
+    failNextMachineInspection: false,
     invalidMachineNamespaces: [],
     larkWrites: [],
     actionTransitions: [],
@@ -1067,6 +1068,11 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
       },
     };
     if (url.pathname === "/api/chat/machine-configuration" && request.method() === "GET") {
+      if (state.failNextMachineInspection) {
+        state.failNextMachineInspection = false;
+        await route.fulfill({ contentType: "application/json", json: { error: "Machine catalog temporarily unavailable" }, status: 503 });
+        return;
+      }
       await route.fulfill({ contentType: "application/json", json: {
         ...machineConfigurationBase,
         schema_version: "machine_configuration_inspection_v0",

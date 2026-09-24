@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Code2, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Code2, RefreshCw, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
 
 import {
   applyMachineConfiguration,
@@ -150,6 +150,19 @@ export function MachineConfigurationSettings({ section }: { section: "steward" |
 
   async function reload() {
     setInspection(await fetchMachineConfiguration());
+  }
+
+  async function retryLoad() {
+    if (busy) return;
+    setBusy("load");
+    setError(null);
+    try {
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("machine.loadError"));
+    } finally {
+      setBusy(null);
+    }
   }
 
   useEffect(() => {
@@ -308,6 +321,13 @@ export function MachineConfigurationSettings({ section }: { section: "steward" |
 
   if (busy === "load") {
     return <div className="personal-machine-loading" role="status">{t("common.loading")}</div>;
+  }
+  if (!inspection) {
+    return <section className="personal-capability-error" role="alert">
+      <AlertTriangle aria-hidden size={18} />
+      <span><strong>{t("machine.loadError")}</strong><small>{error}</small></span>
+      <button onClick={() => void retryLoad()} type="button"><RefreshCw aria-hidden size={15} />{t("capabilities.retry")}</button>
+    </section>;
   }
   if (!selected) {
     return <p className="personal-capability-empty">{t("machine.capabilityEmpty")}</p>;
