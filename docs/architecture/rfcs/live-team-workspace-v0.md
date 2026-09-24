@@ -1,7 +1,7 @@
 # RFC: Live Team Workspace v0
 
 - **RFC status:** Draft; proposed product and presentation decisions.
-- **Delivery maturity:** Partial implementation: bounded team inspection is shipped; the readable result/comparison slice is proposed in [#4828](https://github.com/loopx-project/loopx/pull/4828). Spatial streaming remains a design, not production qualification.
+- **Delivery maturity:** Partial implementation: bounded team inspection and the Goal Chat readable result/comparison slice in merged [#4828](https://github.com/loopx-project/loopx/pull/4828) are shipped. Managed non-Chat result readback and spatial streaming remain unqualified.
 - **Owners:** existing workspace presentation, collaboration and runtime owners.
 - **Created / normative revision:** 2026-09-20.
 - **Implementation baseline:** `e7ef75c08`.
@@ -327,6 +327,35 @@ stack the reader below it. Explicit artifact choices survive delivery refresh an
 are revalidated by operation, reference and hash; automatic reads do not take
 keyboard focus. Acceptance and requester adoption remain separate in details.
 This qualifies report readback, not mixed-team launch or stop/recovery.
+
+**Managed runs need a separate result readback.** The current report reader is
+requester-scoped to an original Goal Chat delegation operation. A managed
+non-Chat Turn has no such conversation, and a run-history entry or completed
+Todo does not identify a readable, currently accepted deliverable. The managed
+result slot in Goal Files must therefore remain empty until an accepted result
+is actually projected; it must not turn a run observation into a file or
+attach an unrelated open Todo to it.
+
+The next result slice should capture a bounded, public-safe result reference
+through the existing artifact and acceptance owners at settlement: Goal, accountable
+producer, exact output reference and digest, current acceptance identity, and
+the requester/audience allowed to read it. A read-only Goal result projection
+should expose that reference to both CLI and the packaged workspace, then
+revalidate the output and acceptance on read. The presenter may show a readable
+report and its source/acceptance trail only after that readback succeeds. A
+missing source, changed digest, revoked acceptance, unreadable page or failed
+provider read must clear the earlier report and show the specific unverified
+scope. The reader must not infer a report from filesystem discovery, completion
+text, run history or a Chat session belonging to another requester. Reuse the
+existing authority and artifact-read boundaries; do not create a second result
+writer or broaden Goal access as a side effect of presentation.
+
+Qualify one managed non-Chat report end to end: canonical completion and
+independent acceptance, Goal-scoped list and exact-version read, original
+requester display, restart, stale/rejected result, pagination and unauthorized
+read. Verify the same facts through CLI and packaged UI. This is a prerequisite
+for showing managed output in Files and for the one-action mixed-team showcase;
+it does not by itself prove requester adoption or whole-team stop.
 Merged [#4814](https://github.com/loopx-project/loopx/pull/4814) adds confirmation
 of one canonical team plan from manager and Goal Lark cards. Authenticated card
 bindings and the shared decision owner prevent a second click from creating a

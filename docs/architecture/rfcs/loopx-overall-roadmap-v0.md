@@ -457,6 +457,10 @@ including independent objection and useful synthesis, remains open.
 This qualifies a local execution-facts readback, not the full R2 ladder: assignment
 receipt integration, provisioning, remote probes, two-cycle continuation and Lark
 qualification remain open under their existing owners.
+For managed non-Chat work, S5 also needs an accepted, exact-version Goal result
+readback before Files can show a report. The [Live Team Workspace RFC](live-team-workspace-v0.md)
+defines that producer-to-reader boundary; run history and Todo completion alone
+cannot fill it.
 
 **Live team experience is a core S5 outcome.** The [Live Team Workspace
 RFC](live-team-workspace-v0.md) joins a precise command surface with a spatial
