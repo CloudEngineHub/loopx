@@ -1,3 +1,4 @@
+import {planStateEventReplay} from "./goals/state_event_replay.ts";
 import {projectTodoSummary} from "./todos/summary_projection.ts";
 import {admitAutomationStart, confirmAutomationStart, manageAutomationCadence, projectCadenceSchedule} from "./quota/automation_cadence.ts";
 import {deliverShadowEntry} from "./coordination/shadow_entry_delivery.ts";
@@ -438,6 +439,7 @@ export function createEffectRuntimeHandlers(
       (params) => interpretTurnJournal(turnJournalInspectionRequest(params)),
     ],
     ["turn_journal.write", commitTurnJournal],
+    ["goal.state_event.plan_replay", planStateEventReplay],
     ["todo.completion_fence.evaluate", evaluateTodoCompletionFence],
     ["todo.completion_state.normalize", normalizeTodoCompletionValue],
     ["todo.completion_state.require_metadata", requireTodoCompletionMetadataValue],
