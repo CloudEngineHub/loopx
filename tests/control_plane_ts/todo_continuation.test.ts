@@ -19,7 +19,7 @@ import {resolveTestPython} from "../../scripts/test-python.mjs";
 
 const PYTHON = resolveTestPython();
 
-async function fixture(t: test.TestContext) {
+async function fixture(t: test.TestContext, mode = "soft_claim") {
   const root = await mkdtemp(join(tmpdir(), "loopx-continuation-"));
   t.after(() => rm(root, {recursive: true, force: true}));
   const directory = join(root, "authority", "file-v0");
@@ -27,7 +27,7 @@ async function fixture(t: test.TestContext) {
   const todos = [{schema_version: TODO_DOMAIN_ITEM_SCHEMA, todo_id: "todo_a", role: "agent",
     status: "open", done: false, text: "Validate the selected implementation", archive_state: "active", claimed_by: "agent-a"}];
   await store.commitAuthority({operation_id: "seed", expected_provider_revision: null, events: [], receipts: [],
-    next_projection: {goal_id: "goal-a", handoff_mode: "soft_claim", todos, leases: [], todo_read_model: {
+    next_projection: {goal_id: "goal-a", handoff_mode: mode, todos, leases: [], todo_read_model: {
       schema_version: TODO_DOMAIN_READ_RECORD_SCHEMA, todo_count: 1,
       records_sha256: canonicalAuthoritySha256(todos), contract_fields: [...TODO_DOMAIN_RECORD_CONTRACT.fields]}}});
   const base = {goal_id: "goal-a", todo_id: "todo_a", agent_id: "agent-a", registered_agents: ["agent-a", "agent-b"],
@@ -876,4 +876,14 @@ test("P1: extra nested key in approach_tried rejected by final claim decision", 
   });
   assert.equal(decision.status, "rejected", JSON.stringify(decision));
   assert.equal(decision.reason_code, "claim_owner_mismatch", JSON.stringify(decision));
+});
+
+
+test("hard-lease inspect reads context without pretending an unfenced receiver can adopt", async t => {
+  const f = await fixture(t, "hard_lease");
+  const packet = await f.inspect();
+  assert.equal(packet.ok, true, JSON.stringify(packet));
+  assert.equal(packet.can_adopt, false);
+  assert.equal(packet.note_state, "missing");
+  assert.equal((packet.execution_authority as Record<string, unknown>).allowed, false);
 });

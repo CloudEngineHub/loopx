@@ -2609,3 +2609,5 @@ onboarding 按当前核对表分别归为代码、在途 PR 和验收活动，�
 `examples/docs-governance-smoke.py` 校验条目的命名、每条旁边的中文镜像，以及账本目录所指向的这份附录确实存在。
 
 2026-09-24：[完整源捕获的 TS 组装与剩余交付包](ledger/shared-goal-authority-state-provider-v0/2026-09-24-source-capture.zh-CN.md)统一源构造、身份拒绝和当前图成员规则；不关闭 L7/D2/D3 或启用默认 provider。
+
+2026-09-24: [带租约接力与剩余本地默认交付包](ledger/shared-goal-authority-state-provider-v0/2026-09-24-leased-continuation.zh-CN.md).
