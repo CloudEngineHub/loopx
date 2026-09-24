@@ -8,7 +8,11 @@ import threading
 from pathlib import Path
 from urllib.parse import urlencode
 
+import pytest
+
+from loopx import chat_automation_cadence_api
 from loopx.chat_server import ChatHTTPServer, ChatRequestHandler
+from loopx.control_plane.effect_runtime import EffectRuntimeConflict
 
 
 def _exchange(
@@ -92,6 +96,16 @@ def test_chat_cadence_preview_apply_inheritance_and_stale_rejection(
             )[0]
             == 409
         )
+        # An apply whose preview no longer matches its own fields is the same
+        # refresh-and-retry conflict, not an invalid request.
+        stale_preview_status, stale_preview = _exchange(
+            port,
+            "POST",
+            f"{path}/apply",
+            {**change, "preview_revision": "0" * 64},
+        )
+        assert stale_preview_status == 409
+        assert stale_preview["error_code"] == "automation_cadence_conflict"
 
         query = urlencode(
             {"goal_id": "goal-one", "agent_id": "agent-a", "automation_id": "daily"}
@@ -116,3 +130,50 @@ def test_chat_cadence_preview_apply_inheritance_and_stale_rejection(
         server.shutdown()
         thread.join(timeout=5)
         server.server_close()
+
+
+def test_chat_cadence_conflict_status_ignores_message_wording(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The conflict contract comes from the failure type, not from its text."""
+
+    registry = tmp_path / "registry.json"
+    registry.write_text(
+        json.dumps({"schema_version": "0.1", "goals": [{"id": "goal-one"}]})
+    )
+    server = ChatHTTPServer(("127.0.0.1", 0), ChatRequestHandler)
+    server.registry_path = registry
+    server.runtime_root = tmp_path / "runtime"
+    server.verbose = False
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    path = "/api/chat/automation-cadence"
+
+    def advanced(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise EffectRuntimeConflict(
+            "policy advanced", diagnostic_code="automation_cadence_revision_conflict"
+        )
+
+    monkeypatch.setattr(chat_automation_cadence_api, "effect_runtime_result", advanced)
+    try:
+        status, payload = _exchange(
+            port,
+            "POST",
+            f"{path}/preview",
+            {
+                "goal_id": "goal-one",
+                "agent_id": None,
+                "automation_id": None,
+                "min_interval_minutes": 60,
+                "expected_revision": 0,
+                "owner_reference": "Owner requested hourly automatic runs",
+                "approve_reduction": False,
+            },
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+    assert status == 409
+    assert payload["error_code"] == "automation_cadence_conflict"
