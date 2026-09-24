@@ -19,6 +19,12 @@ import {executeCoordinationTodoUpdate} from "../../loopx/control_plane/coordinat
 import {indexCoordinationProjection, prepareCoordinationProjectionCommit} from "../../loopx/control_plane/coordination/coordination_projection.ts";
 import {canonicalAuthoritySha256} from "../../loopx/control_plane/coordination/authority_store_codec.ts";
 import {productionScaleCoordinationFixture, PRODUCTION_SCALE_VALIDATION_DECLARATION} from "./production_scale_coordination_fixture.ts";
+import {resolveTestPython} from "../../scripts/test-python.mjs";
+
+// The CLI under test is the source checkout's own interpreter, never a bare
+// `python3` alias that may be an incompatible system interpreter.
+const executeFile = promisify(execFile);
+const PYTHON = resolveTestPython();
 
 async function loaded(store: AuthorityStore) {
   const head = await store.loadAuthority();
@@ -193,7 +199,7 @@ for (const provider of ["file", "sqlite"]) test(`${provider}: public CLI deliver
       expected_shadow_provider_revision: "fixture"}});
   assert.equal(fence.status, "applied", JSON.stringify(fence));
   const run = async (args: string[]) => {
-    const {stdout} = await promisify(execFile)("python3", ["-m", "loopx.cli", "--registry", registry,
+    const {stdout} = await executeFile(PYTHON, ["-m", "loopx.cli", "--registry", registry,
       "--runtime-root", f.root, "--format", "json", ...args],
       {env: {...process.env, PYTHONPATH: process.cwd()}, timeout: 60000, maxBuffer: 4 * 1024 * 1024});
     return JSON.parse(stdout);
@@ -221,7 +227,7 @@ for (const provider of ["file", "sqlite"]) test(`${provider}: public CLI deliver
   assert.equal((await loaded(f.store)).provider_revision, committed.provider_revision);
   assert.ok(["delivered", "current"].includes(prepared.projection_delivery), JSON.stringify(prepared));
   const projected = async () => {
-    const {stdout} = await promisify(execFile)("python3", ["-c",
+    const {stdout} = await executeFile(PYTHON, ["-c",
       "import json,sys; from pathlib import Path; from loopx.control_plane.todos.active_state_todo_parser import parse_todo_source; rows=parse_todo_source(Path(sys.argv[1]).read_text())[0]['agent']; print(json.dumps(next(r for r in rows if r['todo_id']==sys.argv[2])))",
       state, f.base.todo_id], {env: {...process.env, PYTHONPATH: process.cwd()}});
     return JSON.parse(stdout);

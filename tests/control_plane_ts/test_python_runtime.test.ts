@@ -81,6 +81,14 @@ test("test and browser smokes may not introduce bare python or python3 subproces
   // incompatible interpreter), so direct launches, fallbacks and assigned
   // defaults must both route through resolveTestPython().
   const direct = /\b(?:spawn|spawnSync|execFile|execFileSync)\s*\(\s*["']python3?["']/;
+  // A promisified or aliased launcher starts the same bare alias, so the guard
+  // must see through the wrapper instead of accepting the indirection.
+  const launchers = "spawn|spawnSync|execFile|execFileSync";
+  const promisified = new RegExp(`\\b(?:promisify|util\\s*\\.\\s*promisify)\\s*\\(\\s*(?:${launchers})\\s*\\)\\s*\\(\\s*["']python3?["']`);
+  const aliasBinding = new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*(?:promisify|util\\s*\\.\\s*promisify)\\s*\\(\\s*(?:${launchers})\\s*\\)`, "g");
+  const aliasedLaunch = (source: string): boolean => [...source.matchAll(aliasBinding)]
+    .map(match => new RegExp(`\\b${match[1]}\\s*\\(\\s*["']python3?["']`))
+    .some(pattern => pattern.test(source));
   const fallback = /(?:\?\?|\|\|)\s*["']python3?["']/;
   const assigned = /\b(?:const|let)\s+\w+\s*=\s*["']python3?["']/;
   const bare = JSON.stringify("python3");
@@ -88,6 +96,10 @@ test("test and browser smokes may not introduce bare python or python3 subproces
   assert.ok(direct.test(`spawn(${bare}, ["-m", "loopx.cli"])`));
   assert.ok(direct.test(`spawn(${barePython}, ["-m", "loopx.cli"])`));
   assert.ok(direct.test(`spawnSync(${barePython}, ["-c", "raise SystemExit(0)"])`));
+  assert.ok(promisified.test(`promisify(execFile)(${bare}, ["-m", "loopx.cli"])`));
+  assert.ok(promisified.test(`util.promisify(execFileSync)(${barePython}, [])`));
+  assert.ok(aliasedLaunch(`const run = promisify(execFile);\nrun(${bare}, ["-m", "loopx.cli"]);`));
+  assert.ok(aliasedLaunch(`const run = util.promisify(spawnSync);\nawait run(${barePython}, []);`));
   assert.ok(fallback.test(`process.env.LOOPX_TEST_PYTHON ?? ${bare}`));
   assert.ok(fallback.test(`process.env.LOOPX_TEST_PYTHON ?? ${barePython}`));
   assert.ok(fallback.test(`process.env.NEW_TEST_PYTHON || ${bare}`));
@@ -97,6 +109,10 @@ test("test and browser smokes may not introduce bare python or python3 subproces
   assert.ok(assigned.test(`const testInterpreter = ${bare}`));
   assert.equal(direct.test(`validation_command_argv: [${bare}, "-m", "pytest"]`), false);
   assert.equal(direct.test(`validation_command_argv: [${barePython}, "-m", "pytest"]`), false);
+  assert.equal(promisified.test(`promisify(execFile)(${JSON.stringify("/usr/bin/python3")}, [])`), false);
+  // A resolved interpreter or an unrelated helper argument is not a launch.
+  assert.equal(aliasedLaunch(`const run = promisify(execFile);\nrun(PYTHON, ["-m", "loopx.cli"]);`), false);
+  assert.equal(direct.test(`qualificationHelperArgv(${bare})`), false);
   // An absolute path or a versioned executable is a resolved interpreter, not a bare alias.
   assert.equal(direct.test(`spawnSync(${JSON.stringify("/usr/bin/python3")}, [])`), false);
   assert.equal(assigned.test(`const executable = ${JSON.stringify("/opt/loopx-qualification/bin/python")}`), false);
@@ -106,7 +122,8 @@ test("test and browser smokes may not introduce bare python or python3 subproces
       if (entry.isDirectory()) inspect(path);
       else if (/\.(?:cjs|js|mjs|mts|ts)$/.test(entry.name)) {
         const source = readFileSync(join(root, path), "utf8");
-        if (direct.test(source) || fallback.test(source) || assigned.test(source)) offenders.push(path);
+        if (direct.test(source) || promisified.test(source) || aliasedLaunch(source)
+          || fallback.test(source) || assigned.test(source)) offenders.push(path);
       }
     }
   }
