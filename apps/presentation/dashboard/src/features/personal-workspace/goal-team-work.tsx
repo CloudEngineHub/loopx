@@ -53,7 +53,9 @@ export function GoalTeamWork({sessionId, members, zh, canMessage, ingress}: {ses
     setBusy(true); setError(""); setChecks({}); setCheckErrors({}); setInspectionTotal(members.length);
     let next = 0;
     async function worker() {
-      while (next < members.length) {
+      // Stop taking new members once a newer team snapshot supersedes this run,
+      // so a stale generation cannot keep issuing queued read requests.
+      while (next < members.length && current === generation.current) {
         const member = members[next++];
         try {
           const check = await inspectLoopXMember(sessionId, member.id);
