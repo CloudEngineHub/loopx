@@ -25,6 +25,11 @@ Each request has `schema_version`, `runtime_root`, `goal_id`, `include_leases`,
 `projection_readback` and `after`. The first `after` is null; subsequent calls
 send the previous page's `next` unchanged. A continuation contains:
 
+`projection_readback` is the typed confirmation request (`provider_revision`,
+`changed`, `attempt`, `target`); it carries the caller's pinned-or-latest intent
+and attempt budget, so the page returns one confirmation for the same snapshot
+as every page instead of letting the display lock hold a provider commit.
+
 | Field | Meaning |
 | --- | --- |
 | `snapshot.goal_id` | Goal whose complete collection is being read |

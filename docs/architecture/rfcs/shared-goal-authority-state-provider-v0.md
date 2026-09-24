@@ -3169,12 +3169,15 @@ provider conformance cover the consumer family. See [operation and semantic
 changes](../../reference/todo-continuation-readback.md). This closes a bounded
 L5/L7 gap; permanent projection delivery/recovery, D2 and D3 are still open.
 
-D1 delivery confirmation now follows durable Markdown readback with a typed
-canonical revision check. Unpinned settlement retries up to three times using
-the returned complete snapshot; pinned projection never silently retargets.
-Overlap, churn and confirmation outage remain pending without repeating business
-commits. This qualifies the bounded delivery/retry boundary, not permanent
-freshness, a background drainer, all L5 consumers or D2/D3. See the
+D1 delivery confirmation follows durable Markdown readback. The TS owner now
+owns latest/pinned intent and the three-attempt retry decision; Python retains
+file locks, durable publication and rendering. Committed `refresh-state` and
+same-Turn replay drain the existing projection path without repeating Todo or
+quota mutations. Planning, missing-work diagnosis and initial delivery share a
+complete canonical snapshot; the final confirmation still reads the provider.
+Authoritative emptiness never falls back to stale Markdown. Legacy and preview
+refresh remain unchanged. This closes the refresh recovery/diagnostic caller,
+not all L5 consumers, a background worker, D2 or D3; see the
 [projection contract](../../reference/protocols/active-state-structured-projection-v0.md).
 
 **D2 — qualify exactly one local profile; independent of PostgreSQL deployment.**
@@ -3267,6 +3270,15 @@ or moving a helper is not by itself a package exit.
 | C / L8: Whole-Goal rehearsal and cohort migration | Integrate one exact revision/profile after L2–L7; drain capture, fence old writers, verify canonical readback and projection, then rehearse fenced export/rollback. | D3 evidence packet binds lineage, cursor, source digest, command coverage and profile. Existing Goal migration requires explicit cohort approval; no per-command split authority or stale Markdown revival. |
 | D / L9: New-Goal default and bounded retirement | A dedicated default-change PR makes new-Goal creation/onboarding choose the qualified local profile, including settings/readback, installer and packaged clients. Retire old business writers only as their final callers and migration window close. | L8's integrated product/rollback qualification; distinguish new Goal default from existing Goal migration. Publish compatibility/disable guidance, keep explicit provider choice, permanent rendering and validated import/export. T4 can continue after the default ships. |
 
+**2026-09-24 reconciliation.** The count remains an estimate of complete
+packages, not a count of small fixes, and this refresh slice advances boundary 4
+(projection recovery and client closure) without claiming its other consumers
+are qualified. SQLite #4910 added the larger measurement axes; #4224 records
+failed 1 MiB receipt/scan budgets and still-missing recovery/soak evidence.
+#4931 is the in-review read-proof optimization, not proof that D2 passed.
+Snapshot pagination #4922 has merged and still must be qualified at its accepted
+head. None of these PR statuses grants cutover or changes the selected profile.
+
 **Cadence is evidence-based.** The 2026-09-23 decomposition separates bounded
 canonical reads from projection/client closure and separates caller admission
 from executor-held effects. This refines the older five broad packages into
@@ -3330,12 +3342,12 @@ The TS owner shares durable qualification and exact receipt proof between both
 paths. See [operation and acceptance](../../reference/reviewed-coordination-promotion.md).
 This stage does not authorize an active Goal migration or flip a default.
 
-For an existing claimed Goal, integrate the claim-preserving migration in #4870
-with this slice, qualify the exact combined head and resolve its existing CI and
-review holds. Preserve the registered owners, existing claims and leases; do not
+Claim-preserving migration #4870 and reviewed cutover #4888 are merged;
+shadow drain planning #4920 is also merged. Qualify their combined current head
+for an existing claimed Goal rather than treating an old PR hold as current. Preserve the registered owners, existing claims and leases; do not
 clear ownership to make storage migration appear ready. The saved-plan carrier
-must retain migration strategy, registered-agent facts and target digest when
-that extension is integrated.
+must retain migration strategy, registered-agent facts and target digest during
+combined qualification.
 
 The current seven-boundary plan above separates caller admission, executor
 fences and snapshot reads; D2 and integrated migration may each split. This

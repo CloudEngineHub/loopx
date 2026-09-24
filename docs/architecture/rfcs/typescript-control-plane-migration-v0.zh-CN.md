@@ -1446,6 +1446,15 @@ transaction 只能靠削弱既有行为才能通过 invariant/recovery/performan
 实测交付记录存于[逐条 ledger](ledger/typescript-control-plane-migration-v0/)。
 每条记录说明已交付边界及剩余验收缺口；上方 T1–T4 检查点仍是当前迁移计划。
 
+### Canonical 显示确认与刷新恢复
+
+TS 拥有 canonical revision 比较、最新／固定版本意图及三次重试上限；Python 继续执行
+文件锁、耐久落盘和 Markdown 渲染。已提交刷新与同 Turn 重试复用这一恢复路径，规划
+快照同时供应缺失工作诊断和初始显示，删除 Python 的重试决策及晋升后从旧 Markdown
+再判断 Todo 数量的路径。没有增加 RPC 方法或持久 ACK，正常恢复增加一次确认读取。
+这是 T3／D1 的刷新调用方闭合；其他 consumer、D2 与整 Goal 切换仍需独立资格。
+见[投影合同](../../reference/protocols/active-state-structured-projection-v0.md)。
+
 ### Reviewed coordination cutover ownership
 
 Saved-plan execution and fenced recovery now share the TypeScript promotion
