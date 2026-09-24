@@ -584,7 +584,7 @@ export const typedActionsScenario = {
       await page.locator('[data-goal-panel="chat"]').getByText("Agent is waiting for your decision", { exact: true }).first().waitFor({ state: "visible" });
       await englishGoalNavigation.getByRole("button", { name: /^(Files|成果)$/, exact: true }).click();
       if (await page.locator('[data-output-kind="evidence"]').count() !== 0) throw new Error("Run status appeared as a delivered file");
-      await page.getByText("No delivered files or verified reports yet. Run and validation status remain in Tasks.", { exact: true }).waitFor({ state: "visible" });
+      await page.getByRole("region", { name: "Accepted team reports" }).getByText("No verifiable team reports yet.", { exact: true }).waitFor({ state: "visible" });
       const englishProjectionText = await page.locator(".personal-workspace-main").innerText();
       for (const forbidden of ["最近运行", "最近验证", "Agent 正在整理下一步", "Agent 正在推进当前 Goal", "Agent 等待你的决定"]) {
         if (englishProjectionText.includes(forbidden)) throw new Error(`English projection exposed Chinese UI copy ${forbidden}: ${englishProjectionText}`);
@@ -756,7 +756,7 @@ export const typedActionsScenario = {
       await goalNavigation.getByRole("button", { name: /^(Files|成果)$/ }).click();
       const publicFiles = page.locator(".personal-files-list > button");
       if (await publicFiles.count() !== 0) throw new Error("A status or run observation appeared as a delivered file");
-      await page.getByText("还没有已交付文件或已验证报告。运行和验证状态请在任务中查看。", { exact: true }).waitFor({ state: "visible" });
+      await page.getByRole("region", { name: "已验收的团队报告" }).getByText("暂无可核验的团队报告。", { exact: true }).waitFor({ state: "visible" });
       await page.screenshot({ path: resolve(outputDir, "goal-files-loopx-theme.png"), fullPage: false, animations: "disabled" });
       await goalNavigation.getByRole("button", { name: /^(Chat|对话)$/ }).click();
       await page.locator(".personal-channel-timeline").waitFor({ state: "visible" });

@@ -21,7 +21,9 @@ def write_private_json_atomic(
     )
     temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, 0o600)
+        # Windows has no fchmod; mkstemp already created the file for this user only.
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(dict(payload), handle, ensure_ascii=False, indent=2)
             handle.write("\n")

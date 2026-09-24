@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..effect_runtime import effect_runtime_result
+from .local_authority_shadow_projection import source_effect_runtime_result as effect_runtime_result
 from . import local_authority_shadow_observation
 from .coordination_state_contract_generated import (
     COORDINATION_RUNTIME_SHADOW_BOOTSTRAP_REQUEST_SCHEMA as RUNTIME_SHADOW_BOOTSTRAP_REQUEST_SCHEMA_VERSION,
