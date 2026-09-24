@@ -815,11 +815,21 @@ def record_quota_monitor_poll_for_decision(
             raise TypeError("TypeScript monitor-poll preflight omitted provider plan")
         if registry_path is None:
             raise ValueError("monitor todo writeback requires registry_path")
-        provider_receipt = _provider_writeback(
-            plan,
-            registry_path=registry_path,
-            runtime_root=runtime_root,
-        )
+        from ..coordination.local_authority import LocalCoordinationAuthorityUnavailable
+
+        try:
+            provider_receipt = _provider_writeback(
+                plan,
+                registry_path=registry_path,
+                runtime_root=runtime_root,
+            )
+        except LocalCoordinationAuthorityUnavailable as exc:
+            # Transport the owner's typed negative evidence. TypeScript alone
+            # decides whether it releases the exact pending reservation. An
+            # outage/ambiguous commit carries no no-effect proof and is retained.
+            if execute and exc.payload.get("no_effect") is not None:
+                _native_result(_request(phase="provider_rejected", provider_receipt=exc.payload, **common))
+            raise
         status_warning = None
         if execute:
             after_status, status_warning = _reload_status_after_monitor_writeback(
