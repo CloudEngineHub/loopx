@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+import json
+import os
+from collections.abc import Callable
+from pathlib import Path
+from types import ModuleType
+from typing import Any
+
+import pytest
+
+from loopx.capabilities.decision_context import private_state
+from loopx.control_plane.heartbeat import automation_upgrade
+from loopx.extensions import presentation
+from loopx.extensions.lark import private_json
+
+
+class _WindowsOs:
+    name = "nt"
+
+    def __init__(self, directory: Path) -> None:
+        self._directory = directory
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "O_DIRECTORY":
+            raise AttributeError(name)
+        return getattr(os, name)
+
+    def open(self, path: str | bytes | os.PathLike[str], flags: int, *args: Any) -> int:
+        if Path(path) == self._directory and flags == os.O_RDONLY:
+            raise PermissionError(13, "Permission denied", str(path))
+        return os.open(path, flags, *args)
+
+
+def _write_lark_private_json(path: Path) -> None:
+    private_json.write_private_json_atomic(path, {"status": "ready"})
+
+
+def _write_decision_context(path: Path) -> None:
+    private_state.write_private_decision_cursors_atomic(path, {"source": "cursor"})
+
+
+def _write_extension_projection(path: Path) -> None:
+    presentation._atomic_write_projection(path, {"status": "ready"})
+
+
+def _write_heartbeat_automation(path: Path) -> None:
+    automation_upgrade._atomic(path, 'prompt = "ready"\n')
+
+
+@pytest.mark.parametrize(
+    ("module", "writer", "expected"),
+    [
+        pytest.param(
+            private_json,
+            _write_lark_private_json,
+            {"status": "ready"},
+            id="lark-private-json",
+        ),
+        pytest.param(
+            private_state,
+            _write_decision_context,
+            {"source": "cursor"},
+            id="decision-context",
+        ),
+        pytest.param(
+            presentation,
+            _write_extension_projection,
+            {"status": "ready"},
+            id="extension-projection",
+        ),
+        pytest.param(
+            automation_upgrade,
+            _write_heartbeat_automation,
+            'prompt = "ready"\n',
+            id="heartbeat-automation",
+        ),
+    ],
+)
+def test_atomic_writers_skip_unsupported_windows_directory_fsync(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    module: ModuleType,
+    writer: Callable[[Path], None],
+    expected: object,
+) -> None:
+    target = tmp_path / f"{module.__name__.rsplit('.', 1)[-1]}.json"
+    if os.name != "nt":
+        monkeypatch.setattr(module, "os", _WindowsOs(target.parent))
+
+    writer(target)
+
+    content = target.read_text(encoding="utf-8")
+    actual = json.loads(content) if isinstance(expected, dict) else content
+    assert actual == expected
