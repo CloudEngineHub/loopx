@@ -136,6 +136,13 @@ and retains the existing claim, lease/fence, permission and continuation gates.
 A prior verification receipt or a confirmed association cannot complete a task.
 Use `loopx todo claim --help` and `loopx todo complete --help` for the existing
 task arguments; this contract adds no bypass flags.
+When a fresh completion criterion fails, `todo complete` keeps the Todo open
+and returns `goal_acceptance_validation_failure_v0` with the criterion ID,
+privacy-safe validation status, exit code when available, and a bounded next
+action. A dirty or mismatched delivery worktree is diagnosed as a workspace
+failure, not as a stale owner association. Commands, output, local paths and
+arbitrary runner summaries are not projected. Retry under the same Turn and
+current lease after repairing the indicated execution context.
 
 Terminal observations, including `no_followup`, do not change the work digest:
 finishing a task must not stale the binding that just admitted its completion.
@@ -298,6 +305,10 @@ status 同时在独立的 `run_history.goals[].artifact_lifecycle` 和 Markdown 
 所有者通过重新配置确认当前关联；完成任务必须执行当前绑定的产物检查，并继续满足原有
 claim、lease/fence、权限和后续工作要求。既有验证回执或已确认的关联不能代替本次任务完成验证。
 任务参数沿用 `loopx todo claim --help`、`loopx todo complete --help`，没有绕过门禁的新参数。
+本次完成验收失败时，`todo complete` 保持 Todo 未完成，返回
+`goal_acceptance_validation_failure_v0`：验收项 ID、脱敏的验证状态、可得的退出码和有界
+下一步动作。工作区不干净或不匹配会明确归类为工作区失败，而非所有者关联过期；命令、输出、
+本地路径和执行器任意摘要不会投影。修复执行环境后沿原 Turn 和当前 lease 重试。
 
 终态观察不会让刚完成的任务关联过期。对既有 v0 绑定，若差异仅来自可校验的完成验证命令
 修订历史追加、后继任务链接追加，或此前不存在的 `resume_when` 调度条件新增，读出会比对

@@ -270,6 +270,9 @@ def test_bound_todo_completes_only_after_its_criteria_actually_run(acceptance_go
     )
     code, refused = run(*complete)
     assert code == 1 and refused["reason_code"] == "goal_acceptance_validation_rejected", refused
+    assert refused["goal_acceptance_validation_failure"]["criterion_id"] == "export"
+    assert refused["goal_acceptance_validation_failure"]["validation_status"] == "command_failed"
+    assert "configured criterion" in refused["reason"]
     assert "validation_argv" not in json.dumps(refused)
 
     (project / "artifact.txt").write_text("accepted")

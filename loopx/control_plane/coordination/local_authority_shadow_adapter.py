@@ -31,12 +31,9 @@ from .coordination_state_contract_generated import (
     LOCAL_AUTHORITY_SHADOW_TRANSACTION_EVIDENCE_SCHEMA,
 )
 from .local_authority_shadow_projection import (
-    LEASE_PARTITION,
     PARTITIONS,
     TODO_PARTITION,
-    canonical_value,
     head_digest,
-    partition_digest,
     todo_partition_projection,
 )
 from .runtime_shadow import resolve_coordination_runtime_shadow_config, capture_todo_archive_dependencies
@@ -94,14 +91,6 @@ _COMMIT_ENTRY_OUTCOMES = {
 }
 _SETTLED_OUTCOMES = {"delivered", "replayed", "ambiguous_reconciled"}
 _SEED_WRITE_CLASSES = {"seed", "reseed_after_crash_gap"}
-_ENTRY_SOURCE_FIELDS = (
-    "kind",
-    "previous_bytes_digest",
-    "previous_partition_digest",
-    "bytes_digest",
-    "lease",
-    "event_id",
-)
 _EVIDENCE_V1_OUTCOMES = {
     "delivered",
     "replayed",
@@ -239,39 +228,6 @@ def _goal_sources(
     )
 
 
-def _read_state_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8") if path.exists() else ""
-
-
-def _event_present(sources: _GoalSources, event_id: str) -> bool:
-    from ...event_sourced_state import AppendOnlyStateEventStore
-    from ..goals.active_state_event_projection import state_event_log_candidates
-    from ..goals.path_resolution import resolve_goal_local_path
-
-    if sources.goal is None:
-        return False
-    for candidate in state_event_log_candidates(
-        sources.goal,
-        state_path=sources.state_path,
-        resolve_goal_local_path=resolve_goal_local_path,
-    ):
-        if not candidate.exists():
-            continue
-        for event in AppendOnlyStateEventStore(candidate).load():
-            if isinstance(event, dict) and event.get("event_id") == event_id:
-                return True
-    return False
-
-
-def _lease_bytes(sources: _GoalSources, todo_id: str) -> bytes | None:
-    if not todo_id or "/" in todo_id or "\\" in todo_id or todo_id in {".", ".."}:
-        raise outbox.OutboxError("outbox_file_invalid", "invalid lease source identity")
-    try:
-        return (sources.lease_dir / f"{todo_id}.json").read_bytes()
-    except FileNotFoundError:
-        return None
-
-
 @contextmanager
 def _primary_lock_if_free(
     partition: str,
@@ -318,80 +274,18 @@ def _primary_lock_if_free(
         yield False
 
 
-def _entry_projection(
-    entry: outbox.OutboxEntry,
-    *,
-    goal_id: str,
-) -> tuple[dict[str, Any] | None, str | None]:
-    """Compact projection and digest for a deliverable entry."""
-
-    raw = entry.projection()
-    if raw is None:
-        return None, None
-    if entry.partition == LEASE_PARTITION:
-        projection = outbox.compact_lease_projection(raw, goal_id=goal_id)
-        return projection, partition_digest(projection)
-    projection = dict(canonical_value(raw))
-    digest = partition_digest(projection)
-    recorded = entry.recorded_partition_digest()
-    if recorded is not None and recorded != digest:
-        raise outbox.OutboxError(
-            "outbox_file_invalid",
-            f"entry {entry.entry_id} projection does not match its recorded digest",
-        )
-    return projection, digest
-
-
 def _commit_entry_request(
-    *,
-    runtime_root: Path,
-    goal_id: str,
-    entry: outbox.OutboxEntry,
-    resolution: str,
-    projection: dict[str, Any] | None,
-    digest: str | None,
+    *, runtime_root: Path, goal_id: str, entry: outbox.OutboxEntry,
 ) -> dict[str, Any]:
-    raw_source = (
-        entry.prepared.get("source")
-        if isinstance(entry.prepared.get("source"), dict)
-        else {}
-    )
-    writer = (
-        entry.prepared.get("writer")
-        if isinstance(entry.prepared.get("writer"), dict)
-        else {}
-    )
-    committed_at = entry.committed.get("committed_at") if entry.committed else None
+    """Select witnessed disk evidence; TS owns projection and source resolution."""
     return {
         "schema_version": LOCAL_AUTHORITY_SHADOW_COMMIT_ENTRY_REQUEST_SCHEMA,
-        "runtime_root": str(runtime_root),
-        "goal_id": goal_id,
-        "entry": {
-            "entry_id": entry.entry_id,
-            "partition": entry.partition,
-            "seq": entry.seq,
-            "writer": {
-                "runtime": writer.get("runtime"),
-                "write_class": writer.get("write_class"),
-                "operation_id": writer.get("operation_id"),
-            },
-            "source": {key: raw_source.get(key) for key in _ENTRY_SOURCE_FIELDS},
-            "source_root_digest": entry.prepared.get("source_root_digest"),
-            "capture_lineage_id": entry.prepared.get("capture_lineage_id"),
-            "prepared_sha256": outbox.raw_bytes_digest(
-                entry.prepared_path.read_bytes()
-            ),
-            "committed_sha256": outbox.raw_bytes_digest(
-                entry.committed_path.read_bytes()
-            )
-            if entry.committed_path
-            else None,
-            "prepared_at": entry.prepared.get("prepared_at"),
-            "committed_at": committed_at,
-            "resolution": resolution,
-        },
-        "partition_projection": projection,
-        "partition_digest": digest,
+        "runtime_root": str(runtime_root), "goal_id": goal_id,
+        "entry_id": entry.entry_id, "partition": entry.partition, "seq": entry.seq,
+        "capture_lineage_id": entry.prepared.get("capture_lineage_id"),
+        "prepared_sha256": outbox.raw_bytes_digest(entry.prepared_path.read_bytes()),
+        "committed_sha256": outbox.raw_bytes_digest(entry.committed_path.read_bytes())
+        if entry.committed_path else None,
     }
 
 
@@ -605,53 +499,6 @@ class _PartitionDrainer:
         pending_ids = set(plan["pending_entry_ids"])
         return [entry for entry in entries if entry.entry_id in pending_ids], int(plan["next_seq"])
 
-    def _resolve(
-        self, entry: outbox.OutboxEntry, pending: list[outbox.OutboxEntry]
-    ) -> tuple[str, dict[str, Any] | None, str | None]:
-        if entry.is_committed:
-            projection, digest = _entry_projection(entry, goal_id=self._goal_id)
-            if projection is None:
-                raise outbox.OutboxError(
-                    "outbox_file_invalid", "committed entry has no projection"
-                )
-            return "committed", projection, digest
-        with _primary_lock_if_free(
-            self._partition,
-            runtime_root=self._runtime_root,
-            goal_id=self._goal_id,
-            sources=self._sources,
-        ) as held:
-            if not held:
-                raise outbox.OutboxError(
-                    "primary_writer_busy", "prepared writer is in flight"
-                )
-            # Current A cannot prove an earlier A->B was abandoned after B->A.
-            if any(other.seq > entry.seq for other in pending):
-                raise outbox.OutboxError(
-                    "outbox_source_unproved",
-                    "later writes make source recovery ambiguous",
-                )
-            resolution = outbox.resolve_prepared_only_entry(
-                entry,
-                markdown_text_reader=lambda: _read_state_text(self._sources.state_path),
-                lease_bytes_reader=lambda todo_id: _lease_bytes(self._sources, todo_id),
-                event_presence_reader=lambda event_id: _event_present(
-                    self._sources, event_id
-                ),
-            )
-            if resolution == "abandoned":
-                return resolution, None, None
-            if resolution != "committed":
-                raise outbox.OutboxError(
-                    "outbox_source_unproved", "prepared source cannot be proved"
-                )
-            projection, digest = _entry_projection(entry, goal_id=self._goal_id)
-            if projection is None:
-                raise outbox.OutboxError(
-                    "outbox_source_unproved", "prepared source has no projection"
-                )
-            return "committed_proven_by_readback", projection, digest
-
     def _record_view(self, view: dict[str, Any]) -> None:
         self._result.candidate_readback_verified = True
         self._result.store_identity = view.get("store_identity")
@@ -670,7 +517,15 @@ class _PartitionDrainer:
                     self._result.budget_exhausted = True
                     return
                 entry = pending[0]
-                resolution, projection, digest = self._resolve(entry, pending)
+                if not entry.is_committed:
+                    # Preserve the legacy flock busy signal. This host probe
+                    # makes no source decision; TS rechecks under shared locks.
+                    with _primary_lock_if_free(
+                        self._partition, runtime_root=self._runtime_root,
+                        goal_id=self._goal_id, sources=self._sources,
+                    ) as held:
+                        if not held:
+                            raise outbox.OutboxError("primary_writer_busy", "primary writer is in flight")
                 if entry.seq != next_seq:
                     raise outbox.OutboxError(
                         "outbox_sequence_gap", "pending sequence is not continuous"
@@ -679,9 +534,6 @@ class _PartitionDrainer:
                     runtime_root=self._runtime_root,
                     goal_id=self._goal_id,
                     entry=entry,
-                    resolution=resolution,
-                    projection=projection,
-                    digest=digest,
                 )
             # TS owns M for every public commit, including retries. Never re-enter M across RPC.
             raw = effect_runtime_result(
@@ -698,9 +550,12 @@ class _PartitionDrainer:
                     "seq": entry.seq,
                     "entry_id": entry.entry_id,
                     "outcome": raw["outcome"],
-                    "reason_code": raw.get("reason_code"),
+                    "reason_code": "outbox_source_unproved" if raw.get("reason_code") == "source_transaction_unproved"
+                    else raw.get("reason_code"),
                 }
                 return
+            resolution = raw["resolution"]
+            digest = raw["partition_digest"]
             with self._lock():
                 self._reconcile(acknowledgement={
                     "entry_id": entry.entry_id, "seq": entry.seq,
@@ -1123,7 +978,6 @@ __all__ = [
     "INLINE_DRAIN_BUDGET_SECONDS",
     "INLINE_DRAIN_LOCK_TIMEOUT_SECONDS",
     "INLINE_DRAIN_MAX_ENTRIES",
-    "LOCAL_AUTHORITY_SHADOW_COMMIT_ENTRY_REQUEST_SCHEMA",
     "LOCAL_AUTHORITY_SHADOW_COMMIT_ENTRY_RESULT_SCHEMA",
     "LOCAL_AUTHORITY_SHADOW_EVIDENCE_SCHEMA_V1",
     "LOCAL_AUTHORITY_SHADOW_READ_REQUEST_SCHEMA",
