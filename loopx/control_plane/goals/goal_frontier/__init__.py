@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from typing import Any
 
 from ...agents.agent_scope import (
@@ -57,6 +55,10 @@ from ..goal_vision_read_model import (
 )
 from ..goal_vision_wait import build_goal_vision_wait_state
 from . import outcome_continuity
+from .acceptance import (
+    GOAL_ACCEPTANCE_HOLD_TRIGGERS,
+    acceptance_gaps_from_held_goal_binding,
+)
 from .ack_policy import (
     autonomous_replan_ack_satisfies_obligation,
     replan_successor_transition_ack,
@@ -106,7 +108,6 @@ AUTONOMOUS_REPLAN_REQUIRED_MODE = "autonomous_replan_required"
 FRONTIER_EXHAUSTED_MONITOR_TRIGGER = "frontier_exhausted_monitor_lane"
 MONITOR_NO_CHANGE_STREAK_TRIGGER = "monitor_no_change_streak"
 VISION_PROFILE_MISSING_TRIGGER = "required_agent_vision_missing"
-GOAL_ACCEPTANCE_HOLD_TRIGGERS = frozenset({"goal_acceptance_stale", "goal_acceptance_unbound"})
 TODO_SUCCESSION_GAP_TRIGGER = TODO_SUCCESSION_WARNING_REASON_CODE
 
 
@@ -367,74 +368,6 @@ def acceptance_gaps_from_agent_profile_requirement(
         }
     ]
 
-
-def acceptance_gaps_from_held_goal_binding(
-    agent_todo_summary: dict[str, Any] | None,
-    source_items: list[dict[str, Any]] | None,
-    *,
-    agent_id: str | None,
-) -> list[dict[str, Any]]:
-    """Route missing or stale acceptance through this agent's replan lane.
-
-    This is a read-only trigger, not an acceptance rebind. Other runnable work
-    remains selectable; the frontier rule schedules a replan only when no
-    advancement Todo can be selected for this agent.
-    """
-
-    if not agent_id or not isinstance(agent_todo_summary, dict):
-        return []
-    contract = agent_todo_summary.get("goal_acceptance_contract")
-    if not isinstance(contract, dict) or contract.get("enabled") is not True:
-        return []
-    held_states = {
-        task.get("todo_id"): task.get("state")
-        for task in contract.get("tasks", [])
-        if isinstance(task, dict)
-        and task.get("state") in {"stale", "unbound"}
-        and task.get("applicable") is True
-    }
-    gaps: list[dict[str, Any]] = []
-    for item in source_items or []:
-        if (
-            not isinstance(item, dict)
-            or item.get("todo_id") not in held_states
-            or item.get("role") != "agent"
-            or item.get("status") not in {"open", "blocked"}
-            or not agent_scope_item_claimed_by_agent_or_unclaimed(item, agent_id=agent_id)
-        ):
-            continue
-        todo_id = str(item["todo_id"])
-        state = held_states[todo_id]
-        kind = f"goal_acceptance_{state}"
-        generated_at = item.get("updated_at") or item.get("created_at")
-        frontier_revision = hashlib.sha256(json.dumps(
-            [todo_id, generated_at, contract.get("digest"), contract.get("revision"), state],
-            ensure_ascii=True, separators=(",", ":"), default=str,
-        ).encode("utf-8")).hexdigest()
-        gap = {
-            "kind": kind,
-            "source": "goal_acceptance_contract",
-            "agent_id": agent_id,
-            "reason_code": kind,
-            "vision_todo_ids": [todo_id],
-            "frontier_revision": frontier_revision,
-            "replan_trigger_summary": f"The acceptance association for {todo_id} is {state}.",
-            "acceptance_summary": "Preserve the owner-confirmed criteria and the original Turn identity.",
-            "resolution_hint": (
-                f"Inspect {todo_id} and its acceptance binding; "
-                + ("restore an unintended edit, " if state == "stale" else
-                   "prepare the missing association for owner review, ") +
-                "or record an evidence-linked path delta and continue via an eligible "
-                "successor, or record a concrete blocker for the required owner confirmation. "
-                "never rebind or settle a different Todo under the original Turn."
-            ),
-        }
-        if isinstance(generated_at, str):
-            gap["generated_at"] = generated_at
-        gaps.append(gap)
-        if len(gaps) == 3:
-            break
-    return gaps
 
 
 def build_vision_continuation_audit(

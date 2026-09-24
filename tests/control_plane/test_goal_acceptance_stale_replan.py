@@ -2,10 +2,11 @@
 
 import pytest
 
+from loopx.control_plane.goals.goal_frontier.acceptance import acceptance_gaps_from_held_goal_binding
+
 from loopx.control_plane.work_items.progress_observation import required_semantic_outcomes
 
 from loopx.control_plane.goals.goal_frontier import (
-    acceptance_gaps_from_held_goal_binding,
     build_goal_frontier_projection_context_from_status,
     derive_goal_frontier_replan_obligation_from_summaries,
 )
