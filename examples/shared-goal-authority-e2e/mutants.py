@@ -389,7 +389,10 @@ def main() -> int:
                             ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache"))
         # TS oracles import the repository's supported-Python discovery helper.
         # Freeze that dependency too; a missing import is not a killed mutant.
-        support_files = ("package.json", "pyproject.toml", "scripts/test-python.mjs")
+        support_files = (
+            "package.json", "pyproject.toml", "scripts/test-python.mjs",
+            "scripts/loopx-python.sh",
+        )
         for name in support_files:
             (frozen / name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / name, frozen / name)
