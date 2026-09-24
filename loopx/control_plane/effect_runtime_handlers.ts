@@ -1,5 +1,6 @@
 import {readShadowDrainPlan} from "./coordination/shadow_drain_plan.ts";
 import {manageAutomationCadence, projectCadenceSchedule} from "./quota/automation_cadence.ts";
+import {readCanonicalSnapshotPage} from "./coordination/canonical_snapshot_page.ts";
 import {manageLocalAuthorityArchive} from "./coordination/local_authority_archive.ts";
 import {selectPeriodicReportProgress, selectPeriodicReportApprovalRetry} from "./capabilities/periodic_report_progress.ts";
 import {planIssueFixMonitorReconciliation} from "./capabilities/issue_fix_monitor_reconciliation.ts";
@@ -578,6 +579,7 @@ export function createEffectRuntimeHandlers(
     ["coordination.local_authority.operation_receipt", readLocalCoordinationOperationReceipt],
     ["coordination.ownership_observation", projectOwnershipObservation],
     ["coordination.local_authority.ownership_observation", observeLocalCoordinationOwnership],
+    ["coordination.local_authority.todo_snapshot_page", readCanonicalSnapshotPage],
     ["coordination.local_authority.todo_list", listLocalCoordinationTodos],
     [
       "coordination.local_authority.legacy_writer_fence.engage",

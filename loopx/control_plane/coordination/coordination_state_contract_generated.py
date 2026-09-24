@@ -112,6 +112,8 @@ COORDINATION_STATE_CONTRACT: Final = _freeze({'schema_version': 'loopx_coordinat
                               'todo_read_result_schema': 'loopx_local_coordination_todo_read_result_v0',
                               'todo_list_request_schema': 'loopx_local_coordination_todo_list_request_v0',
                               'todo_list_result_schema': 'loopx_local_coordination_todo_list_result_v0',
+                              'todo_snapshot_page_request_schema': 'loopx_canonical_snapshot_page_request_v0',
+                              'todo_snapshot_page_result_schema': 'loopx_canonical_snapshot_page_result_v0',
                               'promotion_request_schema': 'loopx_local_coordination_promotion_request_v0',
                               'promotion_result_schema': 'loopx_local_coordination_promotion_result_v0',
                               'promotion_receipt_schema': 'loopx_local_coordination_promotion_receipt_v0',
@@ -204,6 +206,8 @@ LOCAL_COORDINATION_TODO_READ_REQUEST_SCHEMA: Final[str] = 'loopx_local_coordinat
 LOCAL_COORDINATION_TODO_READ_RESULT_SCHEMA: Final[str] = 'loopx_local_coordination_todo_read_result_v0'
 LOCAL_COORDINATION_TODO_LIST_REQUEST_SCHEMA: Final[str] = 'loopx_local_coordination_todo_list_request_v0'
 LOCAL_COORDINATION_TODO_LIST_RESULT_SCHEMA: Final[str] = 'loopx_local_coordination_todo_list_result_v0'
+LOCAL_COORDINATION_TODO_SNAPSHOT_PAGE_REQUEST_SCHEMA: Final[str] = 'loopx_canonical_snapshot_page_request_v0'
+LOCAL_COORDINATION_TODO_SNAPSHOT_PAGE_RESULT_SCHEMA: Final[str] = 'loopx_canonical_snapshot_page_result_v0'
 LOCAL_COORDINATION_PROMOTION_REQUEST_SCHEMA: Final[str] = 'loopx_local_coordination_promotion_request_v0'
 LOCAL_COORDINATION_PROMOTION_RESULT_SCHEMA: Final[str] = 'loopx_local_coordination_promotion_result_v0'
 LOCAL_COORDINATION_PROMOTION_RECEIPT_SCHEMA: Final[str] = 'loopx_local_coordination_promotion_receipt_v0'
