@@ -53,6 +53,7 @@ export const answerPresentationScenario = {
       if (await answer.locator("script").count() || !((await answer.innerText()).includes("下一步：请项目 Agent"))) {
         throw new Error("Steward answer lost its ending or executed model HTML");
       }
+      await answer.getByRole("link", { name: "单独阅读完整答复" }).waitFor({ state: "visible", timeout: 15_000 });
       await answer.scrollIntoViewIfNeeded();
       await page.screenshot({ path: resolve(outputDir, "answer-presentation-desktop.png"), fullPage: false, animations: "disabled" });
 
@@ -79,6 +80,49 @@ export const answerPresentationScenario = {
       if (await restored.locator("table").count() !== 1 || !(await restored.innerText()).includes("可回退路径")) {
         throw new Error("Reload lost the complete Markdown answer in the original conversation");
       }
+      const reportLink = restored.getByRole("link", { name: "单独阅读完整答复" });
+      await reportLink.waitFor({ state: "visible", timeout: 15_000 });
+      if (await reportLink.getAttribute("target") !== "_blank") {
+        throw new Error("The answer link must leave the original conversation open");
+      }
+      const reportHref = await reportLink.getAttribute("href");
+      if (!reportHref) throw new Error("Saved answer has no stable link");
+      const originalTurnCount = api.turnRequests.length;
+      await page.goto(reportHref, { waitUntil: "networkidle" });
+      await page.getByRole("heading", { name: "完整答复" }).waitFor({ state: "visible" });
+      if (await page.locator(".answer-report-content table").count() !== 1
+        || !(await page.locator(".answer-report-content").innerText()).includes("可回退路径")
+        || await page.locator(".answer-report-content script").count() || await page.evaluate(() => window.pwned === true)) {
+        throw new Error("The standalone answer lost content or executed model HTML");
+      }
+      await page.screenshot({ path: resolve(outputDir, "answer-report-desktop.png"), fullPage: false, animations: "disabled" });
+      await page.setViewportSize({ width: 390, height: 844 });
+      const reportOverflow = await page.locator(".answer-report-body").evaluate((node) => node.scrollWidth > node.clientWidth + 1);
+      if (reportOverflow) throw new Error("The standalone answer overflows its mobile reading surface");
+      await page.screenshot({ path: resolve(outputDir, "answer-report-mobile.png"), fullPage: false, animations: "disabled" });
+      await page.setViewportSize({ width: 1512, height: 982 });
+      await page.reload({ waitUntil: "networkidle" });
+      if (await page.locator(".answer-report-content table").count() !== 1
+        || api.turnRequests.length !== originalTurnCount) {
+        throw new Error("Reloading the answer link replayed a Turn or lost its content");
+      }
+      await page.evaluate(() => localStorage.setItem("loopx-pw-locale", "en"));
+      await page.reload({ waitUntil: "networkidle" });
+      await page.getByRole("heading", { name: "Full answer" }).waitFor({ state: "visible" });
+      await page.evaluate(() => localStorage.setItem("loopx-pw-locale", "zh-CN"));
+      await page.getByRole("button", { name: "Back to conversation" }).click();
+      await page.locator(".personal-channel-timeline .personal-message.is-assistant", {
+        hasText: "建议先验证方案 A",
+      }).waitFor({ state: "visible", timeout: 15_000 });
+      if (api.turnRequests.length !== originalTurnCount) {
+        throw new Error("Returning to the Steward conversation replayed a Turn");
+      }
+      const missingUrl = new URL(reportHref);
+      missingUrl.searchParams.set("reportMessageId", "missing-answer");
+      await page.goto(missingUrl.toString(), { waitUntil: "networkidle" });
+      await page.locator('[role="alert"]', { hasText: "找不到这份答复" }).waitFor({ state: "visible" });
+      if (api.turnRequests.length !== originalTurnCount) throw new Error("Missing report replayed a Turn");
+      await page.goto(url, { waitUntil: "networkidle" });
 
       await page.getByRole("navigation", { name: "管家视图" })
         .getByRole("button", { name: "总览", exact: true }).click();

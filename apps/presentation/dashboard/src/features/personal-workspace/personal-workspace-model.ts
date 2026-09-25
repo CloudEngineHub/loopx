@@ -269,6 +269,8 @@ export type WorkspaceMessage = {
   returnDelivery?: WorkspaceReturnDelivery;
   role: "assistant" | "user" | "system";
   sourceTurnId?: string;
+  sourceMessageId?: string;
+  sourceSessionId?: string;
   text: string;
   time?: string;
 };

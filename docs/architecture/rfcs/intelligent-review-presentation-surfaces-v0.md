@@ -706,6 +706,12 @@ records Markdown format and answer length rather than claiming answer quality.
 This does not yet establish qualitative live-model answer quality, a separately
 addressable versioned report for every investigation, or complete long-answer
 delivery across every external channel; those remain Stage 3 acceptance work.
+The next local Chat slice gives substantive, completed answers a stable reader
+link backed by the immutable saved Session message id. The reader reuses the
+safe Markdown renderer, preserves the original conversation in its own tab,
+and never starts another model Turn on open or reload. This is a local answer
+record, not a claim that every investigation has a separately governed report
+artifact; cross-channel delivery and report artifact ownership remain open.
 
 Project only real host events into a compact current-phase line and expandable
 history: accepted, queued, started, tool/public progress, waiting, interrupted,

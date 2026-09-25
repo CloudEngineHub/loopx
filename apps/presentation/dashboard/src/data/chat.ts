@@ -675,6 +675,8 @@ export type ManagerRuntimeSessionReadback = {
 };
 
 export type ChatVisibleMessage = {
+  /** Client-side lineage added when messages from several Sessions are merged. */
+  session_id?: string;
   collaboration?: CollaborationReadback;
   origin?: string;
   attachments?: ChatImageAttachment[];
@@ -742,7 +744,7 @@ export function mergeChatSessionMessages(snapshots: ChatSessionSnapshot[]) {
   const messages = new Map<string, ChatVisibleMessage>();
   for (const snapshot of snapshots) {
     for (const message of snapshot.messages) {
-      messages.set(message.message_id, message);
+      messages.set(message.message_id, { ...message, session_id: snapshot.session.session_id });
     }
   }
   return [...messages.values()].sort((left, right) =>
