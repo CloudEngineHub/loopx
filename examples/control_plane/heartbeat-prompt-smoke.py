@@ -66,14 +66,14 @@ def user_output_policy(task_body: str, *, mode: str) -> dict[str, str]:
         )
     else:
         assert "`user_channel.notify` controls OUTPUT only" in body
-        assert "NOTIFY=向用户输出动作; DONT_NOTIFY=安静输出" in body
-        assert "Due/peer非用户动作" in body
-        assert "NOTIFY缺动作→" in body
-        assert "具体user todo未投影" in body
-        assert "需修复LoopX状态投影" in body
-        assert "静默时内部修复" in body
+        assert "NOTIFY=show; DONT_NOTIFY=no output" in body
+        assert "Due/peer work is not a user prompt" in body
+        assert "Missing NOTIFY action:" in body
+        assert "user Todo unprojected" in body
+        assert "repair LoopX state projection" in body
+        assert "under DONT_NOTIFY repair internally" in body
         if mode == "brief":
-            assert "仅 `user_channel.notify=NOTIFY` 时输出，否则静默。" in body
+            assert "Output only under `user_channel.notify=NOTIFY`; otherwise stay quiet." in body
     return {
         "authority": "interaction_contract.user_channel.notify",
         "external": "NOTIFY",
@@ -86,9 +86,9 @@ def assert_sole_notification_authority(task_body: str, *, mode: str) -> None:
     body = normalized(task_body)
     assert "no-change=surface_only/no spend" in body, mode
     assert "material=outcome+vision" in body, mode
-    assert "缺则同轮checkpoint-context重判" in body, mode
-    assert "按凭据仅补vision；过期重读" in body, mode
-    assert "unchanged→真实--vision-unchanged-reason" in body, mode
+    assert "same-turn checkpoint-context recheck" in body, mode
+    assert "add only evidenced vision; stale->reread" in body, mode
+    assert "unchanged->truthful --vision-unchanged-reason" in body, mode
 
     if mode == "full":
         assert (
@@ -112,12 +112,13 @@ def assert_sole_notification_authority(task_body: str, *, mode: str) -> None:
         return
 
     if mode == "brief":
-        assert "仅 `user_channel.notify=NOTIFY` 时输出，否则静默。" in body
+        assert "Output only under `user_channel.notify=NOTIFY`; otherwise stay quiet." in body
         return
 
     assert mode == "thin", mode
     assert (
-        "`user_channel.notify` OUTPUT only: NOTIFY=show; DONT_NOTIFY=no output."
+        "`user_channel.notify` controls OUTPUT only: NOTIFY=show; "
+        "DONT_NOTIFY=no output."
     ) in body
 
 
@@ -588,20 +589,20 @@ def main() -> int:
         "no scope in todo metadata",
         "Normal turns use CLI `interaction_contract`; use `loopx-project` for "
         "lifecycle/registry and `loopx-self-repair` for runtime/projection drift",
-        "use selection_command when required",
+        "selection_command if needed",
         "heartbeat-prequota",
         'loopx --format json --registry "$HOME/.codex/loopx/registry.global.json" quota should-run '
         "--goal-id loopx-meta --agent-id codex-product-capability --available-capability network "
         "--available-capability external_evidence_poll",
-        "`user_channel.notify` controls OUTPUT only: NOTIFY=向用户输出动作; DONT_NOTIFY=安静输出",
-        "Due/peer非用户动作",
-        "NOTIFY缺动作→",
-        "具体user todo未投影",
+        "`user_channel.notify` controls OUTPUT only: NOTIFY=show; DONT_NOTIFY=no output",
+        "Due/peer work is not a user prompt",
+        "Missing NOTIFY action:",
+        "user Todo unprojected",
         "Observed capabilities -> `--available-capability`; never user gates",
         "host_action=pause_or_delete_current_heartbeat->automation_update stop(no-spend)",
         "else RRULE/projected-fallback_hint/ack/fail",
         "no-change=surface_only/no spend",
-        "unchanged→真实--vision-unchanged-reason",
+        "unchanged->truthful --vision-unchanged-reason",
         "guard; 2 stalls->replan",
         "`agent_read_required`",
         "drain/read/triage before work; settle/ACK",
@@ -645,33 +646,33 @@ def main() -> int:
     )
     brief_task = normalized(str(brief_payload["task_body"]))
     for phrase in (
-        "Brief 详情：",
+        "Brief detail:",
         "loopx heartbeat-prompt --compact --goal-id public-heartbeat-goal --active-state /tmp/public-heartbeat-goal/ACTIVE_GOAL_STATE.md",
         "Run assignment and guard as separate statements in one shell",
         'loopx --format json --registry "$HOME/.codex/loopx/registry.global.json" quota should-run --goal-id public-heartbeat-goal',
-        "`user_channel.notify` controls OUTPUT only: NOTIFY=向用户输出动作; DONT_NOTIFY=安静输出",
-        "Due/peer非用户动作",
-        "Todo验收非结算",
-        "NOTIFY缺动作→",
-        "具体user todo未投影",
-        "按 user channel",
+        "`user_channel.notify` controls OUTPUT only: NOTIFY=show; DONT_NOTIFY=no output",
+        "Due/peer work is not a user prompt",
+        "Todo acceptance is not settlement",
+        "Missing NOTIFY action:",
+        "user Todo unprojected",
+        "follow user channel",
         "monitor_quiet_skip",
-        "记 receipt/stall",
-        "同 id 重试",
-        "只读一次",
-        "outcome-floor recovery",
-        "推进 evidence",
+        "records receipt/stall",
+        "retry the same id",
+        "one read-only poll",
+        "Outcome-floor recovery",
+        "evidence or blocker",
         "status --limit 3",
         "review-packet --handoff-only",
         "heartbeat_recommendation.agent_must_attempt",
-        "遵守 quota 权限/结果/handoff",
-        "交付并验证",
+        "obey quota authority/outcome/handoff",
+        "After validated delivery",
         "execution_obligation.must_attempt_work",
         "interaction_contract.cli_channel.settlement_plan.ordered_steps",
-        "精确 identity/effect 顺序结算",
-        "不使用旧 refresh/spend 配方",
-        "仅 terminal no-follow-up 收尾",
-        "静默跳过、preflight 失败、blocker-push 提问、dry-run、重复记账均不扣额",
+        "exact identity/effect order",
+        "never old refresh/spend",
+        "Finish only on terminal no-follow-up",
+        "Do not spend for quiet skips, preflight failures, blocker-push questions",
         "No learning queue unless asked.",
         "No permission asks in a trusted session.",
     ):
@@ -694,16 +695,16 @@ def main() -> int:
         "Advance `public-heartbeat-goal` from /tmp/public-heartbeat-goal/ACTIVE_GOAL_STATE.md",
         "Normal turns use CLI `interaction_contract`; use `loopx-project` for "
         "lifecycle/registry and `loopx-self-repair` for runtime/projection drift",
-        "use selection_command when required",
+        "selection_command if needed",
         "quota should-run",
-        "`user_channel.notify` controls OUTPUT only: NOTIFY=向用户输出动作; DONT_NOTIFY=安静输出",
-        "Due/peer非用户动作",
-        "NOTIFY缺动作→",
-        "具体user todo未投影",
+        "`user_channel.notify` controls OUTPUT only: NOTIFY=show; DONT_NOTIFY=no output",
+        "Due/peer work is not a user prompt",
+        "Missing NOTIFY action:",
+        "user Todo unprojected",
         "host_action=pause_or_delete_current_heartbeat->automation_update stop(no-spend)",
         "else RRULE/projected-fallback_hint/ack/fail",
         "no-change=surface_only/no spend",
-        "unchanged→真实--vision-unchanged-reason",
+        "unchanged->truthful --vision-unchanged-reason",
         "guard; 2 stalls->replan",
         "P0 blocked: safe P1/P2",
         "monitor quiet/no-spend",
@@ -876,8 +877,9 @@ def main() -> int:
         "never say \"no new user action\"",
         "Language=user; fallback=English; mix only if asked/scoped-bilingual",
         "`interaction_contract.user_channel.notify` controls output",
-        "Due/peer work is not a prompt",
-        "Missing action: specific user Todo is not projected",
+        "`should_run`/due monitor/other-agent todos are not user prompts",
+        "Only under NOTIFY, `action_required` without an action",
+        "specific user Todo is not projected",
         "repair LoopX state projection",
         "repair the projection internally and stay quiet",
         "NOTIFY",
@@ -936,7 +938,7 @@ def main() -> int:
         "2 consecutive eligible heartbeats are no-progress loops",
         "self-cancel turn",
         "repair path is",
-        "授权/预算内推进可验证结果",
+        "Within authority/budget, deliver verifiable results",
         "a focused correction may suffice",
         "Stay inside `goal_boundary` when present",
         "Follow user authority and repository rules",
