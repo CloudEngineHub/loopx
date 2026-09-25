@@ -662,7 +662,9 @@ def _startup_diagnostic(raw: bytes) -> tuple[str, str] | None:
 
     if not raw:
         return None
-    for line in reversed(raw.decode("utf-8", errors="replace").splitlines()):
+    # Not splitlines(): it also breaks on U+0085/U+2028/U+2029, which a rejected
+    # setting can echo back unescaped inside the envelope and tear the record.
+    for line in reversed(raw.decode("utf-8", errors="replace").split("\n")):
         candidate = line.strip()
         if not candidate.startswith("{"):
             continue
