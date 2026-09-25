@@ -698,6 +698,15 @@ safe subset; executable HTML is never accepted from answer text. Channel limits
 may change the presentation density, but cannot silently remove the conclusion
 or evidence path. A report attachment alone does not settle an answer obligation.
 
+The first delivery slice replaces the steward's fixed four-label instruction
+with a task-adaptive answer rule shared by Codex, managed and direct-model Chat
+Turns. The original conversation keeps the complete answer; Chat and report
+views share the same inert Markdown table renderer, while the steward readback
+records Markdown format and answer length rather than claiming answer quality.
+This does not yet establish qualitative live-model answer quality, a separately
+addressable versioned report for every investigation, or complete long-answer
+delivery across every external channel; those remain Stage 3 acceptance work.
+
 Project only real host events into a compact current-phase line and expandable
 history: accepted, queued, started, tool/public progress, waiting, interrupted,
 failed and completed. The final answer has priority; completed routine activity
