@@ -174,6 +174,64 @@ def test_reward_memory_outcome_prompt_budget_is_one_time_bounded_and_prompt_only
     assert _compare_row(other, {**current, "row_id": other["row_id"]})["failures"]
 
 
+@pytest.mark.parametrize(
+    ("mode", "row_kind", "limit"),
+    [
+        ("thin", "surface", 400),
+        ("brief", "variant", 720),
+        ("compact", "variant", 288),
+        ("full", "variant", 288),
+    ],
+)
+def test_user_language_prompt_budget_is_one_time_and_mode_scoped(
+    mode: str, row_kind: str, limit: int
+) -> None:
+    from loopx.control_plane.testing.cli_output_differential import _compare_row
+    from loopx.control_plane.testing.cli_output_semantics import (
+        heartbeat_user_language_prompt_revision,
+    )
+
+    rendered_rule = (
+        "Lang=user; default=en; mix=asked/scoped."
+        if mode in {"thin", "brief"}
+        else "Language=user; fallback=English; mix only if asked/scoped-bilingual."
+    )
+    assert heartbeat_user_language_prompt_revision(rendered_rule) == (
+        "heartbeat_user_language_v1"
+    )
+    assert heartbeat_user_language_prompt_revision(rendered_rule.replace("mix", "omit")) is None
+
+    base = _row(
+        row_id=f"{row_kind}/heartbeat_prompt_{mode}/small/json",
+        qualification_policy=(
+            "absolute_hot_path" if mode == "thin" else "explicit_opt_in_cold_path"
+        ),
+        chars=1_000,
+        utf8_bytes=1_000,
+        lines=20,
+        compact_payload_chars=1_000,
+    )
+    candidate = {
+        **base,
+        "chars": 1_000 + limit,
+        "compact_payload_chars": 1_000 + limit,
+        "heartbeat_user_language_prompt_revision": "heartbeat_user_language_v1",
+    }
+    assert not _compare_row(base, candidate)["failures"]
+    assert _compare_row(base, {**candidate, "chars": 1_001 + limit})["failures"]
+    assert _compare_row(candidate, {**candidate, "chars": 1_000 + 2 * limit})[
+        "failures"
+    ]
+    assert _compare_row(base, {**candidate, "heartbeat_user_language_prompt_revision": None})[
+        "failures"
+    ]
+    other = {**base, "row_id": "surface/status/small/json"}
+    assert _compare_row(other, {**candidate, "row_id": other["row_id"]})["failures"]
+    if mode == "brief":
+        assert not _compare_row(base, {**candidate, "lines": 26})["failures"]
+        assert _compare_row(base, {**candidate, "lines": 27})["failures"]
+
+
 def test_managed_executor_binding_budget_is_one_time_bounded_and_turn_only() -> None:
     from loopx.control_plane.testing.cli_output_differential import (
         _TURN_HOST_AND_MANAGED_EXECUTOR_BINDING_V0_GROWTH_ALLOWANCE as ALLOWANCE,

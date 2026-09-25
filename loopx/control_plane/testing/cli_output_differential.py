@@ -186,6 +186,22 @@ _REWARD_MEMORY_OUTCOME_PROMPT_V1_MIGRATION_ALLOWANCE: dict[Metric, int] = {
     "compact_payload_chars": 640,
 }
 
+# Replacing fixed Chinese heartbeat instructions with user-language policy
+# grows the installed prompt once. These per-mode limits cover the measured
+# same-fixture base/head delta plus 24-28 characters of variation; the brief
+# renderer also adds five lines. Absolute output ceilings still apply, and
+# once v1 is in the baseline ordinary growth limits apply again.
+_HEARTBEAT_USER_LANGUAGE_V1_MIGRATION_ALLOWANCE: dict[str, dict[Metric, int]] = {
+    "heartbeat_prompt_thin": {"chars": 400, "compact_payload_chars": 400},
+    "heartbeat_prompt_brief": {
+        "chars": 720,
+        "lines": 6,
+        "compact_payload_chars": 720,
+    },
+    "heartbeat_prompt_compact": {"chars": 288, "compact_payload_chars": 288},
+    "heartbeat_prompt_full": {"chars": 288, "compact_payload_chars": 288},
+}
+
 # Two reviewed causes grow the Turn plan readback once, and both are consequences
 # of the same declared behavior change:
 #
@@ -257,6 +273,25 @@ def _reward_memory_outcome_prompt_allowance(
         == "reward_memory_outcome_prompt_v1"
     ):
         return _REWARD_MEMORY_OUTCOME_PROMPT_V1_MIGRATION_ALLOWANCE[metric]
+    return 0
+
+
+def _heartbeat_user_language_migration_allowance(
+    row_id: str,
+    base: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+    metric: Metric,
+) -> int:
+    surface = row_id.partition("/")[2].partition("/")[0]
+    if (
+        row_id.startswith(("surface/", "variant/"))
+        and base.get("heartbeat_user_language_prompt_revision") is None
+        and candidate.get("heartbeat_user_language_prompt_revision")
+        == "heartbeat_user_language_v1"
+    ):
+        return _HEARTBEAT_USER_LANGUAGE_V1_MIGRATION_ALLOWANCE.get(surface, {}).get(
+            metric, 0
+        )
     return 0
 
 
@@ -639,6 +674,12 @@ def _compare_row(base: dict[str, Any], candidate: dict[str, Any]) -> dict[str, A
                 base=base_value,
             ),
             _reward_memory_outcome_prompt_allowance(
+                row_id,
+                base,
+                candidate,
+                metric,
+            ),
+            _heartbeat_user_language_migration_allowance(
                 row_id,
                 base,
                 candidate,
