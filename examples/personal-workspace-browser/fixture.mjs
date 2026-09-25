@@ -453,6 +453,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
     },
     operatorCredentialWrites: [],
     turnRequests: [],
+    answerForMessage: null,
     loopxModeRequests: [],
     get larkConnections() { return runtime.larkConnections; },
     get goalSubagentConfigurations() { return runtime.goalSubagentConfigurations; },
@@ -1651,7 +1652,8 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
       : operatorMessage === "请合并我刚才说的那个"
         ? { operation: "merge", target: "PR #999", summary: "模型错误补出了用户没有提供的目标。" }
       : null;
-    const answer = operatorMessage.startsWith("我现在该做什么？")
+    const scriptedAnswer = typeof state.answerForMessage === "function" ? state.answerForMessage(operatorMessage) : null;
+    const answer = scriptedAnswer || (operatorMessage.startsWith("我现在该做什么？")
       ? "管家已读取当前授权范围的 Goal 证据。"
       : operatorMessage === "请只回复：合并后真实回复已收到"
       ? "合并后真实回复已收到"
@@ -1663,7 +1665,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
             ? "这个指代不够明确，请提供具体 PR 或 MR。"
           : protectedAction
             ? "我识别到一个明确的合并请求。LoopX 会先展示受保护操作预览，不会直接执行。"
-            : "已沿用当前 Goal 与 Agent Session。接下来会先核对状态，再继续推进。";
+            : "已沿用当前 Goal 与 Agent Session。接下来会先核对状态，再继续推进。");
     await new Promise((resolveWait) => setTimeout(resolveWait, /(中断控制|刷新恢复)/u.test(operatorMessage) ? 5000 : 1200));
     await route.fulfill({ contentType: "text/event-stream", body: finishTurn(sessionId, turnId, answer, protectedAction), status: 200 });
   });
