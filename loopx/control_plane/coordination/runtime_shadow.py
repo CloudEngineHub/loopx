@@ -290,6 +290,32 @@ def build_runtime_shadow_source_snapshot(
     *, goal: Mapping[str, Any], runtime_root: Path, state_path: Path,
     registry_path: Path,
 ) -> tuple[dict[str, object], dict[str, object]]:
+    """Bind the supplied Goal and every derived fact to one registry observation."""
+    from ...agent_registry import registered_agent_ids_for_goal
+    from ...history import load_registry
+    from ...registry import find_registry_goal
+    from .authority_source_capture import authority_registry_source
+    from .shadow_management import ShadowManagementError
+
+    with authority_registry_source(registry_path) as witness:
+        registry = load_registry(registry_path)
+        current = find_registry_goal(registry, str(goal["id"]))
+        if current is None or current != dict(goal):
+            raise ShadowManagementError("source_registry_changed_retry")
+        projection, snapshot = _build_runtime_shadow_source_snapshot(
+            goal=current, runtime_root=runtime_root, state_path=state_path,
+            registry_path=registry_path, registry=registry,
+        )
+        snapshot["registry_source"] = {
+            **witness, "registered_agents": registered_agent_ids_for_goal(current),
+        }
+    return projection, snapshot
+
+
+def _build_runtime_shadow_source_snapshot(
+    *, goal: Mapping[str, Any], runtime_root: Path, state_path: Path,
+    registry_path: Path, registry: dict[str, Any],
+) -> tuple[dict[str, object], dict[str, object]]:
     """Project exactly the bytes carried by one ephemeral source precondition.
 
     TS takes the shared source locks and verifies every byte/inventory before
@@ -297,7 +323,6 @@ def build_runtime_shadow_source_snapshot(
     """
     from ...event_sourced_state import build_state_projection, normalize_state_event, render_active_state_sections
     from ...rollout_event_log import ROLLOUT_EVENT_SCHEMA_VERSION, rollout_event_log_path
-    from ...history import load_registry
     from ...paths import resolve_runtime_root
     from ...state_refresh import resolve_goal_state
     from ..status.active_state_projection import state_event_log_candidates
@@ -359,7 +384,6 @@ def build_runtime_shadow_source_snapshot(
         inventory.append({"name": path.name, "bytes_sha256": "sha256:" + hashlib.sha256(data).hexdigest()})
     projection = build_todo_runtime_shadow_projection(goal_id=goal_id, todos=todos, leases=leases,
         handoff_mode=goal_handoff_mode(state_text))
-    registry = load_registry(registry_path)
     registered_root = resolve_runtime_root(registry, None, registry_path=registry_path)
     _, _, registered_state = resolve_goal_state(registry=registry, goal_id=goal_id,
         project_override=None, state_file_override=None)

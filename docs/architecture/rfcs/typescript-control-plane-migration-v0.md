@@ -14,12 +14,16 @@
 
 ---
 
-## Current delivery frontier (2026-09-24)
+## Current delivery frontier (2026-09-25)
 
-The `d64c4d377`/open-PR audit withdraws earlier “5–8 / 6–8 / 7–9” estimates.
-Implemented code, six relevant open PRs, four proposed new batches (including
-complete-source transport) and D1–D3 evidence are separate units; four batches
-are not a guaranteed total PR count. Use the [reconciled inventory and exits](ledger/shared-goal-authority-state-provider-v0/2026-09-24-default-cutover-reconciliation.md) as the current plan.
+Audit `37bbaec79` and current PR states: complete-source transport, transaction
+capture, source assembly and the five previously open caller/event fixes are
+merged, not future implementation. After the current promotion-admission repair,
+three named code boundaries remain planned: external-effect execution fencing;
+event-writer binding plus whole-Goal migration/rollback; default onboarding plus
+bounded Python retirement. #4931 and outstanding D2 evidence are tracked
+separately. Three is a delivery plan, not a guaranteed total PR count.
+[Current inventory and exits](ledger/shared-goal-authority-state-provider-v0/2026-09-24-default-cutover-reconciliation.md).
 
 ## Observation writer retirement (2026-09-24)
 
@@ -38,7 +42,13 @@ Retain T0 caller/parity inventory, T1/T2 transaction/effect convergence, T3 comp
 
 ## Current implementation checkpoint
 
-The current [event transaction and default-cutover plan](ledger/shared-goal-authority-state-provider-v0/2026-09-24-event-completion-transaction.md) estimates 5–8 complete packages conditionally. #4967 source assembly and #4968 capture delivery are already delivered; event-writer binding remains open, with atomic completion repaired here as a prerequisite. Earlier counts below describe historical checkpoints, not additional current work.
+Promotion admission now binds complete sources to a current registry witness
+and rechecks it inside the TS lock scope. Saved execution retains the reviewed
+handoff policy, and failures report durable fence presence. Recovery of a
+committed operation still follows its original fence/receipt instead of requiring
+the retired source to become valid again. This repairs demonstrated L7/L8
+integration defects; it neither recounts shipped capture nor flips global defaults.
+[Operation and boundaries](../../reference/reviewed-coordination-promotion.md).
 
 Canonical collection transport now uses snapshot-bound, byte-bounded TS pages.
 The same `canonicalTodoCollection` owner validates both the retained direct list

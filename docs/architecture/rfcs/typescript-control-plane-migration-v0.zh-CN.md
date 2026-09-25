@@ -14,11 +14,13 @@
 ---
 
 
-## 当前交付边界（2026-09-24）
+## 当前交付边界（2026-09-25）
 
-剩余 PR 估算已按 `d64c4d377` 和开放 PR 重新核对，旧“5–8 / 6–8 / 7–9”数字撤回。
-已合入实现、六个相关在途 PR、四个拟新增批次（含当前完整来源传输）和 D1–D3
-验收分开记录；四批不是承诺总计只剩四个 PR。唯一当前清单见[实现核对与退出证据](ledger/shared-goal-authority-state-provider-v0/2026-09-24-default-cutover-reconciliation.zh-CN.md)。
+按 `37bbaec79` 与当前 PR 状态核对：完整来源传输、事务捕获、来源组装及此前五个
+在途 caller/event 修复都已合入，不再计入待开发。当前晋升准入修复之后，规划三个
+明确代码边界：外部动作执行区间保护、事件 writer 绑定与整 Goal 迁移/回退闭环、
+默认启用与最后一批有界 Python 退役。#4931 与 D2 的剩余资格证据单列；三个是
+可命名的开发批次，不是保证总 PR 数。[唯一当前清单与退出条件](ledger/shared-goal-authority-state-provider-v0/2026-09-24-default-cutover-reconciliation.zh-CN.md)。
 
 ## 旧观测写入退役（2026-09-24）
 
@@ -43,7 +45,11 @@ shared-authority 的当前核对表区分已合入实现、在途 PR、新代码
 
 ## 当前实现检查点
 
-当前剩余交付以[事件事务与默认切换计划](ledger/shared-goal-authority-state-provider-v0/2026-09-24-event-completion-transaction.zh-CN.md)为准：条件估算 5–8 个完整包。#4967 来源组装、#4968 捕获交付已经完成；事件写入者绑定仍未完成，本批先修复完整完成事务。下文更早的包数属于历史检查点，不能作为当前待办重复计算。
+晋升准入现将完整来源绑定到当前 registry witness，并在 TS 持锁范围内重新校验；
+保存计划执行保留已审核的 handoff 策略，失败结果如实报告持久 fence。
+已提交事务的恢复仍按原 fence/receipt，不要求失去权威的旧来源重新有效。
+这关闭 L7/L8 的已复现集成缺口，不重复计算已交付 capture，也不宣称全局默认已切换。
+[操作与边界](../../reference/reviewed-coordination-promotion.zh-CN.md)。
 
 Canonical command 的 receipt/head 观察顺序统一归属 TS：团队规划、Todo 创建/
 修改/领取/终态/归档、Monitor、lease 维护和 Goal acceptance 在读 head 后复查原

@@ -12,7 +12,7 @@ from .authority import compact_authority_registry
 from .control_plane.projects.contract import validate_project_record_bindings
 from .control_plane.projects.registry_codec import load_registry
 from .control_plane.runtime.time import now_local_iso
-from .file_lock import exclusive_file_lock
+from .file_lock import exclusive_cross_runtime_file_lock
 from .paths import DEFAULT_RUNTIME_ROOT, global_registry_path, resolve_runtime_root
 from .registry import read_json, registry_goals
 from .registry_writability import is_write_denied_error, probe_registry_write_path
@@ -99,7 +99,7 @@ def mutate_global_registry(
 ) -> dict[str, Any]:
     """Apply one authoritative global-registry read-modify-write transaction."""
 
-    with exclusive_file_lock(global_path, operation=operation):
+    with exclusive_cross_runtime_file_lock(global_path, operation=operation):
         return _mutate_global_registry_locked(global_path, reducer)
 
 

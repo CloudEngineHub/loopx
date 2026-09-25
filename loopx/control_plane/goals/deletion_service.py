@@ -20,7 +20,6 @@ from ...configuration_transaction import configuration_payload_revision
 from ...file_lock import (
     EFFECT_MUTATION_LOCK_SUFFIX,
     exclusive_cross_runtime_file_lock,
-    exclusive_file_lock,
     lock_holder_path,
     lock_incident_path,
 )
@@ -607,7 +606,7 @@ def _execute_deletion(
                     )
                 )
         stack.enter_context(
-            exclusive_file_lock(target_registry, operation="delete_stopped_goal")
+            exclusive_cross_runtime_file_lock(target_registry, operation="delete_stopped_goal")
         )
         locked_state = _load_locked_payloads(
             requested_registry=requested_registry,
