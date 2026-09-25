@@ -727,6 +727,24 @@ same identity, interruption, replay and audience-isolation cases at their own
 display densities. This shared contract reuses Chat/session, artifact, and
 presentation owners; it creates no second conversation store or scheduler.
 
+**Attention-oriented return.** The original conversation distinguishes requested
+results, routine progress and decisions needing the owner. Requested results
+return normally; unchanged progress folds into a digest; material decisions show
+the concrete object, recommendation, evidence and consequence of inaction.
+Keep deeper evidence and the responsible Agent's conversation directly reachable.
+A correction made there returns its relevant decision/work change to the steward
+through the same request lineage, without copying the entire private dialogue.
+Source coverage and unresolved work remain visible. An empty directory or a
+saved answer with failed delivery cannot be presented as a successful conclusion.
+
+Creation and first submission are part of this shared surface: preserve the
+message and its pending/failed state across navigation or reload, expose a safe
+retry/readback, and distinguish Goal created, Agent connected and work started.
+An optimistic disappearing composer is not an accepted request. The
+[golden-query pack](../../product/use-cases/steward/golden-queries.md) checks these
+entry states alongside the full conversation, in packaged frontend and each
+claimed channel; it does not specialize activity presentation to reports.
+
 Botmux is an interaction reference: its [live card](https://github.com/deepcoldy/botmux/blob/982e2c9f16e4f45ae2581967bc1a35a286e7bfa2/docs-site/docs/zh/cards.md)
 keeps final text ahead of collapsible recorded activity, its [session model](https://github.com/deepcoldy/botmux/blob/982e2c9f16e4f45ae2581967bc1a35a286e7bfa2/docs-site/docs/zh/session-model.md)
 distinguishes talk and operation rights, and its [Codex steering study](https://github.com/deepcoldy/botmux/blob/982e2c9f16e4f45ae2581967bc1a35a286e7bfa2/docs/design/2026-05-28-codex-type-ahead-steer-design.md)
@@ -1064,6 +1082,14 @@ Measure both attention cost and outcome quality:
 - Agent throughput, acceptance quality, and safety outcomes;
 - model-advice override, hallucination, over-escalation, and dangerous
   suppression rates.
+
+The [golden-query evaluation](../../product/use-cases/steward/golden-queries.md)
+operationalizes these measures with paired baseline/candidate tasks and separate
+per-surface results. Count avoidable finding/context/repetition/chasing/relay work;
+report legitimate authorization, goal changes and voluntary learning separately.
+Include failed/abandoned attempts and unknown cost/coverage. Silence, a short
+answer or fewer messages alone cannot improve the score. All live case outcomes
+remain unqualified until their independent evidence exists.
 
 Reducing clicks while lowering accepted outcome quality is a regression, not a
 success.
