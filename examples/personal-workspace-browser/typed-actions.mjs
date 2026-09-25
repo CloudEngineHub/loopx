@@ -1028,6 +1028,9 @@ export const typedActionsScenario = {
       if (await page.locator(".personal-workspace-shell:visible").count()) throw new Error("Unified Goal capability action did not open the Settings surface");
       await page.getByRole("heading", { level: 2, name: /^周期报告/ }).waitFor({ state: "visible" });
       const goalCapabilityOrder = await page.locator(".personal-capability-list button strong").allTextContents();
+      if (goalCapabilityOrder.includes("管家执行器") || goalCapabilityOrder.includes("管家 Runtime")) {
+        throw new Error(`Machine-only capabilities leaked into Goal settings: ${JSON.stringify(goalCapabilityOrder)}`);
+      }
       if (await page.locator(".personal-capability-editor-status").count()) throw new Error("Editable Goal settings must not show internal editor-contract notices");
       const expectedGoalCapabilities = [
         "变更质量验证", "Goal 复核周期", "探索图谱", "探索 Harness", "飞书事件收件箱",

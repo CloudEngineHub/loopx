@@ -1197,7 +1197,9 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
         ],
         capability_catalog: {
           schema_version: "capability_configuration_catalog_v0",
-          capabilities: goalCapabilityCatalog(multiSubagentConfiguration).map((capability) => capability.capability_id === "periodic_report" ? periodicReportCapability({
+          capabilities: [...machineConfigurationBase.capability_catalog.capabilities.filter(
+            (capability) => !capability.available_scopes.includes("goal"),
+          ), ...goalCapabilityCatalog(multiSubagentConfiguration).map((capability) => capability.capability_id === "periodic_report" ? periodicReportCapability({
               machineCurrent: periodicConfiguration,
               effectiveConfiguration: {
                 schema_version: "capability_configuration_resolution_v0",
@@ -1209,7 +1211,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
                 machine_default_present: true,
                 effective_revision: "sha256:periodic-effective",
               },
-            }) : capability),
+            }) : capability)],
         },
       }, status: 200 });
       return;
