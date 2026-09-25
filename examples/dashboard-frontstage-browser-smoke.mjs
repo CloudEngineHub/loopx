@@ -66,6 +66,18 @@ try {
     await new Promise((done) => setTimeout(done, 200));
   }
   browser = await chromium.launch({ headless: true });
+  // Crawlers and readers without JavaScript receive actual route content.
+  const staticContext = await browser.newContext({ javaScriptEnabled: false });
+  const staticPage = await staticContext.newPage();
+  for (const [path, subject] of [["", "long-running"], ["benchmarks/swe-marathon/", "SWE-Marathon"], ["benchmarks/lhtb/", "LHTB"]]) {
+    await staticPage.goto(`${publicOrigin}/loopx/${path}`);
+    assert.match(await staticPage.title(), new RegExp(subject, "i"));
+    assert(await staticPage.locator("h1").isVisible(), "primary heading is visible without JavaScript");
+    assert.match(await staticPage.locator("main").innerText(), new RegExp(subject, "i"));
+    assert(await staticPage.locator("main a[href]").count() > 0, "static content includes crawlable links");
+    assert.equal(await staticPage.locator('link[rel="canonical"]').getAttribute("href"), `https://loopx-project.github.io/loopx/${path}`);
+  }
+  await staticContext.close();
   // Serve the real bundled font behind a controlled delay. Check both late
   // reflow correction and its cancellation when a reader scrolls away.
   const font = await readFile(resolve(dashboard, "node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2"));
