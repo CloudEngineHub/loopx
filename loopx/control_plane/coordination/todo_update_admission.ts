@@ -11,6 +11,7 @@ import {evaluateCoordinationTodoMutationDecision,
   COORDINATION_TODO_MUTATION_DECISION_REQUEST_SCHEMA} from "./todo_lifecycle_decision.ts";
 import {decodeTaskLeaseProof, evaluateCanonicalTaskLeaseProof} from "./task_lease_proof.ts";
 import {deferredReopenRejection, isDeferredReopen} from "./todo_deferred_reopen.ts";
+import {blockedLifecycleRejection, isBlockedLifecycleTransition} from "./todo_blocked_lifecycle.ts";
 
 interface TodoUpdateRejection {code: string; reason: string}
 const reject = (code: string, reason: string): TodoUpdateRejection => ({code, reason});
@@ -112,6 +113,17 @@ export function todoUpdateAdmissionRejection(
       return reject("update_lease_requirements_transition_unsupported", "Complete leased work before changing its requirements");
     }
     return null;
+  }
+  if (mode === "hard_lease" && isBlockedLifecycleTransition(input, todo)) {
+    try {
+      return blockedLifecycleRejection({goal_id: input.goal_id, todo_id: input.todo_id,
+        actor_agent_id: input.actor_agent_id, registered_agents: input.registered_agents,
+        lease, lease_idempotency_key: input.lease_idempotency_key ?? null,
+        lease_expected_version: input.lease_expected_version ?? null, now: input.now});
+    } catch (error) {
+      return reject("invalid_coordination_projection",
+        error instanceof Error ? error.message : "invalid retained lease facts");
+    }
   }
   if (mode === "hard_lease" && isDeferredReopen(input, todo)) {
     try {
