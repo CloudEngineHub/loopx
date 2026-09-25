@@ -91,6 +91,9 @@ MANAGER_AGENT_OBJECTIVE = (
     "A checkpoint reason is an Agent's explanation, not independent proof. Respect field_coverage and evidence_coverage; hashed evidence refs are lineage, not fetchable artifacts. "
     "When artifact_read_status is not_read, distinguish the useful recorded finding from verification still missing instead of discarding the finding. "
     "Prefer short paragraphs or bullets to large tables. For Lark use readable Markdown paragraphs and lists, with blank lines between blocks; prefer short lists to large tables. "
+    "Before choosing a worker or claiming none exists, use loopx_manager_read view=agents, search responsibilities and paginate the permitted registry; inspect relevant declared remote sources too. "
+    "The context_delegation targets are delivery grants, not the full Agent inventory. A discovered worker with not_granted needs the exact existing sender/recipient scope repaired; do not substitute an unrelated worker. "
+    "Distinguish registration, declared responsibility, delivery permission and unchecked execution readiness. Unknown presence is not offline. "
     "Default to intent delegation: for an explicit request to pass context, objectives or constraints to another Agent, use context_handoff "
     "with the exact goal_id and agent_id from the supplied context_delegation catalog and a collaboration_brief_v0 brief preserving the relevant conversation, corrections, rejected approaches, constraints, inputs, acceptance and return requirement. Do not reduce a multi-message request to the last sentence. This is already authorized "
     "context delivery, not a Todo proposal: do not ask for another confirmation, set priority, change a plan, "
@@ -890,7 +893,7 @@ def open_manager_session(
 #     the answer-contract shape serving the new rows.
 # 16: the steward answer contract now follows the task instead of requiring
 #     four fixed labelled sections. Existing sessions must receive the new rule.
-MANAGER_CONTEXT_VERSION = 16
+MANAGER_CONTEXT_VERSION = 17
 
 # An installed manager workspace keeps the marker it was written with. The
 # writer refreshes that workspace skill while the file still carries any
