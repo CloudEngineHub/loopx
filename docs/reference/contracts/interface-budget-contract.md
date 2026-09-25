@@ -105,6 +105,19 @@ packet, and the brief/compact/full heartbeat prompt modes. These remain opt-in
 cold paths, but their exact stdout size and semantic anchors are regression
 contracts too.
 
+The user-language prompt transition is one measured exception to ordinary
+base/head growth, scoped to heartbeat rows and only when the base lacks the
+rendered language-policy revision. On the same small CLI fixture, `origin/main`
+to this branch grew by 376 characters for thin, 695 JSON / 690 Markdown
+characters and five Markdown lines for brief, 264 / 262 characters for
+compact, and 258 / 260 for full. Replacing fixed Chinese instructions and
+restoring blocker/next-action continuation gives the worker usable language
+and work guidance; removing those clauses solely to fit the old delta would
+lose that consumer value. The one-time per-mode allowances are 400, 720, 288,
+and 288 characters respectively, plus six lines for brief. The absolute
+surface ceilings, UTF-8 byte limits, quota/status budgets, and normal growth
+limits after this revision becomes the baseline remain unchanged.
+
 `todo list --thin` is an explicit bounded projection, not a new filtering or
 ordering mode. After the normal role, status, Todo-id, and agent filters run,
 it keeps at most two matched items per role in one top-level `todos` container.
