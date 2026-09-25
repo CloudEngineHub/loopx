@@ -102,6 +102,7 @@ export const answerPresentationScenario = {
       await page.screenshot({ path: resolve(outputDir, "answer-report-mobile.png"), fullPage: false, animations: "disabled" });
       await page.setViewportSize({ width: 1512, height: 982 });
       await page.reload({ waitUntil: "networkidle" });
+      await page.locator(".answer-report-content table").waitFor({ state: "visible", timeout: 15_000 });
       if (await page.locator(".answer-report-content table").count() !== 1
         || api.turnRequests.length !== originalTurnCount) {
         throw new Error("Reloading the answer link replayed a Turn or lost its content");
