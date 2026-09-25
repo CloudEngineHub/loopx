@@ -63,7 +63,7 @@ capacity qualification remain its separate medium-term path. Local default
 does not wait for PostgreSQL deployment; a passing conformance suite does not
 establish production service readiness.
 
-## Complete-source transport and budget decision
+## Delivered #5013: complete-source transport and budget decision
 
 Before #5013, `test_canonical_snapshot_integration` failed before provider
 admission: complete source projection exceeds the 2 MiB request limit. Paging

@@ -53,9 +53,9 @@ PostgreSQL 复用 typed command 和 AuthorityStore，部署 transport、认证/t
 策略、restore identity、运维和 capacity 资格仍是独立中期路线。本地默认不等待
 PostgreSQL 部署，conformance 通过也不等于生产服务已合格。
 
-## 完整来源传输与预算决定
+## 已交付 #5013：完整来源传输与预算决定
 
-此基线的 `test_canonical_snapshot_integration` 在 provider 准入之前失败：完整
+在 #5013 之前，`test_canonical_snapshot_integration` 曾在 provider 准入之前失败：完整
 来源投影超过 2 MiB request 上限。canonical 读取分页已实现，但 source capture
 及管理命令仍传完整投影。裁剪来源记录会破坏 digest/parity；扩大通用 RPC 上限会
 影响所有方法。
