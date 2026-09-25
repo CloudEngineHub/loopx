@@ -1660,7 +1660,7 @@ Review Packet source-of-truth rule:
   receives a small current instruction;
 - `loopx review-packet --goal-id <goal-id> --handoff-only` is the
   copy-minimal form for an already selected or approved target-agent relay: it
-  prints only the `project_agent_handoff` text in markdown output, while JSON
+  prints only agent context (or its complete shard set) in markdown output, while JSON
   output returns a minimized handoff payload instead of the full operator
   packet. To keep the hot path compact, handoff-only JSON does not expose a separate
   `handoff_followthrough_summary` prose field; that prose remains available in
@@ -1676,28 +1676,43 @@ Review Packet source-of-truth rule:
   block, and carry only the target goal guard, minimal-context rule, source
   label, optional compact post-handoff delivery scale, optional delivery
   contract, forwarding/execution boundary, command, and stop condition;
-- overflow handling is lossless: when the prepared handoff still exceeds the
-  16 line / 1800 character budget after the lossless command-block
-  normalization, it is split into ordered, independently verifiable shards
-  instead of dropping prefixed sections. Shard 0 stays in
-  `project_agent_handoff` with the same position and field semantics;
-  continuation shards are exposed as `project_agent_handoff_fragments`,
-  accompanied by a compact `handoff_fragment_manifest` (stable set id, total,
-  original size, per-shard sizes). Each shard starts with one
-  `<!--loopx-handoff ... -->` envelope line carrying the content-derived set
-  id, the `i`/`n` sequence, a per-shard payload checksum, the previous-shard
-  hash chain, and the full-content SHA-256. Receivers concatenate by sequence
-  only after every payload checksum, the hash chain, set consistency, and the
-  full-content digest verify; missing shards, out-of-order delivery,
-  duplicate/conflicting imports, or altered content fail with explicit errors.
-  The set id and every shard are deterministic from the handoff content, so
-  regenerating the same handoff yields identical shards and re-importing a
-  shard is a no-op. Fenced command blocks are never torn across a shard
-  boundary (an unfinished fence is closed and re-opened with strip-only
-  transport markers), and over-long single lines use continuation markers,
-  so reassembly restores the original handoff byte-for-byte. A handoff that
-  fits the budget carries no envelope and stays byte-identical to the legacy
-  single-text output;
+- overflow preserves the **prepared handoff text**, after existing command-block
+  normalization and bounded status projection. This is not a promise to preserve
+  raw source documents or the original multiline command spelling. No sections
+  are deleted to fit the transport budget. Complete `project_agent_handoff` and
+  `handoff_text` fields always contain the entire prepared text, including on
+  overflow; consumers ignoring new keys still receive the complete instruction.
+  `handoff_interface_budget` and handoff-only size fields measure that complete
+  text and report `within_budget=false` when appropriate. The 16 line / 1800
+  character limit is a **per-shard** transport budget, not a total semantic cap;
+- on overflow, `project_agent_handoff_fragments` contains **all ordered shards**,
+  including index 0, with `handoff_fragment_manifest` describing the set and
+  original/per-shard sizes. Markdown renders that set once. On the in-budget
+  path no extra keys or envelopes are added, preserving existing output.
+  Each shard carries a `<!--loopx-handoff ... -->` envelope with content-derived
+  set id, sequence, payload checksum, previous-shard hash and full-content digest.
+  Fences are closed/reopened and long lines continued using reserved transport
+  markers. Reassembly restores prepared text byte-for-byte;
+- receivers use `loopx handoff restore --input handoff.json --format json` for
+  full or handoff-only producer JSON, or add `--input-format markdown` for raw
+  sharded Markdown (full packet or handoff-only). `--input -` reads stdin.
+  Unfragmented Markdown must be handoff-only; unfragmented full packets should
+  use JSON. JSON is recommended because Markdown renderers may strip comments.
+  Plain unframed text has no integrity proof. Reserved envelope, continuation
+  and fence markers cannot be supplied as oversized source content;
+- restoration strictly rejects missing, reordered, duplicate, mixed-set or
+  modified shards, malformed envelopes, inconsistent complete text fields and
+  mismatched manifests. Failures exit nonzero, expose an `error_code`, and return
+  no partial `handoff_text`. Collect all parts in order and retry with unchanged
+  producer output. There is no incremental/idempotent collector: repeated
+  generation is deterministic, but duplicate parts in one import are errors;
+- checksums prove content consistency, not sender authentication, request
+  identity, receiver acceptance or execution authority. Equal text from two
+  requests must not be business-deduplicated by set id. Restore never executes
+  content, changes Todo/claim/lease, starts a session or opens the registry.
+  Recheck current goal, scope and applicable gates after restoring; use existing
+  `handoff prepare/inspect/adopt` for ownership where applicable. This CLI path
+  does not qualify Lark delivery, cross-host recovery or arbitrary renderers;
 - `handoff_delivery_contract` is optional structured guidance derived from the
   current `handoff_readiness` plus `project_asset.execution_profile`, not a
   target-specific hack. When repeated small-scale follow-through reaches the
