@@ -3,7 +3,9 @@ from pathlib import Path
 
 import pytest
 
+from loopx.entrypoint import main as loopx_main
 from loopx import slash_command_install
+from loopx.pi_goal_mode.installation import inspect_pi_installations
 from loopx.slash_command_install import (
     install_slash_commands,
     materialize_loopx_entry_skill,
@@ -609,10 +611,11 @@ def test_pi_user_scope_installs_atomic_extension_unit(tmp_path: Path) -> None:
 
     root = home / ".pi" / "agent" / "extensions" / "loopx"
     assert payload["summary"]["pi_scope"] == "user"
-    assert payload["summary"]["pi_extension_path"] == str(root / "loopx-goal.ts")
+    assert payload["summary"]["pi_extension_path"] == str(root / "index.ts")
     assert payload["summary"]["pi_runtime_path"] == str(root / "pi-goal-loop-runtime.mjs")
-    assert (root / "loopx-goal.ts").is_file()
+    assert (root / "index.ts").is_file()
     assert (root / "pi-goal-loop-runtime.mjs").is_file()
+    assert inspect_pi_installations(pi_project=str(tmp_path), pi_user_home=str(home))["location"] == "user-global"
 
 
 def test_pi_user_scope_preflight_blocks_both_files(tmp_path: Path) -> None:
@@ -630,8 +633,135 @@ def test_pi_user_scope_preflight_blocks_both_files(tmp_path: Path) -> None:
     )
 
     assert payload["ok"] is False
-    assert not (root / "loopx-goal.ts").exists()
+    assert not (root / "index.ts").exists()
     assert runtime.read_text(encoding="utf-8") == "user owned\n"
+
+
+def test_pi_user_scope_preserves_user_entry_and_upgrades_managed_files(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    root = home / ".pi/agent/extensions/loopx"
+    root.mkdir(parents=True)
+    entry = root / "index.ts"
+    runtime = root / "pi-goal-loop-runtime.mjs"
+    entry.write_text("// user entry\n", encoding="utf-8")
+
+    blocked = install_slash_commands(
+        execute=True, surfaces=["pi"], pi_scope="user", pi_user_home=str(home)
+    )
+    assert blocked["ok"] is False
+    assert entry.read_text(encoding="utf-8") == "// user entry\n"
+    assert not runtime.exists()
+
+    entry.write_text(slash_command_install.pi_extension_source() + "\n// old\n", encoding="utf-8")
+    stale = inspect_pi_installations(pi_project=str(tmp_path), pi_user_home=str(home))
+    assert stale["scopes"]["user"]["status"] == "partial"
+    updated = install_slash_commands(
+        execute=True, surfaces=["pi"], pi_scope="user", pi_user_home=str(home)
+    )
+    assert updated["ok"] is True
+    assert _row(updated, "pi_goal_extension")["status"] == "updated"
+    assert _row(updated, "pi_goal_extension_runtime")["status"] == "created"
+    assert inspect_pi_installations(pi_project=str(tmp_path), pi_user_home=str(home))["scopes"]["user"]["status"] == "current"
+
+
+def test_pi_user_scope_follows_pi_agent_dir_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agent_dir = tmp_path / "custom-agent-dir"
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(agent_dir))
+    payload = install_slash_commands(execute=True, surfaces=["pi"], pi_scope="user")
+
+    assert payload["summary"]["pi_extension_path"] == str(agent_dir / "extensions/loopx/index.ts")
+    assert (agent_dir / "extensions/loopx/index.ts").is_file()
+    assert inspect_pi_installations(pi_project=str(tmp_path))["scopes"]["user"]["status"] == "current"
+
+
+def test_pi_inspect_cli_reads_selected_project_and_user_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    agent_dir = tmp_path / "agent"
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(agent_dir))
+    install_slash_commands(
+        execute=True, surfaces=["pi"], pi_scope="user", pi_project=str(tmp_path)
+    )
+
+    exit_code = loopx_main(
+        ["--format", "json", "slash-commands", "--inspect", "--surface", "pi", "--pi-project", str(tmp_path)]
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["location"] == "user-global"
+    assert payload["scopes"]["project"]["status"] == "absent"
+    assert payload["scopes"]["user"]["extension_path"] == str(agent_dir / "extensions/loopx/index.ts")
+
+
+def test_pi_readback_distinguishes_absent_stale_partial_and_dual_scope(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+
+    def readback() -> dict[str, object]:
+        return inspect_pi_installations(pi_project=str(tmp_path), pi_user_home=str(home))
+
+    assert readback()["location"] == "absent"
+
+    install_slash_commands(execute=True, surfaces=["pi"], pi_project=str(tmp_path))
+    assert readback()["location"] == "project-local"
+    assert readback()["scopes"]["project"]["status"] == "current"
+
+    project_runtime = tmp_path / ".pi/extensions/pi-goal-loop-runtime.mjs"
+    project_runtime.write_text(project_runtime.read_text(encoding="utf-8") + "\n// old\n")
+    assert readback()["scopes"]["project"]["status"] == "stale"
+    project_runtime.unlink()
+    assert readback()["scopes"]["project"]["status"] == "partial"
+
+    install_slash_commands(execute=True, surfaces=["pi"], pi_project=str(tmp_path))
+    install_slash_commands(
+        execute=True, surfaces=["pi"], pi_scope="user", pi_user_home=str(home)
+    )
+    dual = readback()
+    assert dual["location"] == "dual-scope"
+    assert dual["ok"] is False
+    assert "duplicate" in dual["duplicate_load_warning"]
+
+    install_slash_commands(
+        execute=True, uninstall=True, surfaces=["pi"], pi_scope="user", pi_user_home=str(home)
+    )
+    assert readback()["location"] == "project-local"
+
+
+def test_pi_user_scope_migrates_managed_legacy_entry(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    root = home / ".pi/agent/extensions/loopx"
+    root.mkdir(parents=True)
+    legacy = root / "loopx-goal.ts"
+    legacy.write_text(slash_command_install.pi_extension_source(), encoding="utf-8")
+    assert inspect_pi_installations(pi_project=str(tmp_path), pi_user_home=str(home))["scopes"]["user"]["status"] == "stale"
+
+    payload = install_slash_commands(
+        execute=True, surfaces=["pi"], pi_scope="user", pi_user_home=str(home)
+    )
+    assert payload["ok"] is True
+    assert not legacy.exists()
+    assert (root / "index.ts").is_file()
+    assert _row(payload, "pi_goal_legacy_user_extension")["status"] == "retired_managed_file"
+
+
+def test_pi_user_uninstall_blocks_atomically_on_user_owned_file(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    install_slash_commands(
+        execute=True, surfaces=["pi"], pi_scope="user", pi_user_home=str(home)
+    )
+    root = home / ".pi/agent/extensions/loopx"
+    extension = root / "index.ts"
+    runtime = root / "pi-goal-loop-runtime.mjs"
+    runtime.write_text("// user replacement\n", encoding="utf-8")
+
+    payload = install_slash_commands(
+        execute=True, uninstall=True, surfaces=["pi"], pi_scope="user", pi_user_home=str(home)
+    )
+    assert payload["ok"] is False
+    assert _row(payload, "pi_goal_extension")["status"] == "blocked_user_owned_pi_file"
+    assert extension.exists()
+    assert runtime.read_text(encoding="utf-8") == "// user replacement\n"
 
 
 def test_pi_install_does_not_touch_default_all_surfaces(tmp_path: Path) -> None:

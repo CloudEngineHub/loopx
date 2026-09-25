@@ -16,6 +16,12 @@ from .kiro_cli_goal_mode import (
 from .opencode_goal_mode import plugin_source, runtime_source
 from .pi_goal_mode import extension_source as pi_extension_source
 from .pi_goal_mode import runtime_source as pi_runtime_source
+from .pi_goal_mode.installation import (
+    _pi_agent_dir,
+    _pi_extension_path,
+    _pi_extension_root,
+    _pi_runtime_path,
+)
 from .slash_command_files import (
     front_matter as _front_matter,
     install_skill_facade as _install_skill_facade,
@@ -759,20 +765,6 @@ def _merge_cursor_mcp(cursor_root: Path, *, uninstall: bool, execute: bool) -> s
     return "written"
 
 
-def _pi_extension_root(project_root: Path, *, scope: str, user_home: Path) -> Path:
-    if scope == "user":
-        return user_home / ".pi" / "agent" / "extensions" / "loopx"
-    return project_root / ".pi" / "extensions"
-
-
-def _pi_extension_path(extension_root: Path) -> Path:
-    return extension_root / "loopx-goal.ts"
-
-
-def _pi_runtime_path(extension_root: Path) -> Path:
-    return extension_root / "pi-goal-loop-runtime.mjs"
-
-
 def install_slash_commands(
     *,
     execute: bool,
@@ -807,9 +799,9 @@ def install_slash_commands(
     if pi_scope not in {"project", "user"}:
         raise ValueError("pi_scope must be 'project' or 'user'")
     pi_project_root = Path(pi_project or ".").expanduser().resolve()
-    pi_home = Path(pi_user_home).expanduser().resolve() if pi_user_home else Path.home()
+    pi_agent_dir = _pi_agent_dir(pi_user_home)
     pi_extension_root = _pi_extension_root(
-        pi_project_root, scope=pi_scope, user_home=pi_home
+        pi_project_root, scope=pi_scope, agent_dir=pi_agent_dir
     )
     installed: list[dict[str, Any]] = []
 
@@ -1322,26 +1314,60 @@ def install_slash_commands(
                 )
 
     if "pi" in effective_surfaces:
-        extension_path = _pi_extension_path(pi_extension_root)
+        extension_path = _pi_extension_path(pi_extension_root, scope=pi_scope)
         runtime_path = _pi_runtime_path(pi_extension_root)
+        legacy_user_path = pi_extension_root / "loopx-goal.ts" if pi_scope == "user" else None
         extension_content = pi_extension_source()
         runtime_content = pi_runtime_source()
         if uninstall:
-            for mechanism, path in (
-                ("pi_goal_extension", extension_path),
-                ("pi_goal_extension_runtime", runtime_path),
-            ):
+            retire_targets = [extension_path, runtime_path]
+            if legacy_user_path is not None and legacy_user_path.exists():
+                retire_targets.append(legacy_user_path)
+            user_owned_pi_paths = [
+                str(path) for path in retire_targets
+                if _retire_status(path, execute=False) == "skipped_user_file"
+            ]
+            if user_owned_pi_paths:
                 installed.append(
                     {
                         "surface": "pi",
                         "host_surfaces": ["pi"],
-                        "mechanism": mechanism,
+                        "mechanism": "pi_goal_extension",
                         "command": "/loopx",
-                        "path": str(path),
-                        "status": _retire_status(path, execute=execute),
+                        "path": str(extension_path),
+                        "status": "blocked_user_owned_pi_file",
                         "invoke_as": ["/loopx", "loopx_goal_activate"],
+                        "conflicts": user_owned_pi_paths,
                     }
                 )
+            else:
+                for mechanism, path in (
+                    ("pi_goal_extension", extension_path),
+                    ("pi_goal_extension_runtime", runtime_path),
+                ):
+                    installed.append(
+                        {
+                            "surface": "pi",
+                            "host_surfaces": ["pi"],
+                            "mechanism": mechanism,
+                            "command": "/loopx",
+                            "path": str(path),
+                            "status": _retire_status(path, execute=execute),
+                            "invoke_as": ["/loopx", "loopx_goal_activate"],
+                        }
+                    )
+                if legacy_user_path is not None and legacy_user_path.exists():
+                    installed.append(
+                        {
+                            "surface": "pi",
+                            "host_surfaces": ["pi"],
+                            "mechanism": "pi_goal_legacy_user_extension",
+                            "command": "/loopx",
+                            "path": str(legacy_user_path),
+                            "status": _retire_status(legacy_user_path, execute=execute),
+                            "invoke_as": [],
+                        }
+                    )
         else:
             # The adapter and its loop runtime are one atomic delivery unit:
             # preflight both targets and fail closed with zero writes when any
@@ -1390,6 +1416,20 @@ def install_slash_commands(
                             "invoke_as": ["/loopx", "loopx_goal_activate"],
                         }
                     )
+                if legacy_user_path is not None:
+                    retired = _retire_managed_file(legacy_user_path, execute=execute)
+                    if retired:
+                        installed.append(
+                            {
+                                "surface": "pi",
+                                "host_surfaces": ["pi"],
+                                "mechanism": "pi_goal_legacy_user_extension",
+                                "command": "/loopx",
+                                "path": str(legacy_user_path),
+                                "status": retired,
+                                "invoke_as": [],
+                            }
+                        )
 
     status_counts: dict[str, int] = {}
     for item in installed:
@@ -1423,7 +1463,7 @@ def install_slash_commands(
             "opencode_plugin_path": str(opencode_root / "plugins" / "loopx-goal.js") if "opencode" in effective_surfaces and with_goal_bridge else None,
             "opencode_package_path": str(opencode_root / "package.json") if "opencode" in effective_surfaces and with_goal_bridge else None,
             "pi_scope": pi_scope if "pi" in effective_surfaces else None,
-            "pi_extension_path": str(_pi_extension_path(pi_extension_root)) if "pi" in effective_surfaces else None,
+            "pi_extension_path": str(_pi_extension_path(pi_extension_root, scope=pi_scope)) if "pi" in effective_surfaces else None,
             "pi_runtime_path": str(_pi_runtime_path(pi_extension_root)) if "pi" in effective_surfaces else None,
             "status_counts": status_counts,
             "skip_policy": (
