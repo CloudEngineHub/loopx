@@ -374,7 +374,7 @@ test("a downstream timeout is not mislabeled as registry contention", async (t) 
   const {withShadowRegistrySource} = await import("../../loopx/control_plane/coordination/shadow_registry_source.ts");
   const {EffectRuntimeLockTimeoutError} = await import("../../loopx/control_plane/effect_runtime_errors.ts");
   const downstream = new EffectRuntimeLockTimeoutError("canonical store lock timed out");
-  await assert.rejects(withShadowRegistrySource(request.source_snapshot as JsonObject, async () => {
+  await assert.rejects(withShadowRegistrySource((request as JsonObject).source_snapshot as JsonObject, async () => {
     throw downstream;
   }), (error) => error === downstream);
 });
