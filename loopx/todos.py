@@ -739,6 +739,7 @@ def add_goal_todo(
     project: Path | None = None,
     state_file: Path | None = None,
     dry_run: bool = False,
+    operation_id: str | None = None,
 ) -> dict[str, Any]:
     shadow_runtime_root = effective_runtime_root(registry_path, runtime_root_arg)
     if role not in TODO_SECTION_HEADINGS:
@@ -852,6 +853,7 @@ def add_goal_todo(
         enforce_boundedness=True,
     )
     canonical_create = create_canonical_todo_if_promoted(
+        operation_id=operation_id,
         registry_path=registry_path,
         runtime_root=shadow_runtime_root,
         goal_id=goal_id,
@@ -897,6 +899,8 @@ def add_goal_todo(
     )
     if canonical_create is not None:
         return canonical_create
+    if operation_id is not None:
+        raise ValueError("todo add --operation-id requires promoted canonical authority")
     resolved_project, resolved_state_file = resolve_todo_state_path(
         registry_path=registry_path,
         goal_id=goal_id,

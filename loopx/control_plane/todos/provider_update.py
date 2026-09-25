@@ -31,6 +31,7 @@ from .completion_validation import (
 )
 from .completion_validation_store import (
     persist_completion_validation_declaration,
+    prepare_completion_validation_declaration,
     read_completion_validation_declaration,
 )
 from .completion_validation_projection import (
@@ -128,6 +129,7 @@ def _publish_completion_validation_revision(
         runtime_root=runtime_root,
         goal_id=goal_id,
         todo_id=todo_id,
+        expected_digest=expected_digest,
     ) != declaration:
         raise LocalCoordinationAuthorityUnavailable(
             "completion validation revision committed but private declaration readback failed",
@@ -215,6 +217,10 @@ def update_canonical_todo_if_promoted(
            if validation_revision is not None else {}),
         **({"monitor_observation": asdict(monitor_observation)} if monitor_observation is not None else {}),
     }
+    if completion_validation_revision is not None and not dry_run:
+        prepare_completion_validation_declaration(
+            runtime_root=runtime_root, goal_id=goal_id, declaration=completion_validation_revision
+        )
     result = effect_runtime_result("coordination.local_authority.todo_update", request)
     completion_validation_executed = False
     if isinstance(result, dict) and result.get("status") == "execute_validation":
