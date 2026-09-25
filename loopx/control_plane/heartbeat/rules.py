@@ -86,8 +86,9 @@ HEARTBEAT_TURN_BOOTSTRAP_RULE = (
     "statements in one shell, not a command-prefix assignment; reuse the value on retries."
 )
 HOST_LOOP_QUOTA_DISPATCH_RULE = (
-    "Quota: selection_command if needed; re-enter as instructed, do/verify "
-    "authorized work, then follow next_cli_actions for writeback/spend."
+    "Quota: use selection_command when required; "
+    "re-enter as instructed, do/verify authorized work, then follow "
+    "next_cli_actions for writeback/spend."
 )
 HOST_LOOP_TODO_CLOSEOUT_RULE = (
     "Done -> successor first; final -> accountable refresh, spend, then "

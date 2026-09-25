@@ -46,9 +46,14 @@ Arbitrary-length caller paths/scopes are not promised to fit this fixed fixture
 envelope; their emitted output is qualified separately by the CLI matrix.
 Do not remove safety or settlement semantics to fit the envelope, and do not copy
 dynamic quota decisions into the static prompt. The brief body allowance rises
-from 3,500 to 3,700 characters so its English wording can retain blocker,
-continuation, and settlement rules. Saved automation, scheduler cadence, and
-spending policy do not change with these budget adjustments.
+from 3,500 to 4,300 characters. Translating its fixed Chinese instructions to
+English grows the Codex App brief body from 3,282 to 3,980 characters (3,494 to
+4,192 with two agent-profile scopes) while its `o200k_base` token count falls
+from 962 to 927 (994 to 959) and UTF-8 bytes grow about 2%. The character
+ceiling therefore moves with the script, not with prompt cost, and keeps about
+8% headroom for the unscoped fixture, close to the previous 7%. Saved
+automation, scheduler cadence, and spending policy do not change with these
+budget adjustments.
 
 The quota budget includes the typed action portfolio, one shared bound CLI
 route, pending-selection qualification, and hard-lane preemption evidence. The

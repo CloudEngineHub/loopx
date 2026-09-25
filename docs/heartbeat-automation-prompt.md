@@ -61,7 +61,7 @@ static refresh/spend sequence: after validated work it follows the current
 `interaction_contract.cli_channel.settlement_plan.ordered_steps`, or current
 `next_cli_actions` when there is no plan. Generator command fields remain for
 compatibility, not as a stale fallback. Todo acceptance alone is not Turn
-settlement or terminal vision closure. The brief budget is 3,700 characters.
+settlement or terminal vision closure. The brief budget is 4,300 characters.
 
 Brief 与 thin 共用完整执行义务路径；这次有意移除 brief 固定结算配方，而不是
 删除结算义务。真实 App preflight、registry scope、完整 guard 和静态安全规则

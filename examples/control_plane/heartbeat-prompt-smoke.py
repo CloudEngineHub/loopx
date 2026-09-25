@@ -589,7 +589,7 @@ def main() -> int:
         "no scope in todo metadata",
         "Normal turns use CLI `interaction_contract`; use `loopx-project` for "
         "lifecycle/registry and `loopx-self-repair` for runtime/projection drift",
-        "selection_command if needed",
+        "use selection_command when required",
         "heartbeat-prequota",
         'loopx --format json --registry "$HOME/.codex/loopx/registry.global.json" quota should-run '
         "--goal-id loopx-meta --agent-id codex-product-capability --available-capability network "
@@ -695,7 +695,7 @@ def main() -> int:
         "Advance `public-heartbeat-goal` from /tmp/public-heartbeat-goal/ACTIVE_GOAL_STATE.md",
         "Normal turns use CLI `interaction_contract`; use `loopx-project` for "
         "lifecycle/registry and `loopx-self-repair` for runtime/projection drift",
-        "selection_command if needed",
+        "use selection_command when required",
         "quota should-run",
         "`user_channel.notify` controls OUTPUT only: NOTIFY=show; DONT_NOTIFY=no output",
         "Due/peer work is not a user prompt",

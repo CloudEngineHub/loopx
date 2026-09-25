@@ -173,7 +173,7 @@ def test_public_facade_still_builds_and_renders_prompts() -> None:
 
 @pytest.mark.parametrize(
     ("mode", "base_budget"),
-    [("full", 12000), ("compact", 6500), ("brief", 3700), ("thin", 2500)],
+    [("full", 12000), ("compact", 6500), ("brief", 4300), ("thin", 2500)],
 )
 def test_reward_memory_prompt_headroom_is_fixed_and_feature_scoped(
     mode: str, base_budget: int
