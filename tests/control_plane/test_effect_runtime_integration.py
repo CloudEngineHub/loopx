@@ -960,6 +960,21 @@ def test_startup_diagnostic_survives_a_padding_value_it_quotes_back(
     assert "150" in message
 
 
+def test_startup_diagnostic_recovers_the_envelope_beside_other_output() -> None:
+    """Framing is per record, so earlier noise does not bury the diagnostic."""
+
+    envelope = _envelope("invalid_idle_timeout", " 150 ").decode("utf-8")
+    stderr = (
+        "npm warn ignoring empty lockfile\n"
+        "node:events:496\n" + envelope + "Warning: fsync() failed\n"
+    ).encode("utf-8")
+
+    recovered = effect_runtime._startup_diagnostic(stderr)
+
+    assert recovered is not None
+    assert recovered[0] == "invalid_idle_timeout"
+
+
 def test_startup_diagnostic_ignores_stderr_without_an_envelope() -> None:
     """A crash trace is not a typed configuration diagnostic."""
 
