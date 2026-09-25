@@ -45,6 +45,10 @@ shared-authority 的当前核对表区分已合入实现、在途 PR、新代码
 
 ## 当前实现检查点
 
+长历史 closeout 现在复用经原始字节校验的 TS 日志前缀与统一 monitor 提交规则，
+Python 删除重复 run log 读取，只适配 Todo 事实。只读失败与提交不确定性分开报告。
+这是收尾边界内的有界退役，不是全量 Python 移除；[当前交付与限制](ledger/shared-goal-authority-state-provider-v0/2026-09-24-default-cutover-reconciliation.zh-CN.md#长历史收尾检查本次修复与剩余边界)。
+
 晋升准入现将完整来源绑定到当前 registry witness，并在 TS 持锁范围内重新校验；
 保存计划执行保留已审核的 handoff 策略，失败结果如实报告持久 fence。
 已提交事务的恢复仍按原 fence/receipt，不要求失去权威的旧来源重新有效。

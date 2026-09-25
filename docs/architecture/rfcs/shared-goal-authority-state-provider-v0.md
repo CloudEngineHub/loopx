@@ -50,6 +50,11 @@ shadow lineage, still default-off and subject to explicit bootstrap.
 
 ## Current implementation checkpoint
 
+Long-history closeout reuse retains only re-verifiable parsed prefixes; it adds
+no durable authority and relaxes no writer fence or D2 gate. This runtime repair
+does not mechanically subtract one of the three remaining implementation packages.
+[Evidence and boundary](ledger/shared-goal-authority-state-provider-v0/2026-09-24-default-cutover-reconciliation.md#long-history-closeout-this-repair-and-its-remaining-boundary).
+
 Promotion admission now binds complete sources to a current registry witness
 and rechecks it inside the TS lock scope. Saved execution retains the reviewed
 handoff policy, and failures report durable fence presence. Recovery of a

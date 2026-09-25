@@ -190,6 +190,14 @@
       "classification": "codec_api"
     },
     {
+      "site": "loopx/capabilities/manager_context/discovery.py::<module>.agent_page::codec_read:decode_registry_snapshot#1",
+      "line": 38,
+      "column": 20,
+      "kind": "codec_read",
+      "api": "decode_registry_snapshot",
+      "classification": "codec_api"
+    },
+    {
       "site": "loopx/capabilities/manager_context/evidence_export.py::<module>.export_page::codec_read:load_registry#1",
       "line": 12,
       "column": 16,
@@ -639,7 +647,7 @@
     },
     {
       "site": "loopx/cli_commands/quota.py::<module>._dispatch_quota_turn_start_hooks::codec_read:load_registry#1",
-      "line": 264,
+      "line": 267,
       "column": 37,
       "kind": "codec_read",
       "api": "load_registry",
@@ -879,8 +887,8 @@
     },
     {
       "site": "loopx/control_plane/coordination/runtime_shadow.py::<module>.build_runtime_shadow_source_snapshot::codec_read:load_registry#1",
-      "line": 362,
-      "column": 16,
+      "line": 301,
+      "column": 20,
       "kind": "codec_read",
       "api": "load_registry",
       "classification": "codec_api"
@@ -1023,7 +1031,7 @@
     },
     {
       "site": "loopx/control_plane/goals/deletion_service.py::<module>._execute_deletion::codec_transaction:project_registry_transaction#1",
-      "line": 597,
+      "line": 596,
       "column": 21,
       "kind": "codec_transaction",
       "api": "project_registry_transaction",
@@ -1031,7 +1039,7 @@
     },
     {
       "site": "loopx/control_plane/goals/deletion_service.py::<module>._load_locked_payloads::direct_json_read:read_json#1",
-      "line": 433,
+      "line": 432,
       "column": 9,
       "kind": "direct_json_read",
       "api": "read_json",
@@ -1039,7 +1047,7 @@
     },
     {
       "site": "loopx/control_plane/goals/deletion_service.py::<module>._load_locked_payloads::codec_read:load_registry#1",
-      "line": 435,
+      "line": 434,
       "column": 14,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1047,7 +1055,7 @@
     },
     {
       "site": "loopx/control_plane/goals/deletion_service.py::<module>._load_locked_payloads::direct_json_read:read_json#2",
-      "line": 439,
+      "line": 438,
       "column": 22,
       "kind": "direct_json_read",
       "api": "read_json",
@@ -1055,7 +1063,7 @@
     },
     {
       "site": "loopx/control_plane/goals/deletion_service.py::<module>._resolve_route::codec_read:load_registry#1",
-      "line": 264,
+      "line": 263,
       "column": 22,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1063,7 +1071,7 @@
     },
     {
       "site": "loopx/control_plane/goals/deletion_service.py::<module>._resolve_route::direct_json_read:read_json#1",
-      "line": 265,
+      "line": 264,
       "column": 22,
       "kind": "direct_json_read",
       "api": "read_json",
@@ -1071,7 +1079,7 @@
     },
     {
       "site": "loopx/control_plane/goals/deletion_service.py::<module>._restore_locked_registry::direct_json_write:atomic_write_json#1",
-      "line": 571,
+      "line": 570,
       "column": 5,
       "kind": "direct_json_write",
       "api": "atomic_write_json",
@@ -1079,7 +1087,7 @@
     },
     {
       "site": "loopx/control_plane/goals/deletion_service.py::<module>._write_deletion::codec_read:load_registry#1",
-      "line": 511,
+      "line": 510,
       "column": 27,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1087,7 +1095,7 @@
     },
     {
       "site": "loopx/control_plane/goals/deletion_service.py::<module>._write_deletion::direct_json_read:read_json#1",
-      "line": 525,
+      "line": 524,
       "column": 24,
       "kind": "direct_json_read",
       "api": "read_json",
@@ -1095,7 +1103,7 @@
     },
     {
       "site": "loopx/control_plane/goals/deletion_service.py::<module>._write_locked_registry::direct_json_write:atomic_write_json#1",
-      "line": 558,
+      "line": 557,
       "column": 5,
       "kind": "direct_json_write",
       "api": "atomic_write_json",

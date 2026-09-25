@@ -1,8 +1,9 @@
 # Default cutover: reconciled implementation frontier
 
-- Baseline: `37bbaec79` on `main`, 2026-09-25; open PR states are a snapshot, not merge promises.
+- Baseline: `41ba6f4d9` on `main`, 2026-09-25; open PR states are a snapshot, not merge promises.
 - Owners: overall roadmap #4574 R5/G2; shared authority L2–L9/D1–D3; TS migration T1–T4.
-- Delivery: current registration admission, complete saved migration intent and truthful fence recovery.
+- Delivered #5040: current registration admission, complete saved migration intent and truthful fence recovery.
+- Current increment: long-history closeout reuse and TS-owned monitor evidence; the migration packages below remain open.
 - This checkpoint supersedes numerical remaining-PR estimates in earlier delivery entries.
 
 ## Correct the accounting
@@ -62,6 +63,39 @@ transport, authentication/tenant policy, restore identity, operations and
 capacity qualification remain its separate medium-term path. Local default
 does not wait for PostgreSQL deployment; a passing conformance suite does not
 establish production service readiness.
+
+## Long-history closeout: this repair and its remaining boundary
+
+A live long-running lane lost the response to the five-second
+`quota.prior_host_turn_closeout.preflight` query; later read-only inspection and
+same-Turn retry recovered. Per-request indexing already exists. This repair
+removes repeated JSON decoding across reads: always read fresh bytes and hash
+the entire retained newline-terminated prefix before reuse; decode only appended
+lines when it matches. Rewrites, truncation, replacement, malformed rows and
+unfinished tails remain visible, as do conflicts in old Turns. Retain at most
+four logs and prefixes representing 128 MiB of source bytes; oversized histories
+use uncached parsing. This bounds retained source volume, not exact JS heap size.
+The cache is disposable and introduces no durable index, format or authority.
+
+Cold parsing yields between data batches to share the runtime event loop. Full
+byte reads remain necessary: this is not constant-time arbitrary-history support
+or D2 retention/capacity qualification. The five-second budget is unchanged. The
+incident's transient process/host scheduling cause was not reproduced reliably;
+validation establishes reduced duplicate work and concurrency headroom, not the
+absence of every possible environmental timeout.
+
+Monitor closeout now consumes the existing TS settlement rule for an exact
+committed poll. Python no longer scans the run log a second time and adapts only
+current Todo facts. Later uncommitted observations cannot hide earlier exact
+commit evidence; foreign identities and wrong effects cannot settle a Turn.
+A lost read-only preflight response reports `closeout_query_unavailable`, without
+asking for a nonexistent preflight write receipt. Unknown queries remain closed;
+there is no automatic mutation replay or shared-runtime restart.
+
+This is an evidenced R1/R5/S7 liveness repair and bounded Python retirement, not
+completion of implementation package 2. The three named boundaries above and
+separate #4931/D2 evidence gates remain. Existing quota CLI/heartbeat entrypoints
+adopt the change; no new setting or separate frontend/Lark policy is needed.
 
 ## Delivered #5013: complete-source transport and budget decision
 

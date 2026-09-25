@@ -16,6 +16,22 @@ External channels need an owner-configured grant in
 
 Use the actual connection channel and provider sender identity. Keep this file
 private (0600); do not commit it. Missing grants disable external delivery.
+For an existing channel with an authorized sender, use the local operator CLI
+to preview, grant, or revoke one registered recipient without editing the
+policy file by hand:
+
+```sh
+loopx manager-inbox grant-delivery-target --channel-id manager.external.0123456789abcdef01234567 --goal-id research --agent-id worker
+loopx manager-inbox grant-delivery-target --channel-id manager.external.0123456789abcdef01234567 --goal-id research --agent-id worker --execute
+loopx manager-inbox revoke-delivery-target --channel-id manager.external.0123456789abcdef01234567 --goal-id research --agent-id worker --execute
+```
+
+Pass the same `--registry` and `--runtime-root` used by the manager connection.
+Without `--execute`, these commands only preview the target and count change.
+Grant requires an active registered Goal and Agent, an existing sender-bound
+channel, and membership in any explicit audience Goal read scope. The command
+does not create a sender grant, launch the Agent, or grant protected-operation
+authority. Revocation also works when the former Agent is no longer registered.
 Remove a source/target grant to revoke future delivery, including replay attempts.
 Provider ingress receipts bind the current message digest, channel and sender;
 a model cannot create that provenance through its response.
