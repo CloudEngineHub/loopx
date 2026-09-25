@@ -85,6 +85,7 @@ import {
   presentedAgentFamily,
 } from "../features/personal-workspace/agent-family";
 import { PersonalWorkspacePage } from "../features/personal-workspace/personal-workspace-page";
+import { MIN_SEPARATE_ANSWER_LENGTH, visibleAgentMessage } from "../features/personal-workspace/answer-text";
 import { useWorkspaceI18n, type WorkspaceTranslate } from "../features/personal-workspace/i18n";
 import {
   agentStatusSentence,
@@ -497,6 +498,7 @@ type PersonalHomeModel = {
 };
 type PersonalManagerMessage = {
   sourceMessageId?: string;
+  sourceSessionId?: string;
   sourceTurnId?: string;
   activity?: string[];
   agentLabel?: string;
@@ -614,19 +616,6 @@ function personalGoalTitle(goalId: string, displayName?: string | null) {
     .filter(Boolean)
     .map((part, index) => index === 0 ? `${part.slice(0, 1).toUpperCase()}${part.slice(1)}` : part)
     .join(" ");
-}
-
-function visibleAgentMessage(value: string) {
-  return value
-    .split(/\r?\n/u)
-    .filter((line) => !/^\s*GOAL_(STATUS|PROGRESS)\s*:/u.test(line))
-    .map((line) => {
-      if (/^\s*GOAL_EVIDENCE\s*:/u.test(line)) return line.replace(/^\s*GOAL_EVIDENCE\s*:/u, "验证依据：");
-      if (/^\s*NEXT_ACTION\s*:/u.test(line)) return line.replace(/^\s*NEXT_ACTION\s*:/u, "下一步：");
-      return line;
-    })
-    .join("\n")
-    .trim();
 }
 
 function isAgentResultMessage(role: string, text: string) {
@@ -1586,11 +1575,14 @@ function PersonalGoalHome({
             const collaboration = row.sourceMessageId ? collaborationByMessage.get(row.sourceMessageId) : source?.collaboration;
             if (JSON.stringify(delivery) === JSON.stringify(row.returnDelivery) && JSON.stringify(collaboration) === JSON.stringify(row.collaboration)) return row;
             deliveryChanged = true;
-            return { ...row, sourceMessageId: row.sourceMessageId ?? source?.message_id, returnDelivery: delivery, collaboration };
+            return { ...row, sourceMessageId: row.sourceMessageId ?? source?.message_id,
+              sourceSessionId: row.sourceSessionId ?? (source?.message_id ? conversationReturnSessionId : undefined),
+              returnDelivery: delivery, collaboration };
           });
           if (!fresh.length && !deliveryChanged) return current;
           return { ...current, [contextId]: [...updated, ...fresh.map((row) => ({
             id: managerMessageId.current++, sourceMessageId: row.message_id,
+            sourceSessionId: conversationReturnSessionId,
             role: "assistant" as const,
             agentLabel: "协作回执",
             sourceLabel: "协作回执", text: visibleAgentMessage(row.text), lines: [],
@@ -1688,6 +1680,7 @@ function PersonalGoalHome({
             ...current,
             [targetContextId]: history.messages.map((message) => ({
               sourceMessageId: message.message_id,
+              sourceSessionId: message.session_id,
               agentLabel: message.role === "user"
                 ? undefined
                 : message.origin === "manager_followup"
@@ -2219,6 +2212,19 @@ function PersonalGoalHome({
         text: visibleAgentMessage(response.message || streamedText.trim())
           || `${answerIdentityLabel(targetContextId, selectedRoute.label)} 已完成分析。`,
       });
+      // The completed transcript is the immutable answer owner. Resolve its
+      // stored identity before offering a link; a failed read never hides the
+      // visible answer or retries the model Turn.
+      const completedMessageId = streamingMessageId;
+      if (completedMessageId !== null && (response.message || streamedText).length >= MIN_SEPARATE_ANSWER_LENGTH) {
+        void fetchChatSession(sessionId).then((stored) => {
+          const answer = stored.messages.find((item) =>
+            item.turn_id === streamed.turnId && ["agent", "assistant"].includes(item.role));
+          if (answer) updateManagerAssistantMessage(targetContextId, completedMessageId, {
+            sourceMessageId: answer.message_id, sourceSessionId: sessionId,
+          });
+        }).catch(() => { /* The original conversation remains readable. */ });
+      }
       const todoProposals = response.proposals.filter(isTodoProposal);
       // The channel already states where a team plan is confirmed: its answer
       // names the Goal whose workspace holds the card, so a manager-channel
@@ -2620,6 +2626,8 @@ function PersonalGoalHome({
         collaboration: message.collaboration,
         role: message.role,
         sourceTurnId: message.sourceTurnId,
+        sourceMessageId: message.sourceMessageId,
+        sourceSessionId: message.sourceSessionId,
         text: message.text || (message.pending ? "" : message.lines.join("\n")),
       },
     })),
@@ -2805,6 +2813,8 @@ function PersonalGoalHome({
             setMessagesByContext((current) => ({
               ...current,
               [run.goalId]: snapshot.messages.map((message) => ({
+                sourceMessageId: message.message_id,
+                sourceSessionId: sessionId,
                 agentLabel: message.role === "user" ? undefined : run.agentLabel,
                 attachments: workspaceImageAttachments(message.attachments),
                 id: managerMessageId.current++,

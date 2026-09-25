@@ -4,6 +4,7 @@ import { CollaborationCard } from "./collaboration-card";
 import { Activity, Bot, Sparkles, Square } from "lucide-react";
 
 import { AttentionRow } from "./cards/attention-row";
+import { MIN_SEPARATE_ANSWER_LENGTH } from "./answer-text";
 import { MarkdownText } from "./markdown";
 import { OutputRow } from "./cards/output-row";
 import { RunRow } from "./cards/run-row";
@@ -12,6 +13,14 @@ import { useWorkspaceI18n } from "./i18n";
 import { ReturnDeliveryStatus } from "./return-delivery-status";
 import {ManagerTeamResult} from "./manager-team-result";
 import type { WorkspaceDrawerSelection, WorkspaceGoal, WorkspaceMessage, WorkspaceTimelineItem } from "./personal-workspace-model";
+
+function answerLink(sessionId: string, messageId: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("reportSessionId", sessionId);
+  url.searchParams.set("reportMessageId", messageId);
+  url.hash = "";
+  return url.toString();
+}
 
 function MessageActivity({ message, onInterruptTurn, onSteerTurn }: {
   message: WorkspaceMessage;
@@ -180,6 +189,11 @@ export function ChannelTimeline({
           <header><strong>{item.message.role === "user" ? t("common.you") : item.message.agentLabel ?? t("header.manager")}</strong>{item.message.time ? <time>{item.message.time}</time> : null}</header>
           {item.message.attachments?.length ? <div className="personal-message-images">{item.message.attachments.map((attachment) => <img alt={attachment.name} key={attachment.id} src={attachment.dataUrl} />)}</div> : null}
           {item.message.role === "user" ? <p>{item.message.text}</p> : item.message.text ? <MarkdownText text={item.message.text} /> : null}
+          {item.message.role === "assistant" && !item.message.pending && item.message.text.length >= MIN_SEPARATE_ANSWER_LENGTH
+            && item.message.sourceSessionId && item.message.sourceMessageId
+            ? <a className="personal-answer-link" href={answerLink(item.message.sourceSessionId, item.message.sourceMessageId)}
+                target="_blank" rel="noopener noreferrer">{locale === "zh-CN" ? "单独阅读完整答复" : "Read full answer separately"}</a>
+            : null}
           {item.message.role !== "user" && (item.message.pending || item.message.sourceTurnId || item.message.activity?.length) ? <MessageActivity message={item.message} onInterruptTurn={onInterruptTurn} onSteerTurn={onSteerTurn}/> : null}
           <CollaborationCard request={item.message.collaboration} />
               <ReturnDeliveryStatus delivery={item.message.returnDelivery} />
