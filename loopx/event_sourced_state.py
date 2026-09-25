@@ -946,13 +946,11 @@ def build_state_projection(
         kind = event["event_type"]
         edits = kind in (TODO_ADDED, TODO_UPDATED)
         order = payload.get("planner_order") if kind == TODO_ADDED else None
-        if order is not None:
-            if isinstance(order, bool):
-                raise StateEventError("planner_order must be an integer")
-            try:
-                order = int(order)
-            except (ValueError, TypeError, OverflowError) as exc:
-                raise StateEventError("planner_order must be an integer") from exc
+        # The typed fold rejects non-integer orders, so the adapter must not
+        # coerce them first: truncating 1.5 to 1 would sort a Todo by one value
+        # and report another. Every producer of this payload writes an integer.
+        if order is not None and (isinstance(order, bool) or not isinstance(order, int)):
+            raise StateEventError("planner_order must be an integer")
         sequence = event.get("append_sequence")
         for value in (order, sequence):
             if value is not None and abs(value) > 2**53 - 1:

@@ -119,3 +119,29 @@ def test_long_history_folds_across_bounded_calls_without_losing_old_fields(monke
     # Duplicate identity protection must survive a batch boundary as well.
     with pytest.raises(StateEventError, match="already exists"):
         build_state_projection([*source, event("todo_added", 4101, title="Cannot reset history")])
+
+
+def test_fractional_planner_order_is_rejected_before_typing():
+    # The adapter used to truncate 1.5 to 1, so the fold sorted by one value
+    # while the projection still reported the original fraction.
+    with pytest.raises(StateEventError, match="planner_order must be an integer"):
+        build_state_projection([
+            event("todo_added", 1, title="Fractional", planner_order=1.5),
+            event("todo_added", 2, title="Integer", planner_order=1, todo_id="todo_beta"),
+        ])
+
+
+@pytest.mark.parametrize("order", [True, "1", [1], {"value": 1}])
+def test_non_integer_planner_order_forms_are_rejected(order):
+    with pytest.raises(StateEventError, match="planner_order must be an integer"):
+        build_state_projection([event("todo_added", 1, title="Bad order", planner_order=order)])
+
+
+def test_integer_and_absent_planner_order_still_project():
+    result = build_state_projection([
+        event("todo_added", 1, title="First", planner_order=3),
+        event("todo_added", 2, title="Second", todo_id="todo_beta"),
+    ])
+    items = result["agent_todos"]["items"]
+    assert [item["todo_id"] for item in items] == ["todo_alpha", "todo_beta"]
+    assert items[0]["planner_order"] == 3
