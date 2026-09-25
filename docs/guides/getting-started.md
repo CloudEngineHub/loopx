@@ -98,9 +98,15 @@ can discover user-installed skills:
   restart and runs the quota-gated goal loop through `loopx_goal_activate`.
   `loopx slash-commands --install --surface pi` installs it for the current
   project; add `--pi-project <path>` for another project, or `--pi-scope user`
-  to install it under `~/.pi/agent/extensions/loopx/` for all projects. Only
-  extension code is global: private bindings remain under each project's
-  `.loopx/pi/` (already gitignored via `.loopx/`).
+  to install the discoverable `index.ts` and runtime under
+  `<agent-dir>/extensions/loopx/` for all projects. `<agent-dir>` defaults to
+  `~/.pi/agent` and follows `PI_CODING_AGENT_DIR`. Run
+  `loopx slash-commands --inspect --surface pi` to read both scopes, including
+  stale or partial installs and a warning when both scopes would load. To
+  remove one scope, use `--uninstall --surface pi` with that scope; reinstall
+  with `--install` to upgrade managed files. Only extension code is global:
+  private bindings remain under each project's `.loopx/pi/` (already
+  gitignored via `.loopx/`).
 
 The command family is the same across surfaces, even when the host-specific
 entry point is different:
