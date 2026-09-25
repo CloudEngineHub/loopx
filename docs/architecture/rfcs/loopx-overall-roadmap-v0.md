@@ -364,6 +364,11 @@ responsible receiver, actual work, exact artifact use, independent acceptance,
 and synthesized return to the initiating conversation. A registration is not a
 live binding; a missing catalog row is not proof that no suitable owner exists.
 Use scoped discovery and permitted recovery before requesting manual IDs.
+Private-owner discovery is broad by default across registered local resources
+and authorized connected sources; a delivery allowlist, missing live binding or
+bounded first page must not hide an otherwise visible responsible Agent.
+Keep discovery, audience evidence access, delegation and execution readiness
+separate, as specified by [manager §5.5](capable-manager-semantic-handoff-v0.md#55-responsibility-discovery-and-receiver-owned-planning).
 
 The P0 pilots are responsibility routing and real 2–3-worker coordination:
 parallel joins, peer help, disagreement, independent review and engineering-to-

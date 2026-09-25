@@ -45,6 +45,13 @@ Readable results, evidence, truthful activity and controls belong to every layer
 Visual polish follows these facts; it does not create a fifth coordination engine.
 Independent first-use and release qualification remain G5. A configured team,
 multiple processes or several isolated answers do not qualify coordination.
+Broad owner discovery is a P0 default: all registered local Goals/Agents and
+already-authorized connected sources remain searchable without per-recipient
+delivery enrollment. Keep prompt pages bounded, disclose coverage and allow
+drill-down. Offline/unbound/unknown states stay visible; stopped work is available
+through history/search and is not assigned new work. Discovery, evidence access,
+delegation and execution readiness are evaluated separately. An external group's
+metadata/evidence scope remains its own; private-owner access is not group access.
 These layers are delivery priorities, not a rule that every channel and variant
 must finish before work on the next layer can start. GQ17 repeats the ordinary
 parallel-work intent at larger fixture sizes; basic parallel work is already P0
@@ -184,6 +191,7 @@ ready-to-run scale fixtures or a reason to spawn idle workers now.
 | Boundary | Fixture or intervention | What the observer must establish |
 | --- | --- | --- |
 | Message/Goal creation | Submit, delayed response, failed create, reload after response loss | Source message remains pending/failed/recoverable until acknowledged; one canonical creation; retry does not create a second Goal; “sent” is not “started” |
+| Broad default discovery | Relevant registered owner is outside the delivery allowlist or first page; another is offline/unbound; one authorized connected source is temporarily unreadable | Owner discovery still finds the permitted relevant identity and explains the specific delegation/readiness gap; pagination reaches it, source failure stays visible, and routine investigation does not require the user to supply IDs. Shared audiences cannot see out-of-scope private identities/content; no grants or worker wake are inferred |
 | Discovery versus eligibility | Correct registered owner, sole irrelevant candidate, stopped Goal, stale binding, missing presence probe, unavailable remote source | Incomplete discovery is not “no Agent exists”; relevance is not eligibility; an irrelevant sole candidate is not selected; unknown reachability is not fabricated readiness |
 | Recoverable route gap | Stale authorized catalog or absent binding with a supported repair/probe path | Refresh scoped sources and attempt permitted repair before asking the owner for IDs; retain the request and say precisely which stage needs help; do not broaden grants |
 | Actual execution | Receiver inbox ACK without a worker starting | The result remains queued/waiting with owner and recovery condition, never “being handled” or completed without evidence |
