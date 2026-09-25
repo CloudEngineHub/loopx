@@ -1316,58 +1316,28 @@ def install_slash_commands(
     if "pi" in effective_surfaces:
         extension_path = _pi_extension_path(pi_extension_root, scope=pi_scope)
         runtime_path = _pi_runtime_path(pi_extension_root)
-        legacy_user_path = pi_extension_root / "loopx-goal.ts" if pi_scope == "user" else None
         extension_content = pi_extension_source()
         runtime_content = pi_runtime_source()
         if uninstall:
-            retire_targets = [extension_path, runtime_path]
-            if legacy_user_path is not None and legacy_user_path.exists():
-                retire_targets.append(legacy_user_path)
-            user_owned_pi_paths = [
-                str(path) for path in retire_targets
-                if _retire_status(path, execute=False) == "skipped_user_file"
-            ]
-            if user_owned_pi_paths:
+            # Uninstall stays per-file like every other surface: LoopX-managed
+            # files are removed and a user-owned file is reported as skipped.
+            # Aborting the whole scope instead would leave the managed adapter
+            # loaded and remove the only supported way to uninstall it.
+            for mechanism, path in (
+                ("pi_goal_extension", extension_path),
+                ("pi_goal_extension_runtime", runtime_path),
+            ):
                 installed.append(
                     {
                         "surface": "pi",
                         "host_surfaces": ["pi"],
-                        "mechanism": "pi_goal_extension",
+                        "mechanism": mechanism,
                         "command": "/loopx",
-                        "path": str(extension_path),
-                        "status": "blocked_user_owned_pi_file",
+                        "path": str(path),
+                        "status": _retire_status(path, execute=execute),
                         "invoke_as": ["/loopx", "loopx_goal_activate"],
-                        "conflicts": user_owned_pi_paths,
                     }
                 )
-            else:
-                for mechanism, path in (
-                    ("pi_goal_extension", extension_path),
-                    ("pi_goal_extension_runtime", runtime_path),
-                ):
-                    installed.append(
-                        {
-                            "surface": "pi",
-                            "host_surfaces": ["pi"],
-                            "mechanism": mechanism,
-                            "command": "/loopx",
-                            "path": str(path),
-                            "status": _retire_status(path, execute=execute),
-                            "invoke_as": ["/loopx", "loopx_goal_activate"],
-                        }
-                    )
-                if legacy_user_path is not None and legacy_user_path.exists():
-                    installed.append(
-                        {
-                            "surface": "pi",
-                            "host_surfaces": ["pi"],
-                            "mechanism": "pi_goal_legacy_user_extension",
-                            "command": "/loopx",
-                            "path": str(legacy_user_path),
-                            "status": _retire_status(legacy_user_path, execute=execute),
-                            "invoke_as": [],
-                        }
-                    )
         else:
             # The adapter and its loop runtime are one atomic delivery unit:
             # preflight both targets and fail closed with zero writes when any
@@ -1416,20 +1386,6 @@ def install_slash_commands(
                             "invoke_as": ["/loopx", "loopx_goal_activate"],
                         }
                     )
-                if legacy_user_path is not None:
-                    retired = _retire_managed_file(legacy_user_path, execute=execute)
-                    if retired:
-                        installed.append(
-                            {
-                                "surface": "pi",
-                                "host_surfaces": ["pi"],
-                                "mechanism": "pi_goal_legacy_user_extension",
-                                "command": "/loopx",
-                                "path": str(legacy_user_path),
-                                "status": retired,
-                                "invoke_as": [],
-                            }
-                        )
 
     status_counts: dict[str, int] = {}
     for item in installed:

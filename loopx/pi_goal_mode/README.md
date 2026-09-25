@@ -68,12 +68,11 @@ resolved project automatically.
 The optional user scope installs the same adapter as
 `<agent-dir>/extensions/loopx/index.ts` with the runtime beside it. Pi
 discovers `index.ts` inside extension subdirectories. `<agent-dir>` defaults to
-`~/.pi/agent` and follows `PI_CODING_AGENT_DIR`. A managed older user file
-named `loopx-goal.ts` in that directory is retired during upgrade. Inspect
-reports both scopes as absent, current, stale, partial, or user-owned, and
-warns when both entries would load in the same project. Run Pi `/reload` or
-restart after install, upgrade, or uninstall. Only the adapter is global:
-bindings remain under the active project's `.loopx/pi/`.
+`~/.pi/agent` and follows `PI_CODING_AGENT_DIR`. Inspect reports both scopes as
+absent, current, stale, partial, or user-owned, and warns when both entries
+would load in the same project. Run Pi `/reload` or restart after install,
+upgrade, or uninstall. Only the adapter is global: bindings remain under the
+active project's `.loopx/pi/`.
 
 ## State
 

@@ -72,12 +72,6 @@ def inspect_pi_installations(
             "runtime_path": str(runtime),
         }
 
-    legacy_user_path = Path(scopes["user"]["extension_path"]).with_name("loopx-goal.ts")
-    legacy_user_entry = legacy_user_path.exists()
-    scopes["user"]["legacy_entry_path"] = str(legacy_user_path) if legacy_user_entry else None
-    if legacy_user_entry and scopes["user"]["status"] == "absent":
-        scopes["user"]["status"] = "stale"
-
     project_entry = Path(scopes["project"]["extension_path"]).exists()
     user_entry = Path(scopes["user"]["extension_path"]).exists()
     duplicate_load = project_entry and user_entry
