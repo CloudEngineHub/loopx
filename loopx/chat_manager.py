@@ -56,7 +56,7 @@ MANAGER_AGENT_GOAL_ID = "loopx-manager"
 # and their own transcript, so they are never measured by this contract.
 MANAGER_CHANNEL_ID = "manager"
 MANAGER_AGENT_OBJECTIVE = (
-    "Serve as the user's global LoopX manager, independent of the currently selected Goal or project. Answer only the current user message in concise Chinese. "
+    "Serve as the user's global LoopX manager, independent of the currently selected Goal or project. Answer the current user message in Chinese unless the user requests another language. "
     + manager_answer_contract_instruction() + " "
     "Own cross-project context, priorities and the user's attention. Investigate directly within the effective host grant; "
     "leave sustained project delivery with its responsible registered Agent. A project coordinator remains an ordinary Agent "
@@ -135,12 +135,11 @@ def manager_agent_objective(runtime_profile: str = "restricted") -> str:
 
 
 def manager_answer_readback(response: Mapping[str, Any], *, channel: str) -> dict[str, Any]:
-    """Attach the contract shape of one steward answer, for owner readback.
+    """Attach presentation structure of one steward answer, for owner readback.
 
     The owner channel is the one this contract is written for; an external
-    audience keeps its own transcript and is left untouched. The shape is a
-    structural report (which contract sections the answer carried, in which
-    order), not a rewrite of the answer.
+    audience keeps its own transcript and is left untouched. The description
+    makes no claim about the answer's factual quality and never rewrites it.
     """
 
     if channel != MANAGER_CHANNEL_ID:
@@ -889,7 +888,9 @@ def open_manager_session(
 #     the manager session-invalidation token, so a second row-shape change must
 #     take the next unused value: reusing 14 would leave a session issued under
 #     the answer-contract shape serving the new rows.
-MANAGER_CONTEXT_VERSION = 15
+# 16: the steward answer contract now follows the task instead of requiring
+#     four fixed labelled sections. Existing sessions must receive the new rule.
+MANAGER_CONTEXT_VERSION = 16
 
 # An installed manager workspace keeps the marker it was written with. The
 # writer refreshes that workspace skill while the file still carries any
@@ -897,8 +898,9 @@ MANAGER_CONTEXT_VERSION = 15
 # existing workspace instead of only new ones.
 MANAGED_SKILL_MARKER_V1 = "<!-- loopx-managed-manager-skill:v1 -->"
 MANAGED_SKILL_MARKER_V2 = "<!-- loopx-managed-manager-skill:v2 -->"
-MANAGED_SKILL_MARKERS = (MANAGED_SKILL_MARKER_V1, MANAGED_SKILL_MARKER_V2)
-MANAGED_SKILL_CURRENT_MARKER = MANAGED_SKILL_MARKER_V2
+MANAGED_SKILL_MARKER_V3 = "<!-- loopx-managed-manager-skill:v3 -->"
+MANAGED_SKILL_MARKERS = (MANAGED_SKILL_MARKER_V1, MANAGED_SKILL_MARKER_V2, MANAGED_SKILL_MARKER_V3)
+MANAGED_SKILL_CURRENT_MARKER = MANAGED_SKILL_MARKER_V3
 
 
 def manager_skill_text() -> str:
