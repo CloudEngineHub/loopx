@@ -309,6 +309,10 @@ def configure_delivery_target(
     if not goal_id or not agent_id:
         raise ValueError("an exact Goal and Agent are required")
     target = {"goal_id": goal_id, "agent_id": agent_id}
+
+    def is_target(item: dict) -> bool:
+        return item.get("goal_id") == goal_id and item.get("agent_id") == agent_id
+
     if grant:
         registry = load_registry(registry_path)
         goal = next(
@@ -354,11 +358,11 @@ def configure_delivery_target(
             for item in targets
         ):
             raise ValueError("invalid external manager delivery targets")
-        before = target in targets
+        before = any(is_target(item) for item in targets)
         if grant:
             updated_targets = targets if before else [*targets, target]
         else:
-            updated_targets = [item for item in targets if item != target]
+            updated_targets = [item for item in targets if not is_target(item)]
         changed = updated_targets != targets
         if execute and changed:
             source["targets"] = updated_targets
@@ -384,6 +388,6 @@ def configure_delivery_target(
         result = update()
         saved = _read(path)
         saved_targets = saved.get("sources", {}).get(channel, {}).get("targets", [])
-        if (target in saved_targets) != grant:
+        if any(is_target(item) for item in saved_targets) != grant:
             raise ValueError("delivery target verification failed")
     return {**result, "readback_verified": True}

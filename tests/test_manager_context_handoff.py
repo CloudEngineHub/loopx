@@ -279,6 +279,19 @@ def test_operator_delivery_target_preview_grant_revoke_and_live_authority(fixtur
         root, registry, channel=channel, **request, grant=False, execute=True
     )["changed"]
 
+    # Older policy rows may carry metadata; recipient identity is still the pair.
+    saved = json.loads(policy_path.read_text())
+    saved["sources"][channel]["targets"] = [other, {**request, "note": "legacy"}, request]
+    _write(policy_path, saved)
+    assert not configure_delivery_target(
+        root, registry, channel=channel, **request, grant=True, execute=True
+    )["changed"]
+    assert authority(root, registry, session, turn)["targets"] == [other, request]
+    assert configure_delivery_target(
+        root, registry, channel=channel, **request, grant=False, execute=True
+    )["readback_verified"]
+    assert json.loads(policy_path.read_text())["sources"][channel]["targets"] == [other]
+
 
 def test_operator_target_grant_fails_closed_without_audited_source_or_agent(fixture):
     root, registry, _, _, request = fixture
