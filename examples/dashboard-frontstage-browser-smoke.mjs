@@ -46,7 +46,9 @@ async function assertAnchorInView(page, id) {
     const header = document.querySelector(".bm-topbar")?.getBoundingClientRect();
     const headerBottom = header?.bottom ?? 0;
     const reveal = section.closest(".reveal-block");
-    return (!header || Math.abs(header.top) < 2) && top >= -2 && (top < 80 || finalSectionVisible) &&
+    // Chromium can leave a few pixels above the viewport after fragment
+    // alignment and font reflow; the heading must still be fully visible.
+    return (!header || Math.abs(header.top) < 2) && top >= -8 && (top < 80 || finalSectionVisible) &&
       (!heading || (heading.top >= Math.max(0, headerBottom) && heading.bottom < innerHeight)) &&
       (!reveal || getComputedStyle(reveal).opacity === "1");
   }, id, { timeout: 4000 }).catch(async (error) => {
