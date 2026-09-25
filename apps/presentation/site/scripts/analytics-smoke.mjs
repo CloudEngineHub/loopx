@@ -16,6 +16,7 @@ const inject = (id) => spawnSync(process.execPath, [resolve(root, "scripts/add-a
 let browser;
 try {
   await cp(resolve(process.argv[2] ?? resolve(root, "dist")), out, { recursive: true });
+  assert.equal(inject("").status, 0);
   const initial = await readFile(resolve(out, "index.html"), "utf8");
   assert.equal(inject("").status, 0);
   assert.equal(await readFile(resolve(out, "index.html"), "utf8"), initial, "disabled mode leaves HTML unchanged");
@@ -31,17 +32,30 @@ try {
     if (scenario === "dnt") await context.addInitScript(() => Object.defineProperty(navigator, "doNotTrack", { value: "1" }));
     if (scenario === "gpc") await context.addInitScript(() => Object.defineProperty(navigator, "globalPrivacyControl", { value: true }));
     const tagRequests = [];
+    const collectionRequests = [];
+    if (scenario !== "enabled") await context.addInitScript(() => localStorage.setItem("loopx.analytics-consent.v1", JSON.stringify({ choice: "granted" })));
     const origin = scenario === "local" ? "http://localhost" : "https://loopx-project.github.io";
     await context.route("**/*", async (route) => {
       const url = new URL(route.request().url());
       if (url.hostname === "www.googletagmanager.com") {
         tagRequests.push(url.href);
-        return route.fulfill({ contentType: "text/javascript", body: "" });
+        return route.fulfill({ contentType: "text/javascript", body: `
+          document.cookie = "_ga=fixture; path=/; domain=loopx-project.github.io";
+          document.cookie = "_ga_TEST123456=fixture; path=/";
+          const collect = (args) => { if (args[0] === "event" && !window["ga-disable-G-TEST123456"]) fetch("https://www.google-analytics.com/g/collect", {method:"POST",body:JSON.stringify([...args])}); };
+          window.dataLayer.forEach(collect);
+          const push = window.dataLayer.push.bind(window.dataLayer);
+          window.dataLayer.push = (...rows) => { rows.forEach(collect); return push(...rows); };
+        ` });
+      }
+      if (url.hostname === "www.google-analytics.com") {
+        collectionRequests.push(route.request().postData());
+        return route.fulfill({ status: 204, body: "" });
       }
       if (url.origin !== origin) return route.abort();
       const path = url.pathname.replace(/^\/(?:loopx\/)?/, "");
       try {
-        const file = resolve(out, path || "index.html");
+        const file = resolve(out, !path || path.endsWith("/") ? path + "index.html" : path);
         const contentType = ({ ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png" })[extname(file)] ?? "application/octet-stream";
         await route.fulfill({ contentType, body: await readFile(file) });
       } catch { await route.fulfill({ status: 404, body: "Not found" }); }
@@ -55,7 +69,22 @@ try {
       await context.close();
       continue;
     }
-    await page.waitForFunction(() => window.dataLayer?.length >= 5);
+    await page.locator("#loopx-analytics-consent").waitFor();
+    // A normal visitor's pre-choice interactions must not even initialize GA.
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("loopx:setup-copy", { detail: "shell" })));
+    assert.equal(tagRequests.length, 0, "no remote tag before choosing");
+    assert.equal(collectionRequests.length, 0, "no collection before choosing");
+    assert.equal(await page.evaluate(() => window.dataLayer), undefined);
+    assert.equal((await context.cookies()).filter(c => c.name.startsWith("_ga")).length, 0);
+    await page.locator('[data-consent="denied"]').click();
+    await page.reload();
+    await page.locator("h1").waitFor();
+    assert.equal(await page.locator("#loopx-analytics-consent").isVisible(), false, "rejection remembered");
+    assert.equal(tagRequests.length, 0, "rejected reload stays off");
+    await page.locator("#loopx-analytics-settings").click();
+    await page.locator('[data-consent="granted"]').click();
+    await page.waitForFunction(() => window.dataLayer?.length >= 7);
+    await page.waitForFunction(() => document.cookie.includes("_ga="));
     assert.equal(tagRequests.length, 1);
     await page.locator('.hero [data-analytics-event="setup_open"]').click();
     // Only the successful copy path in App dispatches this signal. Invalid
@@ -76,12 +105,35 @@ try {
       document.querySelector('link[rel="canonical"]').href = "https://loopx-project.github.io/loopx/docs/";
     });
     await page.waitForFunction(() => window.dataLayer.filter((r) => r[0] === "event" && r[1] === "page_view").length === 2);
+    assert.equal(collectionRequests.filter(row => JSON.parse(row)[1] === "page_view").length, 2);
+    await page.reload();
+    await page.waitForFunction(() => document.cookie.includes("_ga="));
+    assert.equal(tagRequests.length, 2, "grant remembered across reloads");
+    assert.equal(await page.locator("#loopx-analytics-consent").isVisible(), false);
+    await page.locator("#loopx-analytics-settings").click();
+    const beforeWithdrawal = collectionRequests.length;
+    await Promise.all([page.waitForEvent("load"), page.locator('[data-consent="denied"]').click()]);
+    await page.locator("h1").waitFor();
+    assert.equal(tagRequests.length, 2, "withdrawal unloads tag without reloading it");
+    assert.equal(collectionRequests.length, beforeWithdrawal, "withdrawal sends no events");
+    assert.equal(await page.evaluate(() => window.dataLayer), undefined);
+    assert.equal((await context.cookies()).filter(c => c.name.startsWith("_ga")).length, 0, "GA cookies cleared");
+    // Replacing a footer (as in client rendering / instant navigation) retains
+    // the visitor's settings entry without re-enabling measurement.
+    await page.evaluate(() => document.querySelector(".site-footer").replaceChildren());
+    await page.locator(".site-footer #loopx-analytics-settings").waitFor();
+    if (await access(resolve(out, "docs/index.html")).then(() => true, () => false)) {
+      await page.goto(`${origin}/loopx/docs/`);
+      await page.locator("#loopx-analytics-settings").waitFor();
+      assert.equal(tagRequests.length, 2, "rejection shared with documentation pages");
+    }
     await context.close();
   }
   assert.equal(inject("").status, 0);
   assert.equal(await readFile(resolve(out, "index.html"), "utf8"), initial, "disable removes injection");
   await assert.rejects(access(resolve(out, "site-assets/analytics.js")));
-  console.log("Analytics smoke: opt-in/off, injection idempotence, invalid ID, public-host scope, DNT/GPC, pageviews, locale dedupe, CTA schema and URL redaction passed; no Google traffic sent");
+  await assert.rejects(access(resolve(out, "site-assets/analytics-consent.css")));
+  console.log("Analytics smoke: pre-choice/rejection isolation, grant, remembered choice, withdrawal/cookie cleanup, footer replacement, deployment off, DNT/GPC and event boundaries passed; Google requests intercepted");
 } finally {
   await browser?.close();
   await rm(out, { recursive: true, force: true });

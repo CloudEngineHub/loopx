@@ -73,7 +73,11 @@ The build discovers canonical editorial URLs for `sitemap-pages.xml` and writes
 `sitemap.xml`, which also references the three MkDocs sitemaps. The complete
 index is ready only after the Pages workflow builds the documentation. Submit
 `https://loopx-project.github.io/loopx/sitemap.xml` in the verified Search Console
-property after deployment. A project-level `/loopx/robots.txt` would not control
+property after deployment. The Google-issued verification file
+`public/google5a493c86e5bde9bc.html` is copied unchanged to the site root; keep it
+published to retain ownership verification. This file does not load analytics
+or collect visitor data, and verification is independent of GA4 consent.
+A project-level `/loopx/robots.txt` would not control
 crawling: robots rules belong at the origin root, outside this Pages artifact.
 
 Public outbound links send at most the origin to other HTTPS sites through
@@ -98,10 +102,20 @@ In the GA4 web stream, disable **Enhanced measurement**: this integration sends
 explicit pageviews and conversion-intent events, including during MkDocs instant
 navigation. Leaving automatic history, form or outbound collection on can create
 duplicate events and collect fields outside this site's explicit event schema.
-The loader honors Do Not Track and Global Privacy Control and disables Google
-signals and ad personalization. Normal GA4 first-party measurement cookies may
-be used when measurement is active; deployment owners retain responsibility for
-their site's consent configuration and privacy notice.
+A bilingual notice explains the use of Google Analytics cookies and links to
+Google's data-use information. No Google tag, measurement cookie or event is
+initialized before the visitor chooses **Allow analytics**. **Reject** keeps
+measurement off. Both choices are remembered in local storage and can be changed
+through **Analytics preferences** in the page footer. Withdrawal immediately
+disables collection, clears this stream's GA cookies and reloads the page to
+unload the tag and its timers. It does not erase data already sent to Google.
+When storage is unavailable, the choice applies to the current page only.
+
+The loader honors Do Not Track and Global Privacy Control even after a previous
+grant, and disables Google signals and advertising consent. The browser smoke
+covers an ordinary visitor before choosing, rejection, grant and withdrawal,
+including remembered choices and cookie cleanup. Google requests are intercepted
+in tests; production collection still needs a real post-deployment check.
 
 | Event | Meaning |
 | --- | --- |
