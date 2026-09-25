@@ -21,6 +21,15 @@ Implemented code, six relevant open PRs, four proposed new batches (including
 complete-source transport) and D1–D3 evidence are separate units; four batches
 are not a guaranteed total PR count. Use the [reconciled inventory and exits](ledger/shared-goal-authority-state-provider-v0/2026-09-24-default-cutover-reconciliation.md) as the current plan.
 
+## Observation writer retirement (2026-09-24)
+
+The obsolete Python post-commit observer and TS observation commit path are
+removed together. Existing runtime-shadow outbox rules remain the sole capture
+owner; source adapters do not resample into a second authority. Old settings
+are recognizable, inactive and explicitly clearable. This is deletion of an
+obsolete path, not a claim that remaining Python business writers or the
+reference executor are retired. [Delivery inventory and transition](ledger/shared-goal-authority-state-provider-v0/2026-09-24-observation-retirement.md).
+
 ## Cross-RFC execution priority (2026-09-16)
 
 [Roadmap](loopx-overall-roadmap-v0.md) R1–R5 are current product consumers of T0–T4, not another migration ladder. The team confirmation path now uses `work_items/team_plan.ts` for preview, batch planning and immutable operation identity, plus the existing AuthorityStore receipt/CAS boundary. Python retains public-safety and legacy Markdown IO adaptation; the per-lane writer loop is retired. The R1 checkpoint records the delivered assignment/retry delta and remaining receiver/execution boundaries.

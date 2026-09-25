@@ -871,23 +871,15 @@
     },
     {
       "site": "loopx/control_plane/coordination/local_authority_shadow_adapter.py::<module>.local_authority_shadow_status::codec_read:load_registry#1",
-      "line": 776,
+      "line": 775,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",
       "classification": "codec_api"
     },
     {
-      "site": "loopx/control_plane/coordination/local_authority_shadow_observation.py::<module>.observe_local_authority_commit::codec_read:load_registry#1",
-      "line": 340,
-      "column": 20,
-      "kind": "codec_read",
-      "api": "load_registry",
-      "classification": "codec_api"
-    },
-    {
       "site": "loopx/control_plane/coordination/runtime_shadow.py::<module>.build_runtime_shadow_source_snapshot::codec_read:load_registry#1",
-      "line": 325,
+      "line": 362,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1399,7 +1391,7 @@
     },
     {
       "site": "loopx/control_plane/work_items/task_lease_acquire_adapter.py::<module>._canonical_lease_authority_facts::codec_read:load_registry#1",
-      "line": 352,
+      "line": 314,
       "column": 31,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1407,7 +1399,7 @@
     },
     {
       "site": "loopx/control_plane/work_items/task_lease_acquire_adapter.py::<module>._task_lease_authority_snapshot_attempt::codec_read:load_registry#1",
-      "line": 267,
+      "line": 229,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1415,7 +1407,7 @@
     },
     {
       "site": "loopx/control_plane/work_items/task_lease_acquire_adapter.py::<module>._task_lease_authority_snapshot_attempt::codec_read:load_registry#2",
-      "line": 290,
+      "line": 252,
       "column": 22,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1423,7 +1415,7 @@
     },
     {
       "site": "loopx/control_plane/work_items/task_lease_acquire_adapter.py::<module>.execute_native_task_lease_acquire::codec_read:load_registry#1",
-      "line": 443,
+      "line": 397,
       "column": 20,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1431,7 +1423,7 @@
     },
     {
       "site": "loopx/control_plane/work_items/task_lease_acquire_adapter.py::<module>.execute_native_task_lease_lifecycle::codec_read:load_registry#1",
-      "line": 755,
+      "line": 709,
       "column": 24,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1735,7 +1727,7 @@
     },
     {
       "site": "loopx/state_migration.py::<module>.legacy_registry_goal_ids::direct_json_read:read_json_object#1",
-      "line": 72,
+      "line": 62,
       "column": 16,
       "kind": "direct_json_read",
       "api": "read_json_object",
@@ -1743,7 +1735,7 @@
     },
     {
       "site": "loopx/state_migration.py::<module>.migrate_legacy_state::codec_transaction:project_registry_transaction#1",
-      "line": 359,
+      "line": 273,
       "column": 25,
       "kind": "codec_transaction",
       "api": "project_registry_transaction",
@@ -1751,7 +1743,7 @@
     },
     {
       "site": "loopx/state_migration.py::<module>.migrate_legacy_state::direct_json_read:read_json_object#1",
-      "line": 376,
+      "line": 290,
       "column": 18,
       "kind": "direct_json_read",
       "api": "read_json_object",
@@ -1759,7 +1751,7 @@
     },
     {
       "site": "loopx/state_migration.py::<module>.migrate_legacy_state::codec_read:load_project_registry#1",
-      "line": 407,
+      "line": 321,
       "column": 18,
       "kind": "codec_read",
       "api": "load_project_registry",

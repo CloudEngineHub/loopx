@@ -34,22 +34,15 @@ from .authority_e2e_row_support import (
     RowOutcome,
     acquire_lease,
     add_todo,
-    committed_observation,
     expect,
     passed,
     sha256_hex,
     unverified,
 )
-from .authority_e2e_rows_stage2c import (
-    row_candidate_failure_preserves_primary,
-    row_configure_enable_disable_roundtrip,
-    row_crash_gap_loses_observation,
-    row_default_off_isolation,
-    row_dual_runtime_root_consistency,
-    row_every_writer_family_captures,
-    row_migration_seeds_new_lineage,
-)
+from .authority_e2e_rows_stage2c import row_retired_observation_upgrade
 from .authority_e2e_rows_stage2c2 import (
+    capture_workspace,
+    delivered,
     row_archive_after_leased_completion_parity,
     row_drain_idempotent,
     row_event_only_todo_source_holds,
@@ -67,8 +60,6 @@ from .authority_e2e_fixtures import (
     CliOutputError,
     TS_READBACK_PROBE,
     JsonObject,
-    build_goal_workspace,
-    candidate_document,
     node_executable,
     parse_json_object,
     run_cli,
@@ -319,14 +310,8 @@ def _row_nokv_live_matrix(context: RowContext) -> RowOutcome:
 def _row_cli_document_decodes_through_ts_store(context: RowContext) -> RowOutcome:
     if node_executable() is None:
         return unverified("node_missing")
-    workspace = build_goal_workspace(
-        context.root,
-        goal_id=unique_goal_id("ladder-s1"),
-        handoff_mode="hard_lease",
-        shadow_enabled=True,
-        runtime_root_binding="registry",
-    )
-    added = add_todo(workspace, "Decode this observation through the TypeScript store.")
+    workspace = capture_workspace(context, "ladder-s1")
+    added = add_todo(workspace, "Decode this source transaction through the TypeScript store.")
     todo_id = str(added["todo_id"])
     acquired = acquire_lease(
         workspace,
@@ -347,37 +332,28 @@ def _row_cli_document_decodes_through_ts_store(context: RowContext) -> RowOutcom
         "--agent-id",
         AGENT_A,
     )
-    observations = [
-        committed_observation(payload, label=label)
-        for label, payload in (("todo add", added), ("task-lease acquire", acquired), ("todo update", updated))
-    ]
-    expect(
-        all(evidence["outcome"] == "captured" for evidence in observations),
-        "three distinct CLI writes must each be captured",
-    )
-    observation_ids = [str(evidence["observation_id"]) for evidence in observations]
-    probe = ts_readback(workspace, receipt=observation_ids[0])
+    for label, payload in (("todo add", added), ("task-lease acquire", acquired), ("todo update", updated)):
+        delivered(payload, label=label)
+    probe = ts_readback(workspace, directory=workspace.runtime_root / "authority-shadow" / "file-v0")
     expect(probe is not None, "read-back probe requires node")
     assert probe is not None
-    load = probe.get("load")
-    scan = probe.get("scan")
-    receipt = probe.get("receipt")
+    load, scan = probe.get("load"), probe.get("scan")
     expect(isinstance(load, dict) and load.get("status") == "loaded", "TS store must load the CLI document")
-    expect(isinstance(load, dict) and load.get("cursor") == "3", "TS store cursor must be 3 after three writes")
-    expect(
-        isinstance(load, dict)
-        and load.get("provider_revision") == observations[-1]["provider_revision"],
-        "TS store head revision must equal the last observation revision",
-    )
-    expect(
-        isinstance(scan, dict) and scan.get("operation_ids") == observation_ids,
-        "scanCommitted must page through the three observation ids in order",
-    )
-    expect(isinstance(receipt, dict) and receipt.get("status") == "found", "readReceipt must find the first observation")
-    document = candidate_document(workspace)
-    expect(document.cursor == "3" and document.operation_ids == observation_ids, "candidate bytes must match the probe")
+    expect(isinstance(load, dict) and load.get("cursor") == "4", "bootstrap and three writes must advance four cursors")
+    expect(isinstance(scan, dict), "scan must return a page summary")
     assert isinstance(scan, dict)
-    return passed(cursor="3", scan_pages=scan.get("pages"), observation_count=len(observation_ids))
+    operations = scan.get("operation_ids")
+    expect(isinstance(operations, list) and len(operations) == len(set(operations)) == 4,
+           "paged scan must return four distinct transactions")
+    expect(scan.get("cursors") == ["1", "2", "3", "4"], "transactions must retain source order")
+    assert isinstance(operations, list)
+    receipt_probe = ts_readback(workspace, receipt=str(operations[1]),
+                               directory=workspace.runtime_root / "authority-shadow" / "file-v0")
+    expect(isinstance(receipt_probe, dict), "receipt probe must load")
+    assert isinstance(receipt_probe, dict)
+    receipt = receipt_probe.get("receipt")
+    expect(isinstance(receipt, dict) and receipt.get("status") == "found", "readReceipt must find the first source write")
+    return passed(cursor="4", scan_pages=scan.get("pages"), transaction_count=4)
 
 
 # ---------------------------------------------------------------------------
@@ -610,67 +586,13 @@ LADDER_ROWS: tuple[LadderRow, ...] = (
         run=_row_postgresql_conformance_live,
     ),
     LadderRow(
-        id="s2c1.configure_enable_disable_roundtrip",
+        id="s2c1.retired_observation_upgrade",
         stage="2c1",
-        title="configure-goal previews, enables, reads back, and disables the observer",
+        title="Retired settings cannot write; explicit replacement bootstrap captures the next transaction",
         product_path="real_cli",
         gate="deterministic",
         posix_only=False,
-        run=row_configure_enable_disable_roundtrip,
-    ),
-    LadderRow(
-        id="s2c1.every_writer_family_captures",
-        stage="2c1",
-        title="Every local writer family records a post-commit observation",
-        product_path="real_cli",
-        gate="deterministic",
-        posix_only=False,
-        run=row_every_writer_family_captures,
-    ),
-    LadderRow(
-        id="s2c1.default_off_isolation",
-        stage="2c1",
-        title="Default-off goals produce identical responses and no candidate storage",
-        product_path="real_cli",
-        gate="deterministic",
-        posix_only=False,
-        run=row_default_off_isolation,
-    ),
-    LadderRow(
-        id="s2c1.candidate_failure_preserves_primary",
-        stage="2c1",
-        title="Candidate construction failure never reverses the primary commit",
-        product_path="real_cli",
-        gate="deterministic",
-        posix_only=False,
-        run=row_candidate_failure_preserves_primary,
-    ),
-    LadderRow(
-        id="s2c1.crash_gap_loses_observation",
-        stage="2c1",
-        title="A SIGKILL between primary commit and observer loses only that observation",
-        product_path="real_cli",
-        gate="deterministic",
-        posix_only=True,
-        run=row_crash_gap_loses_observation,
-    ),
-    LadderRow(
-        id="s2c1.dual_runtime_root_consistency",
-        stage="2c1",
-        title="A --runtime-root override that differs from common_runtime_root keeps one candidate lineage",
-        product_path="real_cli",
-        gate="deterministic",
-        posix_only=False,
-        run=row_dual_runtime_root_consistency,
-    ),
-    LadderRow(
-        id="s2c1.migration_seeds_new_lineage",
-        stage="2c1",
-        title="migrate-state excludes the legacy lineage and seeds a fresh candidate",
-        product_path="real_cli",
-        gate="deterministic",
-        posix_only=False,
-        run=row_migration_seeds_new_lineage,
+        run=row_retired_observation_upgrade,
     ),
     LadderRow(
         id="s2c2.outbox_prepared_then_committed_entries",

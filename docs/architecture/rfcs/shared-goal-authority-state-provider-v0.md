@@ -36,6 +36,14 @@ are not a guaranteed total PR count. Use the [reconciled inventory and exits](le
 
 `e94759d88` adds [PostgreSQL service admission](../../reference/postgresql-authority-service-v0.md), with authentication/tenant verification injection and identity rotation. It is an in-process service boundary, not a deployed network service. The P lane should reuse it and finish transport, real identity policy, pool/cancellation/failover and operations qualification rather than rebuilding admission. R7 must separately report registration, active executors and measured capacity. Directory, presence, a plan or one source read grants no shared authority. Existing fail-closed source, receipt/replay and rollback contracts remain.
 
+## Observation retirement checkpoint (2026-09-24)
+
+[Current delivery inventory](ledger/shared-goal-authority-state-provider-v0/2026-09-24-observation-retirement.md)
+separates merged code, open PRs and qualification gates. This delivery removes
+the obsolete Python observation writer and TS observation commit path; it does
+not implement executor liveness or event-writer binding. There is one writable
+shadow lineage, still default-off and subject to explicit bootstrap.
+
 ## Current implementation checkpoint
 
 The current [event transaction and default-cutover plan](ledger/shared-goal-authority-state-provider-v0/2026-09-24-event-completion-transaction.md) estimates 5–8 complete packages conditionally. #4967 source assembly and #4968 capture delivery are already delivered; event-writer binding remains open, with atomic completion repaired here as a prerequisite. Earlier counts below describe historical checkpoints, not additional current work.
@@ -45,8 +53,9 @@ after promotion. Legacy event-only claims reject rather than disappear at a
 Markdown boundary; event append locks protect the observation through writeback.
 Canonical changes reuse durable command receipt recovery. This is an L2/L3
 compatibility correction with Python decision deletion, not cohort migration,
-SQLite D2 completion or a default flip. Remaining work is classified in the current delivery frontier rather than
-counted as unchanged packages.
+SQLite D2 completion or a default flip. Remaining work depends on executor/consumer closure, qualification,
+integrated migration and onboarding; it is classified in the current delivery frontier rather than counted as
+unchanged packages, and historical package ranges are not a current PR count.
 [Operation, repair and recovery](../../reference/handoff-mode.md).
 
 The terminal caller family now binds review and validation to the canonical
@@ -54,7 +63,8 @@ source and recovers historical receipts independently of private argv. Agent
 completion and Monitor stop share current-head display acknowledgement with
 ordinary edits. [Caller and recovery contract](../../reference/canonical-terminal-review.md).
 This advances L2/L5 without closing executor-held fences, D1–D3 or default
-onboarding; use the current reconciled inventory for remaining work.
+onboarding; use the current reconciled inventory for remaining work, and historical package estimates below are
+superseded by the current inventory.
 
 The local registry witness now spans canonical create/claim/update/Monitor poll
 and terminal mutations through one TS owner. File, SQLite and service-injected
@@ -1570,40 +1580,13 @@ that provider metadata is absent from the logical revision projection. This is
 Stage 1 parity evidence, not provider promotion or a claim that all later
 provider profiles are qualified.
 
-#### Stage 2C observation foundation: local post-commit capture
+#### Stage 2C observation foundation: retired
 
-The first half of Stage 2C is an explicit, default-off product path. Preview
-and enable it with:
-
-```bash
-loopx configure-goal --goal-id GOAL --local-authority-shadow-file
-loopx configure-goal --goal-id GOAL --local-authority-shadow-file --execute
-```
-
-Todo, handoff-mode, follow-up, and task-lease facades sample the full current
-local projection after their primary write returns committed, then ask
-`FileAuthorityStore` to retain that snapshot. `observation_trigger` records
-why sampling began; it is not the primary transaction identity. A concurrent
-primary commit may therefore appear in the sampled snapshot. A `captured` or
-`replayed` result proves only the candidate-side observation commit. It does
-not compare the source and candidate and carries `parity_verdict=not_evaluated`.
-
-Candidate bytes live under
-`authority-shadow/file/` outside the legacy per-Goal runtime tree, so state
-migration never copies a store identity or revision; an executed migration
-seeds a new target lineage from the migrated local state. Candidate failure is
-reported as an observation result but never reverses the completed local write.
-
-Disable the observer in one command with
-`loopx configure-goal --goal-id GOAL --clear-local-authority-shadow --execute`.
-This is rollback of observation only: the local Markdown and task-lease files
-remain canonical throughout. The slice does not read the candidate for a
-decision, fence a legacy writer, qualify a remote provider, or complete the
-second Stage 2C promotion. A process crash after the local commit but before
-the observer call may miss that individual observation; a later committed
-write or migration seed refreshes the full current projection, but no durable
-shadow outbox or transaction-correlated receipt is claimed here. This plumbing
-is not parity evidence and cannot by itself support Stage 2C promotion.
+The historical post-commit observer has been removed. Existing configuration
+is readable but inactive, enable requests reject, and state migration no longer
+seeds a second observation history. Retained files are not deleted. Use the
+existing transaction-bound runtime shadow after explicit bootstrap; no old
+observation is promoted into evidence. [Transition and compatibility](../../reference/authority-observation-retirement.md).
 
 #### Implementation prerequisite: put local file mode behind the same coordination contract
 
@@ -2159,6 +2142,10 @@ shipped production capability.
 
 #### Stage-ladder end-to-end evidence (2026-09-03)
 
+Historical delivery record: the observation-writer rows described below were
+retired on 2026-09-24. The [current ladder](../../../examples/shared-goal-authority-e2e/README.md)
+uses transaction-bound Stage 1 readback and explicit Stage 2C upgrade acceptance.
+
 What exists on this branch is one incremental end-to-end "stage ladder" that
 exercises every completed stage claim of this RFC through the real
 `python -m loopx.cli` and reports a machine-checkable verdict per row:
@@ -2431,22 +2418,13 @@ remain reviewable in the same bounded slice.
     the promotion PR; two local aggregate formats cannot both be canonical.
     Flipping the file profile's `qualification_holds` to `[]` and its `stage`
     literal happens only inside that PR.*
-14. `main` now carries two default-off shadow lineages for the same writers:
-    the observation capture of #3818 (`coordination.authority_shadow`,
-    `authority-shadow/file/<goal>`, projection v0) and the runtime shadow
-    (`coordination.runtime_shadow`, `authority-shadow/file-v0`, projection v0
-    with `inspect`, `qualify`, `bootstrap`, `rollback`, and `read-candidate`).
-    Both re-sample the source after the primary commit, so both share the
-    concurrent-writer and commit-to-dispatch loss windows that the review of
-    #3818 named. Which lineage is Stage 2C's, and what closes those windows?
-    *Proposed answer: the runtime shadow is the lineage, because the parity
-    report, bootstrap, quarantine rollback, read shape, and promotion kernel
-    already bind to it. The transaction-bound outbox of the parity half
-    (prepared entry inside the writer's own lock, committed marker after the
-    primary write, bounded drain with `operation_id = entry id`) becomes the
-    durable capture that feeds `coordination.runtime_shadow.commit`, and the
-    #3818 observation path retires once that capture is wired. The RFC must
-    not keep two shadow record formats.*
+14. Which shadow lineage remains writable? *Resolved by this retirement:
+    `coordination.runtime_shadow` is the sole writable lineage. Its existing
+    transaction-bound outbox prepares under the source writer lock and drains
+    by stable entry identity. The old `coordination.authority_shadow` writer
+    is removed; historical records remain readable, but cannot qualify capture
+    or promotion. Unsupported event writers still fail closed until their own
+    transaction boundary is bound; retiring observation does not close that gap.*
 
 ---
 

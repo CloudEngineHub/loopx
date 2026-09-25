@@ -33,44 +33,6 @@ TASK_LEASE_LIFECYCLE_NATIVE_SCHEMA_VERSION = TASK_LEASE_LIFECYCLE_REQUEST_SCHEMA
 TASK_LEASE_AUTHORITY_SNAPSHOT_ATTEMPTS = 3
 
 
-def _attach_local_authority_shadow(
-    result: dict[str, Any],
-    *,
-    registry_path: Path | None,
-    runtime_root: Path,
-    goal_id: str,
-    todo_id: str,
-    operation: str,
-) -> dict[str, Any]:
-    """Observe a committed public lease mutation without changing its verdict."""
-
-    if registry_path is None:
-        return result
-    lease = result.get("lease") if isinstance(result.get("lease"), dict) else {}
-    observation_trigger = ":".join(
-        (
-            f"task_lease_{operation}",
-            str(todo_id),
-            str(lease.get("version") or "none"),
-            str(lease.get("lease_epoch") or "none"),
-            str(lease.get("updated_at") or lease.get("released_at") or "unknown"),
-        )
-    )
-    from ..coordination.local_authority_shadow_observation import (
-        observe_local_authority_commit,
-    )
-
-    evidence = observe_local_authority_commit(
-        registry_path=registry_path,
-        runtime_root=runtime_root,
-        goal_id=str(goal_id),
-        observation_trigger=observation_trigger,
-    )
-    if evidence is not None:
-        result["authority_shadow"] = evidence
-    return result
-
-
 def _authority_source_receipt(source_id: str, path: Path) -> dict[str, Any]:
     resolved = path.expanduser().resolve(strict=False)
     try:
@@ -390,14 +352,6 @@ def _finalize_native_acquire_result(
             registry_path=registry_path,
             runtime_root=runtime_root,
             goal_id=goal_id,
-        )
-        result = _attach_local_authority_shadow(
-            result,
-            registry_path=registry_path,
-            runtime_root=runtime_root,
-            goal_id=goal_id,
-            todo_id=todo_id,
-            operation="acquire",
         )
     return result
 
@@ -811,24 +765,6 @@ def execute_native_task_lease_lifecycle(
                 registry_path=registry_path,
                 runtime_root=runtime_root,
                 goal_id=str(goal_id),
-            )
-        committed_mutation = (
-            normalized_operation == "renew" and result.get("renewed") is True
-        ) or (
-            normalized_operation == "transfer"
-            and result.get("transferred") is True
-        ) or (
-            normalized_operation == "release"
-            and result.get("released") is True
-        )
-        if committed_mutation and result.get("idempotent") is not True:
-            result = _attach_local_authority_shadow(
-                result,
-                registry_path=registry_path,
-                runtime_root=runtime_root,
-                goal_id=str(goal_id),
-                todo_id=str(todo_id),
-                operation=normalized_operation,
             )
         # lock_token is an internal bridge value.  Callers that need a held
         # fence read it from the nested native payload before redacting it.
