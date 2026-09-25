@@ -17,6 +17,7 @@ from loopx.control_plane.effect_runtime import (
     EffectRuntimeResponseAmbiguous,
     EffectRuntimeStartupError,
 )
+from loopx.control_plane.quota.error_codes import CloseoutQueryUnavailableError
 from loopx.control_plane.quota.unsettled_host_turn import (
     PRIOR_HOST_TURN_CLOSEOUT_PREFLIGHT_METHOD,
     PRIOR_HOST_TURN_CLOSEOUT_PREFLIGHT_REQUEST_SCHEMA,
@@ -87,7 +88,7 @@ def test_a_lost_preflight_response_is_an_unknown_query_not_an_ambiguous_write():
             PRIOR_HOST_TURN_CLOSEOUT_PREFLIGHT_METHOD, timeout=5,
         ),
     ) as request:
-        with pytest.raises(EffectRuntimeStartupError) as raised:
+        with pytest.raises(CloseoutQueryUnavailableError) as raised:
             _preflight()
     assert request.call_count == 1
     assert raised.value.diagnostic_code == "closeout_query_unavailable"

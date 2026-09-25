@@ -17,7 +17,6 @@ from typing import Any
 from ..effect_runtime import (
     EffectRuntimeRejected,
     EffectRuntimeResponseAmbiguous,
-    EffectRuntimeStartupError,
     effect_runtime_result,
 )
 from ..scheduler.execution_context import SchedulerExecutionContextResolution
@@ -25,7 +24,10 @@ from ..todos.todo_semantics import todo_item_task_class
 from ..work_items.interaction_contract import (
     build_interaction_contract,
 )
-from .error_codes import HeartbeatReceiptIdentityConflictError
+from .error_codes import (
+    CloseoutQueryUnavailableError,
+    HeartbeatReceiptIdentityConflictError,
+)
 
 UNSETTLED_HOST_TURN_RECOVERY_SCHEMA_VERSION = "unsettled_host_turn_recovery_v0"
 
@@ -127,12 +129,11 @@ def _prior_closeout_preflight(
         # possibly committed mutation, and must not send the operator hunting
         # for a nonexistent preflight write receipt. Do not infer a verdict or
         # automatically restart/retry the shared runtime.
-        raise EffectRuntimeStartupError(
+        raise CloseoutQueryUnavailableError(
             f"Read-only {PRIOR_HOST_TURN_CLOSEOUT_PREFLIGHT_METHOD} returned no "
             f"verifiable response within {PRIOR_HOST_TURN_CLOSEOUT_PREFLIGHT_TIMEOUT_SECONDS:g}s; "
             "closeout state is unknown. Retry the query after checking runtime health; "
             "the preflight itself performs no durable writes",
-            diagnostic_code="closeout_query_unavailable",
         ) from exc
     except EffectRuntimeRejected as exc:
         # Keep the public diagnostic the identity rule has always published,
