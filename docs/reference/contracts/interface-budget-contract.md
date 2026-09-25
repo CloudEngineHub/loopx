@@ -8,7 +8,7 @@ and size/count budgets.
 
 | Surface | Owner | Consumer Action | Cold Path | Size Budget | Nested Budget | Count Budget |
 | --- | --- | --- | --- | --- | --- | --- |
-| `heartbeat_prompt_json` | heartbeat automation | wake and route one bounded turn | `quota should-run`, `status`, or `review-packet --handoff-only` | `json_chars <= 4800` plus `interface_budget.within_budget=true` | `nested_keys <= 40` | `top_level_keys <= 30` |
+| `heartbeat_prompt_json` | heartbeat automation | wake and route one bounded turn | `quota should-run`, `status`, or `review-packet --handoff-only` | `json_chars <= 5400` plus `interface_budget.within_budget=true` | `nested_keys <= 40` | `top_level_keys <= 30` |
 | `review_packet_handoff_only_json` | project-agent handoff | forward the smallest sufficient task packet | full `review-packet` or run-history artifact | `json_chars <= 3000` plus `handoff_interface_budget.within_budget=true` | `nested_keys <= 40` | `top_level_keys <= 18` |
 | `quota_should_run_json` | quota guard | decide whether the selected goal may spend compute | `status`, `history`, or active state | `json_chars <= 14500` | `nested_keys <= 360` | `top_level_keys <= 52` |
 | `dashboard_status_json` | operator dashboard | render first-screen operator state | `history`, run artifacts, or project-local adapter output | `json_chars <= 19500` | `nested_keys <= 260` | `top_level_keys <= 25` |
@@ -35,17 +35,25 @@ for the richer generator packet; neither is the recurring Agent hot path.
 
 The heartbeat envelope ceiling covers the unbound and representative agent/scope-bound
 Codex App thin fixtures. It includes generator metadata and repeated bound commands,
-not only the execution prompt. The shared host contract added static safety, repair
-routing, and retry-stable Turn initialization; the scoped fixture now uses about
-4,362 JSON characters. The 4,800-character ceiling leaves roughly 10% headroom for
-that fixture, without relaxing the independent **2,500-character thin task body**,
+not only the execution prompt. On the same scoped fixture, current main uses
+4,791 JSON characters and the language-aware body uses 5,167 while retaining
+static safety, repair routing, work obligation, and settlement instructions.
+The 5,400-character ceiling leaves 233 characters of fixture headroom, without
+relaxing the independent **2,500-character thin task body**,
 4,000-character native Goal body, structural limits, or emitted CLI ceilings.
 It is not a token count, execution quota, or allowance to append more instructions.
 Arbitrary-length caller paths/scopes are not promised to fit this fixed fixture
 envelope; their emitted output is qualified separately by the CLI matrix.
 Do not remove safety or settlement semantics to fit the envelope, and do not copy
-dynamic quota decisions into the static prompt. No prompt text, saved automation,
-scheduler cadence, or spending policy changes with this qualification adjustment.
+dynamic quota decisions into the static prompt. The brief body allowance rises
+from 3,500 to 4,300 characters. Translating its fixed Chinese instructions to
+English grows the Codex App brief body from 3,282 to 3,980 characters (3,494 to
+4,192 with two agent-profile scopes) while its `o200k_base` token count falls
+from 962 to 927 (994 to 959) and UTF-8 bytes grow about 2%. The character
+ceiling therefore moves with the script, not with prompt cost, and keeps about
+8% headroom for the unscoped fixture, close to the previous 7%. Saved
+automation, scheduler cadence, and spending policy do not change with these
+budget adjustments.
 
 The quota budget includes the typed action portfolio, one shared bound CLI
 route, pending-selection qualification, and hard-lane preemption evidence. The
@@ -101,6 +109,19 @@ selectors, TurnEnvelope output, status task-graph detail, the full review
 packet, and the brief/compact/full heartbeat prompt modes. These remain opt-in
 cold paths, but their exact stdout size and semantic anchors are regression
 contracts too.
+
+The user-language prompt transition is one measured exception to ordinary
+base/head growth, scoped to heartbeat rows and only when the base lacks the
+rendered language-policy revision. On the same small CLI fixture, `origin/main`
+to this branch grew by 376 characters for thin, 695 JSON / 690 Markdown
+characters and five Markdown lines for brief, 264 / 262 characters for
+compact, and 258 / 260 for full. Replacing fixed Chinese instructions and
+restoring blocker/next-action continuation gives the worker usable language
+and work guidance; removing those clauses solely to fit the old delta would
+lose that consumer value. The one-time per-mode allowances are 400, 720, 288,
+and 288 characters respectively, plus six lines for brief. The absolute
+surface ceilings, UTF-8 byte limits, quota/status budgets, and normal growth
+limits after this revision becomes the baseline remain unchanged.
 
 `todo list --thin` is an explicit bounded projection, not a new filtering or
 ordering mode. After the normal role, status, Todo-id, and agent filters run,
