@@ -1,8 +1,8 @@
 # 默认切换：按实现证据重算交付边界
 
-- 核对基线：2026-09-24 `main` 的 `d64c4d377`；开放 PR 状态是快照，不是合入承诺。
+- 核对基线：2026-09-25 `main` 的 `37bbaec79`；开放 PR 状态是快照，不是合入承诺。
 - 归属：总目标 #4574 R5/G2；shared authority L2–L9/D1–D3；TS 迁移 T1–T4。
-- 本次交付：既有 typed projection 与 shadow management 的完整来源传输。
+- 本次交付：当前注册事实约束晋升，保存的模式意图完整执行，准确恢复 fence 状态。
 - 本检查点取代此前交付记录中的剩余 PR 数量估算。
 
 ## 先纠正统计口径
@@ -15,28 +15,33 @@
 | --- | --- |
 | #4870 保留 claim 的写入、#4888 reviewed cutover、#4920 drain 规划 | 已实现。验收组合 head，不再重新安排一套替代实现。 |
 | #4922 完整 canonical 快照分页、#4960 SQLite runtime 准入、#4961 显示刷新恢复、#4964 共享来源摘要 | 已实现。消费者和打包客户端仍需组合验收，不等于还缺一个全新的分页/恢复实现。 |
-| #4967 TS 完整来源组装、#4968 原生 outbox 交付/恢复 | 已实现。下述大型来源 RPC 失败是另一个已复现缺口，不能称为 capture 组装未做。 |
-| #5003 event-owned completion 原子提交 | 开放。解决整批发布/重试，不负责 event writer 与 shadow capture 的绑定。 |
-| #4994 带 lease 的显式 Agent 交接、#4995 Monitor 命令 proof、#4991 拒绝 poll 后释放预约、#4992 延期且绑定 receipt 的 Turn | 开放。组合各自经过评审的 head 后盘点 caller，不能再开一个 caller 重构 PR 重做它们。 |
+| #4967 TS 完整来源组装、#4968 原生 outbox 交付/恢复 | 已实现。大型来源传输亦已通过 #5013 合入；不能再称为 capture 未做。 |
+| #5003 event-owned completion 原子提交 | 已合入。解决整批发布/重试，不负责 event writer 与 shadow capture 的绑定。 |
+| #4994 带 lease 的显式 Agent 交接、#4995 Monitor 命令 proof、#4991 拒绝 poll 后释放预约、#4992 延期且绑定 receipt 的 Turn | 已合入。组合现有实现盘点 caller，不能再开一个 caller 重构 PR 重做它们。 |
 | #4931 SQLite retained proof 编码、contributor #4224 | 优化 PR 开放，D2 资格未闭合。提速不等于容量、恢复和 soak 验收通过。 |
 | #4915 默认 `.loopx` 目录 | 独立的配置迁移，不会选择 File/SQLite authority。 |
 
-上表有六个相关的开放实现 PR（#5003、#4994、#4995、#4991、#4992、#4931），
-另列 #4915 排除目录迁移造成的混淆。它们不是六个尚未动手的新需求，也不宣称每个
-都是 storage default 的硬依赖。
+相关在途实现中现在只剩 #4931 的 SQLite 优化；#4915 是独立目录迁移。
+#5011/#5012/#5013/#5014/#5016 亦已合入，继续复用其事务、完整来源与来源见证。
+#4224 最新正式 1 MiB 报告仍有两项失败（receipt p95 269.03 ms / 50 ms；
+scan 100 p95 801.81 ms / 250 ms），#4931 尚未提供精确 head 的正式复测。
+十日 soak 到了计划结束日期，不等于已有通过结果。
 
-## 四个可明确描述的后续交付边界
+## 三个明确的后续代码边界
 
-在整合已有工作之外，规划以下**四个新增交付批次，包含本次**。这是下一步开发
-安排，不是保证总共只剩四个 PR。命令清单和精确 profile 的验收仍可能发现缺陷；
-届时记录新证据和新边界，不再悄悄维持一个范围数字。
+本次补的是整合后的真实晋升准入缺口：旧 registry 快照可初始化 shadow，以及保存
+后的模式转换参数被丢失。它是迁移闭环的缺陷修复，不是新的存储引擎，也不能据此
+将下表第三方资格门或整个迁移包标成完成。
 
-| 批次 | 可观察结果与 owner | 退出证据及剩余依赖 |
+| 拟议 PR | 可观察结果与 owner | 退出条件 |
 | --- | --- | --- |
-| A. 完整来源流水线（本次） | 大于 RPC envelope 的来源可完整经过 TS projection、bootstrap、writer capture、inspect、qualify、reviewed promotion。Python 只传字节，TS 保留来源准入及 authority。 | 大型真实 CLI 链路、File/SQLite 完整读取、source witness 拒绝反例、真实来源隔离副本演练。不绑定 event writer，也不宣布 provider 默认合格。 |
-| B. 外部 effect executor fence | 复用 lease/effect owner，在真实外部 effect 执行区间保护当前 execution proof，覆盖接管、超时、退出与不确定完成。 | 过期 executor 不能执行或结算被围栏的工作，精确业务 receipt 可恢复。复用 #4994/#4995；执行前查一次 proof 不足以证明整个区间安全。 |
-| C. Event writer 绑定与整 Goal 迁移/回滚 | 将真实 event writer 的锁及发布生命周期接入现有 outbox lineage，组合 Markdown/event/lease writer、drain、reviewed cutover、canonical 消费者和 fenced export/rollback。随 TS owner 收口删除替代的 Python 决策。 | 整合 #5003，不重做原子完成。真实绑定通过之前保留 `event_log_writer_not_bound`。闭合 D1 消费者、命令清单与 D3 cohort 证据；若发现需要独立代码批次，明确记录该缺口。 |
-| D. 默认/onboarding 与最后一批有界 Python 退役 | 新 Goal、settings、安装和打包 frontend/Lark/CLI 一致选择合格本地 profile；已有 Goal 有显式迁移、停用指导。仅删除 caller 已切换的业务 writer。 | B/C、适用的 D1–D3、回滚及受影响入口读回。保留永久 Python renderer、宿主 IO 和合法 import/export。 |
+| 1. 外部动作执行区间保护 | lease/effect owner 将执行身份验证覆盖到实际外部动作、接管、超时、退出及不确定完成。复用已合入 #4994/#4995。 | 过期 executor 不能继续执行/结算；真实执行器及 receipt 恢复矩阵通过。执行前查一次 proof 不够。 |
+| 2. 事件 writer 绑定与整 Goal 迁移/回退闭环 | 将 event writer 锁和原子发布接入现有 outbox；组合 Markdown/event/lease writer、drain、saved cutover、消费者和 fenced export/rollback，删除被 TS 替代的 Python 决策。 | 复用 #5003，绑定通过前保留 `event_log_writer_not_bound`；闭合 D1、命令清单与 D3 cohort。单个无 event overlay 的 Goal 晋升不证明本项。 |
+| 3. 默认入口与有界 Python 退役 | 新 Goal、settings、安装及 packaged frontend/Lark/CLI 一致选择合格 profile；存量有显式迁移与停用流程。 | 1/2 及适用 D1–D3 通过，验证用户入口，删除最后 caller 已转走的业务 writer；保留 renderer、host IO、合法导入导出。 |
+
+**计划是三个可命名的后续实现 PR，加已有 #4931 和未闭合证据；不是保证总计四个
+PR 即可切换。** 若验收发现新缺陷，记录具体缺陷与修复 PR，不能重新报一个不变
+的“5–8”。File-only 有界 opt-in、SQLite 合格默认、全部存量迁移分别验收。
 
 D2 的容量、crash/restore/upgrade/runtime 覆盖和**至少十天自然经过时间的 soak**，
 是精确 SQLite profile 的证据门，不预设为一个或两个 PR；#4224 继续拥有这项工作。
