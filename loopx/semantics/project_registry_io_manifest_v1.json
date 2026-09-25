@@ -182,6 +182,14 @@
       "classification": "codec_api"
     },
     {
+      "site": "loopx/capabilities/manager_context/__init__.py::<module>.configure_delivery_target::codec_read:load_registry#1",
+      "line": 317,
+      "column": 20,
+      "kind": "codec_read",
+      "api": "load_registry",
+      "classification": "codec_api"
+    },
+    {
       "site": "loopx/capabilities/manager_context/__init__.py::<module>.configure_evidence_scope::codec_read:load_registry#1",
       "line": 275,
       "column": 16,
@@ -599,7 +607,7 @@
     },
     {
       "site": "loopx/cli_commands/manager_inbox.py::<module>.handle_manager_inbox::codec_read:load_registry#1",
-      "line": 78,
+      "line": 93,
       "column": 20,
       "kind": "codec_read",
       "api": "load_registry",
@@ -791,7 +799,7 @@
     },
     {
       "site": "loopx/cli_commands/todo_continuation.py::<module>.handle_todo_continuation::codec_read:load_registry#1",
-      "line": 126,
+      "line": 136,
       "column": 20,
       "kind": "codec_read",
       "api": "load_registry",
@@ -974,8 +982,24 @@
       "classification": "codec_api"
     },
     {
+      "site": "loopx/control_plane/goals/configure_goal_service.py::<module>._locked_goal_projection::codec_read:load_registry#1",
+      "line": 358,
+      "column": 22,
+      "kind": "codec_read",
+      "api": "load_registry",
+      "classification": "codec_api"
+    },
+    {
+      "site": "loopx/control_plane/goals/configure_goal_service.py::<module>._locked_goal_projection::codec_transaction:project_registry_transaction#1",
+      "line": 377,
+      "column": 13,
+      "kind": "codec_transaction",
+      "api": "project_registry_transaction",
+      "classification": "codec_api"
+    },
+    {
       "site": "loopx/control_plane/goals/configure_goal_service.py::<module>._readback::codec_read:load_registry#1",
-      "line": 243,
+      "line": 246,
       "column": 22,
       "kind": "codec_read",
       "api": "load_registry",
@@ -983,39 +1007,31 @@
     },
     {
       "site": "loopx/control_plane/goals/configure_goal_service.py::<module>._readback::codec_read:load_registry#2",
-      "line": 244,
+      "line": 247,
       "column": 22,
       "kind": "codec_read",
       "api": "load_registry",
       "classification": "codec_api"
     },
     {
-      "site": "loopx/control_plane/goals/configure_goal_service.py::<module>.bind_goal_agent_with_global_sync::codec_transaction:project_registry_transaction#1",
-      "line": 732,
-      "column": 10,
-      "kind": "codec_transaction",
-      "api": "project_registry_transaction",
+      "site": "loopx/control_plane/goals/configure_goal_service.py::<module>.bind_goal_agent_with_global_sync::codec_read:load_registry#1",
+      "line": 881,
+      "column": 34,
+      "kind": "codec_read",
+      "api": "load_registry",
       "classification": "codec_api"
     },
     {
-      "site": "loopx/control_plane/goals/configure_goal_service.py::<module>.bind_goal_agent_with_global_sync::codec_read:load_registry#1",
-      "line": 790,
+      "site": "loopx/control_plane/goals/configure_goal_service.py::<module>.bind_goal_agent_with_global_sync::codec_read:load_registry#2",
+      "line": 978,
       "column": 30,
       "kind": "codec_read",
       "api": "load_registry",
       "classification": "codec_api"
     },
     {
-      "site": "loopx/control_plane/goals/configure_goal_service.py::<module>.configure_goal_with_global_sync::codec_transaction:project_registry_transaction#1",
-      "line": 615,
-      "column": 10,
-      "kind": "codec_transaction",
-      "api": "project_registry_transaction",
-      "classification": "codec_api"
-    },
-    {
       "site": "loopx/control_plane/goals/configure_goal_service.py::<module>.read_goal_agent_binding_with_source_route::codec_read:load_registry#1",
-      "line": 144,
+      "line": 147,
       "column": 25,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1023,7 +1039,7 @@
     },
     {
       "site": "loopx/control_plane/goals/configure_goal_service.py::<module>.resolve_configure_goal_sync_target::codec_read:load_registry#1",
-      "line": 172,
+      "line": 175,
       "column": 22,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1574,9 +1590,17 @@
       "classification": "codec_api"
     },
     {
-      "site": "loopx/global_registry.py::<module>.sync_project_registry_to_global::codec_read:load_registry#1",
-      "line": 646,
+      "site": "loopx/global_registry.py::<module>._sync_project_registry_to_global_once::codec_read:load_registry#1",
+      "line": 647,
       "column": 24,
+      "kind": "codec_read",
+      "api": "load_registry",
+      "classification": "codec_api"
+    },
+    {
+      "site": "loopx/global_registry.py::<module>.sync_project_registry_to_global::codec_read:load_registry#1",
+      "line": 855,
+      "column": 22,
       "kind": "codec_read",
       "api": "load_registry",
       "classification": "codec_api"
