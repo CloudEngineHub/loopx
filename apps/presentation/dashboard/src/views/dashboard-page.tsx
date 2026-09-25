@@ -1298,6 +1298,7 @@ function buildPersonalHomeModel(
 }
 function PersonalGoalHome({
   goalArchiveLoadState,
+  initialManagerChatOpen,
   isLoading,
   onGoalActivationStateChange,
   onGoalDeleted,
@@ -1314,6 +1315,7 @@ function PersonalGoalHome({
   toggleTheme,
 }: {
   goalArchiveLoadState: WorkspaceGoalArchiveLoadState;
+  initialManagerChatOpen: boolean;
   isLoading: boolean;
   onGoalActivationStateChange: (goalId: string, activationState: "active" | "stopped") => void;
   onGoalDeleted: (goalId: string) => void;
@@ -2922,6 +2924,7 @@ function PersonalGoalHome({
           onStartNewRunSession: startNewManagerSession,
         }}
         goalArchiveLoadState={goalArchiveLoadState}
+        initialManagerChatOpen={initialManagerChatOpen}
         managerChannelBinding={managerChannelBinding}
         managerRuntime={managerRuntime}
         conversationSessionId={runtimeBindings[contextId]?.sessionId}
@@ -3396,6 +3399,7 @@ export function DashboardPage() {
   return (
     <PersonalGoalHome
       goalArchiveLoadState={goalArchiveLoadState}
+      initialManagerChatOpen={search.view === "conversation" && !search.goalId}
       isLoading={isLoading}
       onGoalActivationStateChange={(goalId, activationState) => {
         statusRequestFenceRef.current.projectionRevision += 1;

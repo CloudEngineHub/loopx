@@ -18,6 +18,7 @@ function answerLink(sessionId: string, messageId: string) {
   const url = new URL(window.location.href);
   url.searchParams.set("reportSessionId", sessionId);
   url.searchParams.set("reportMessageId", messageId);
+  url.searchParams.set("view", "conversation");
   url.hash = "";
   return url.toString();
 }

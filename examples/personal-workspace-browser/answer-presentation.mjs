@@ -110,6 +110,13 @@ export const answerPresentationScenario = {
       await page.reload({ waitUntil: "networkidle" });
       await page.getByRole("heading", { name: "Full answer" }).waitFor({ state: "visible" });
       await page.evaluate(() => localStorage.setItem("loopx-pw-locale", "zh-CN"));
+      await page.getByRole("button", { name: "Back to conversation" }).click();
+      await page.locator(".personal-channel-timeline .personal-message.is-assistant", {
+        hasText: "建议先验证方案 A",
+      }).waitFor({ state: "visible", timeout: 15_000 });
+      if (api.turnRequests.length !== originalTurnCount) {
+        throw new Error("Returning to the Steward conversation replayed a Turn");
+      }
       const missingUrl = new URL(reportHref);
       missingUrl.searchParams.set("reportMessageId", "missing-answer");
       await page.goto(missingUrl.toString(), { waitUntil: "networkidle" });
