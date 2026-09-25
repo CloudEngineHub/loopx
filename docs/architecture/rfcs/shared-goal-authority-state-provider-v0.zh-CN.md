@@ -43,6 +43,10 @@
 
 ## 当前实现检查点
 
+长历史 closeout 读取复用仅缓存可重新验证的解析前缀，不新增持久 authority 或放宽
+writer fence/D2。剩余三个实现边界不因该运行缺陷修复而机械减一。
+[证据与边界](ledger/shared-goal-authority-state-provider-v0/2026-09-24-default-cutover-reconciliation.zh-CN.md#长历史收尾检查本次修复与剩余边界)。
+
 晋升准入现将完整来源绑定到当前 registry witness，并在 TS 持锁范围内重新校验；
 保存计划执行保留已审核的 handoff 策略，失败结果如实报告持久 fence。
 已提交事务的恢复仍按原 fence/receipt，不要求失去权威的旧来源重新有效。
