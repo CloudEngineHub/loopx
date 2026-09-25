@@ -30,12 +30,12 @@ import {
   type DeliveryWorkspaceCausality,
 } from "./settlement_workspace_causality.ts";
 import {
+  isBoundedBlockedRetry,
   isCommittedMonitorPollEffect,
   receiptBoundMonitorPhase,
   receiptBoundReplayPhase,
 } from "./settlement_phase.ts";
 import { isTurnScopedSettlementOutcome } from "../work_items/delivery_outcome.ts";
-import { isBoundedBlockedRetry } from "./blocked_retry.ts";
 import {
   decodeRefreshRetry,
   isMaterialMonitorPoll,
