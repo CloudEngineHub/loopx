@@ -7,17 +7,15 @@ from loopx.control_plane.handoff.handoff_fragments import (
     FENCE_OPEN_MARKER,
     FENCE_RESUME_MARKER,
     LINE_CONTINUATION_MARKER,
-    HandoffShardCollector,
     HandoffShardError,
     build_handoff_shard_manifest,
     extract_handoff_shards,
-    is_handoff_shard_text,
     parse_handoff_shard,
     reassemble_handoff_shards,
     restore_handoff_text,
     split_handoff_text,
 )
-from loopx.review_packet import render_handoff_only_text
+from loopx.control_plane.handoff.handoff_fragments import render_handoff_transport
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +28,6 @@ def test_within_budget_text_returned_verbatim() -> None:
     shards = split_handoff_text(text)
 
     assert shards == [text]
-    assert is_handoff_shard_text(text) is False
     assert split_handoff_text(text) == [text]
 
 
@@ -139,12 +136,6 @@ def test_shuffled_delivery_raises_out_of_order() -> None:
     assert excinfo.value.code == "out_of_order"
 
 
-def test_non_strict_order_restores_after_sequence_validation() -> None:
-    shards = split_handoff_text(_line_overflow_text())
-    text = reassemble_handoff_shards(list(reversed(shards)), strict_order=False)
-    assert text == _line_overflow_text()
-
-
 def test_payload_tampering_raises_integrity_error() -> None:
     shards = split_handoff_text(_line_overflow_text())
     tampered = shards[1].replace("甲乙", "丙丁", 1)
@@ -202,15 +193,6 @@ def test_duplicate_shard_in_batch_raises() -> None:
     assert excinfo.value.code == "duplicate"
 
 
-def test_collector_incomplete_reassemble_raises_missing() -> None:
-    shards = split_handoff_text(_line_overflow_text())
-    collector = HandoffShardCollector()
-    collector.ingest_text(shards[0])
-    assert collector.complete is False
-    assert collector.missing_indices == list(range(1, len(shards)))
-    with pytest.raises(HandoffShardError) as excinfo:
-        collector.reassemble()
-    assert excinfo.value.code == "missing"
 
 
 # ---------------------------------------------------------------------------
@@ -226,28 +208,8 @@ def test_regeneration_is_byte_stable() -> None:
     assert parse_handoff_shard(first[0]).set_id == parse_handoff_shard(second[0]).set_id
 
 
-def test_collector_repeated_import_is_idempotent() -> None:
-    text = _line_overflow_text()
-    shards = split_handoff_text(text)
-    collector = HandoffShardCollector()
-    for shard in shards:
-        collector.ingest_text(shard)
-    for shard in shards:
-        collector.ingest_text(shard)
-    assert collector.arrival_indices == list(range(len(shards)))
-    assert collector.received_indices == list(range(len(shards)))
-    assert collector.complete is True
-    assert collector.reassemble() == text
 
 
-def test_collector_rejects_foreign_set() -> None:
-    shards = split_handoff_text(_line_overflow_text())
-    other = split_handoff_text("另一条交接：" + "内容" * 1500)
-    collector = HandoffShardCollector()
-    collector.ingest_text(shards[0])
-    with pytest.raises(HandoffShardError) as excinfo:
-        collector.ingest_text(other[1])
-    assert excinfo.value.code == "set_mismatch"
 
 
 # ---------------------------------------------------------------------------
@@ -477,10 +439,10 @@ def test_review_packet_fragments_oversized_handoff_losslessly() -> None:
     payload = build_review_packet(_giant_command_payload(goal_id), goal_id=goal_id)
     assert payload["ok"] is True
 
-    shard0 = payload["project_agent_handoff"]
+    shard0 = payload["project_agent_handoff_fragments"][0]
     fragments = payload["project_agent_handoff_fragments"]
     manifest = payload["handoff_fragment_manifest"]
-    all_shards = [shard0, *fragments]
+    all_shards = fragments
 
     assert len(fragments) >= 1
     assert manifest["schema_version"] == "project_agent_handoff_shard_v1"
@@ -507,14 +469,14 @@ def test_review_packet_fragments_oversized_handoff_losslessly() -> None:
 
     extracted = extract_handoff_shards(payload["packet"])
     assert reassemble_handoff_shards(extracted) == restored
-    assert "交接分片提示：本段为第 1/" in payload["packet"]
+    assert "交接分片 1/" in payload["packet"]
 
     handoff_only = review_packet_handoff_only_payload(payload)
     assert handoff_only["project_agent_handoff_fragments"] == fragments
     assert handoff_only["handoff_fragment_manifest"] == manifest
-    assert handoff_only["handoff_text"] == shard0
+    assert handoff_only["handoff_text"] == restored == payload["project_agent_handoff"]
 
-    markdown = render_handoff_only_text(
+    markdown = render_handoff_transport(
         handoff_only["handoff_text"], handoff_only["project_agent_handoff_fragments"]
     )
     assert reassemble_handoff_shards(extract_handoff_shards(markdown)) == restored
@@ -542,19 +504,19 @@ def test_review_packet_within_budget_shape_is_unchanged() -> None:
 
     handoff_only = review_packet_handoff_only_payload(payload)
     assert "project_agent_handoff_fragments" not in handoff_only
-    rendered = render_handoff_only_text(handoff_only["handoff_text"], [])
+    rendered = render_handoff_transport(handoff_only["handoff_text"], [])
     assert rendered == handoff_only["handoff_text"] == handoff
 
 
-def test_handoff_budget_reports_shard_zero_within_budget() -> None:
+def test_handoff_budget_reports_complete_text_overflow() -> None:
     from loopx.review_packet import build_review_packet
 
     goal_id = "giant-command-handoff-budget"
     payload = build_review_packet(_giant_command_payload(goal_id), goal_id=goal_id)
     budget = payload["handoff_interface_budget"]
     assert budget["mode"] == "project_agent_handoff"
-    assert budget["within_budget"] is True
+    assert budget["within_budget"] is False
     assert budget["within_line_budget"] is True
-    assert budget["within_char_budget"] is True
+    assert budget["within_char_budget"] is False
     assert budget["line_count"] == len(payload["project_agent_handoff"].splitlines())
     assert budget["char_count"] == len(payload["project_agent_handoff"])

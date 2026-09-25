@@ -5,8 +5,7 @@ A handoff text normally fits the ``project_agent_handoff`` interface budget
 the budget, this module splits it into ordered, independently verifiable
 shards instead of dropping sections:
 
-* shard 0 keeps the existing ``project_agent_handoff`` field position and
-  semantics; continuation shards are delivered alongside it;
+* complete text fields remain complete; transport arrays carry every shard;
 * every shard starts with a single envelope line carrying a stable content
   set id, its sequence index/total, a per-shard payload checksum, a previous
   shard hash chain, and the full-content digest;
@@ -113,7 +112,9 @@ def _envelope_line(
 
 def _assert_no_transport_markers(lines: list[str]) -> None:
     for line in lines:
-        if line.startswith(ENVELOPE_PREFIX) or line.startswith(LINE_CONTINUATION_MARKER):
+        if line.startswith(ENVELOPE_PREFIX) or line.startswith(
+            LINE_CONTINUATION_MARKER
+        ):
             raise HandoffShardError(
                 "reserved_marker",
                 "handoff content contains a reserved loopx-handoff transport marker",
@@ -147,7 +148,9 @@ def _parse_units(lines: list[str]) -> list[_FenceUnit | str]:
                     "cannot fragment handoff with an unterminated fenced code block",
                 )
             closer_index = lines.index("```", index + 1)
-            units.append(_FenceUnit(opener=line, content=lines[index + 1 : closer_index]))
+            units.append(
+                _FenceUnit(opener=line, content=lines[index + 1 : closer_index])
+            )
             index = closer_index + 1
         else:
             units.append(line)
@@ -264,7 +267,9 @@ class _ShardPacker:
         used_chars = len(self._payload_text()) + (1 if self.current else 0)
         framing_chars = len(FENCE_OPEN_MARKER) + 1 + len("```")
         needs_lines = len(self.current) + 1 + 2 <= self.payload_max_lines
-        needs_chars = used_chars + len(fence.opener) + framing_chars <= self.payload_max_chars
+        needs_chars = (
+            used_chars + len(fence.opener) + framing_chars <= self.payload_max_chars
+        )
         if self.current and not (needs_lines and needs_chars):
             self._flush()
         self.current.append(fence.opener)
@@ -277,7 +282,9 @@ class _ShardPacker:
 
     def finish(self) -> list[str]:
         if self.fence_active:
-            raise HandoffShardError("structure", "unterminated fence while finishing shards")
+            raise HandoffShardError(
+                "structure", "unterminated fence while finishing shards"
+            )
         self._flush()
         return ["\n".join(lines) for lines in self.shards]
 
@@ -311,7 +318,9 @@ def split_handoff_text(
         default=0,
     )
     if max_opener_len > ENVELOPE_CHAR_RESERVE:
-        raise HandoffShardError("structure", "fence opener cannot fit shard framing budget")
+        raise HandoffShardError(
+            "structure", "fence opener cannot fit shard framing budget"
+        )
 
     packer = _ShardPacker(max_lines=line_limit, max_chars=char_limit)
     for unit in units:
@@ -321,7 +330,9 @@ def split_handoff_text(
             packer.emit_line(unit)
     payloads = packer.finish()
     if len(payloads) < 2:
-        raise HandoffShardError("structure", "overflow handoff produced no continuation shard")
+        raise HandoffShardError(
+            "structure", "overflow handoff produced no continuation shard"
+        )
 
     digest_hex = _sha256_hex(text)
     set_id = digest_hex[:16]
@@ -345,7 +356,9 @@ def split_handoff_text(
                 f"generated shard {index}/{total} exceeds the interface budget",
             )
         if len(envelope) >= ENVELOPE_CHAR_RESERVE:
-            raise HandoffShardError("structure", "shard envelope exceeds reserved header budget")
+            raise HandoffShardError(
+                "structure", "shard envelope exceeds reserved header budget"
+            )
         shards.append(shard)
         prev_hash = chunk_hash
 
@@ -365,7 +378,9 @@ def parse_handoff_shard(text: str) -> HandoffShard:
         raise HandoffShardError("envelope", "handoff shard must not end with a newline")
     first_line, separator, payload = text.partition("\n")
     if not separator or not payload:
-        raise HandoffShardError("envelope", "handoff shard needs an envelope line and payload")
+        raise HandoffShardError(
+            "envelope", "handoff shard needs an envelope line and payload"
+        )
     match = ENVELOPE_RE.match(first_line)
     if match is None:
         raise HandoffShardError("envelope", "malformed handoff shard envelope")
@@ -379,7 +394,9 @@ def parse_handoff_shard(text: str) -> HandoffShard:
     digest_hex = match.group("d")
     set_id = match.group("id")
     if set_id != digest_hex[:16]:
-        raise HandoffShardError("envelope", "handoff shard set id does not bind content digest")
+        raise HandoffShardError(
+            "envelope", "handoff shard set id does not bind content digest"
+        )
     prev_field = match.group("p")
     return HandoffShard(
         set_id=set_id,
@@ -392,14 +409,6 @@ def parse_handoff_shard(text: str) -> HandoffShard:
     )
 
 
-def is_handoff_shard_text(text: str) -> bool:
-    try:
-        parse_handoff_shard(text)
-    except HandoffShardError:
-        return False
-    return True
-
-
 def _decode_fence_groups(physical: list[str]) -> list[str]:
     """Collapse transport fence wrapping, then join wrapped physical lines."""
 
@@ -410,18 +419,25 @@ def _decode_fence_groups(physical: list[str]) -> list[str]:
         line = physical[index]
         if line.startswith("```"):
             closer_index = next(
-                (candidate for candidate in range(index + 1, len(physical))
-                 if physical[candidate] == "```"),
+                (
+                    candidate
+                    for candidate in range(index + 1, len(physical))
+                    if physical[candidate] == "```"
+                ),
                 None,
             )
             if closer_index is None:
-                raise HandoffShardError("structure", "unterminated fence in shard payload")
+                raise HandoffShardError(
+                    "structure", "unterminated fence in shard payload"
+                )
             content = physical[index + 1 : closer_index]
             if any(
                 marker in content[1:-1]
                 for marker in (FENCE_OPEN_MARKER, FENCE_RESUME_MARKER)
             ):
-                raise HandoffShardError("structure", "fence transport marker at invalid position")
+                raise HandoffShardError(
+                    "structure", "fence transport marker at invalid position"
+                )
             starts_resume = bool(content) and content[0] == FENCE_RESUME_MARKER
             ends_open = bool(content) and content[-1] == FENCE_OPEN_MARKER
             inner = content[1:] if starts_resume else list(content)
@@ -429,7 +445,8 @@ def _decode_fence_groups(physical: list[str]) -> list[str]:
             if starts_resume:
                 if pending is None:
                     raise HandoffShardError(
-                        "structure", "fence resume marker without a preceding fence part"
+                        "structure",
+                        "fence resume marker without a preceding fence part",
                     )
                 pending.extend(inner)
             else:
@@ -446,7 +463,9 @@ def _decode_fence_groups(physical: list[str]) -> list[str]:
             index = closer_index + 1
             continue
         if line in (FENCE_OPEN_MARKER, FENCE_RESUME_MARKER):
-            raise HandoffShardError("structure", "fence transport marker outside fenced block")
+            raise HandoffShardError(
+                "structure", "fence transport marker outside fenced block"
+            )
         if pending is not None:
             raise HandoffShardError(
                 "structure", "non-fence line interleaved with a split fenced block"
@@ -461,7 +480,8 @@ def _decode_fence_groups(physical: list[str]) -> list[str]:
         if line.startswith(LINE_CONTINUATION_MARKER):
             if not joined or joined[-1].startswith("```"):
                 raise HandoffShardError(
-                    "structure", "line continuation marker without a preceding line part"
+                    "structure",
+                    "line continuation marker without a preceding line part",
                 )
             joined[-1] += line[len(LINE_CONTINUATION_MARKER) :]
         else:
@@ -470,38 +490,9 @@ def _decode_fence_groups(physical: list[str]) -> list[str]:
 
 
 def _decode_shards(shards: list[HandoffShard]) -> str:
-    if not shards:
-        raise HandoffShardError("missing", "no handoff shards provided")
-    set_ids = {shard.set_id for shard in shards}
-    if len(set_ids) > 1:
-        raise HandoffShardError(
-            "set_mismatch",
-            f"handoff shards belong to multiple fragment sets: {sorted(set_ids)}",
-        )
-    totals = {shard.total for shard in shards}
-    if len(totals) > 1:
-        raise HandoffShardError("set_mismatch", "handoff shards disagree on total count")
-    digest_values = {shard.digest_hex for shard in shards}
-    if len(digest_values) > 1:
-        raise HandoffShardError("set_mismatch", "handoff shards disagree on content digest")
-    total = shards[0].total
+    # The sole caller has validated set, cardinality and arrival order.
     set_id = shards[0].set_id
-
-    ordered = sorted(shards, key=lambda shard: shard.index)
-    indices = [shard.index for shard in ordered]
-    expected = list(range(total))
-    if indices != expected:
-        missing = [index for index in expected if index not in indices]
-        extra = [index for index in indices if index < 0 or index >= total]
-        if missing:
-            raise HandoffShardError(
-                "missing",
-                f"handoff fragment set {set_id} missing shard index/indices {missing}",
-            )
-        raise HandoffShardError(
-            "out_of_order",
-            f"handoff fragment set {set_id} has unexpected indices {extra}",
-        )
+    ordered = shards
 
     previous_hash: str | None = None
     for shard in ordered:
@@ -527,12 +518,10 @@ def _decode_shards(shards: list[HandoffShard]) -> str:
 
 def reassemble_handoff_shards(
     shard_texts: Iterable[str],
-    *,
-    strict_order: bool = True,
 ) -> str:
     """Parse, verify and concatenate handoff shards back to the original text.
 
-    With ``strict_order=True`` (default) shard texts must arrive in sequence
+    Shard texts must arrive in sequence
     order (0, 1, ..., n-1); out-of-order arrival raises
     :class:`HandoffShardError`. Missing shards, duplicate shards, foreign-set
     shards, checksum and hash-chain failures, and full-content digest
@@ -540,36 +529,45 @@ def reassemble_handoff_shards(
     """
 
     parsed = [parse_handoff_shard(text) for text in shard_texts]
-    if parsed:
-        arrival = [shard.index for shard in parsed]
-        total = parsed[0].total
-        if any(index < 0 or index >= total for index in arrival):
-            raise HandoffShardError(
-                "unexpected_index",
-                f"handoff import has shard indices outside 0..{total - 1}: {arrival}",
-            )
-        if len(set(arrival)) != len(arrival):
-            raise HandoffShardError(
-                "duplicate",
-                f"duplicate handoff shard index in import: {arrival}",
-            )
-        if len(parsed) > total:
-            raise HandoffShardError(
-                "unexpected_index",
-                f"more handoff shards than declared total {total}: {arrival}",
-            )
+    if not parsed:
+        raise HandoffShardError("missing", "no handoff shards provided")
+    if len({(s.set_id, s.total, s.digest_hex) for s in parsed}) != 1:
+        raise HandoffShardError(
+            "set_mismatch", "handoff input mixes different fragment sets"
+        )
+    arrival = [shard.index for shard in parsed]
+    total = parsed[0].total
+    if any(index < 0 or index >= total for index in arrival):
+        raise HandoffShardError(
+            "unexpected_index",
+            f"handoff import has shard indices outside 0..{total - 1}: {arrival}",
+        )
+    if len(set(arrival)) != len(arrival):
+        raise HandoffShardError(
+            "duplicate",
+            f"duplicate handoff shard index in import: {arrival}",
+        )
+    if len(parsed) > total:
+        raise HandoffShardError(
+            "unexpected_index",
+            f"more handoff shards than declared total {total}: {arrival}",
+        )
+    if len(parsed) < total:
         present = set(arrival)
-        missing = [index for index in range(total) if index not in present]
-        if missing:
-            raise HandoffShardError(
-                "missing",
-                f"handoff fragment set {parsed[0].set_id} missing shard index/indices {missing}",
-            )
-        if strict_order and arrival != sorted(arrival):
-            raise HandoffShardError(
-                "out_of_order",
-                f"handoff shards arrived out of sequence: {arrival}",
-            )
+        # Work scales with received input, never with an untrusted declared total.
+        first_missing = next(
+            index for index in range(len(parsed) + 1) if index not in present
+        )
+        raise HandoffShardError(
+            "missing",
+            f"handoff fragment set {parsed[0].set_id} missing shard index {first_missing}; "
+            f"received {len(parsed)} of {total}",
+        )
+    if arrival != sorted(arrival):
+        raise HandoffShardError(
+            "out_of_order",
+            f"handoff shards arrived out of sequence: {arrival}",
+        )
     return _decode_shards(parsed)
 
 
@@ -583,7 +581,7 @@ def restore_handoff_text(value: str | Iterable[str]) -> str:
     """
 
     if isinstance(value, str):
-        if any(ENVELOPE_RE.match(line) for line in value.split("\n")):
+        if any(line.startswith(ENVELOPE_PREFIX) for line in value.split("\n")):
             return reassemble_handoff_shards(extract_handoff_shards(value))
         return value
     shard_texts = list(value)
@@ -600,86 +598,6 @@ def restore_handoff_text(value: str | Iterable[str]) -> str:
     )
 
 
-class HandoffShardCollector:
-    """Accumulate imported shards idempotently and reassemble once complete.
-
-    Importing the same shard text twice is a no-op (stable set id + index +
-    payload checksum). Re-importing the same index with different content
-    raises ``conflict``; shards from a different fragment set raise
-    ``set_mismatch``.
-    """
-
-    def __init__(self) -> None:
-        self._shards: dict[int, HandoffShard] = {}
-        self._arrival: list[int] = []
-        self.set_id: str | None = None
-        self.total: int | None = None
-        self.digest_hex: str | None = None
-
-    def ingest(self, shard: HandoffShard) -> HandoffShard:
-        if self.set_id is None:
-            if shard.index >= shard.total:
-                raise HandoffShardError(
-                    "envelope",
-                    f"handoff shard index {shard.index} >= total {shard.total}",
-                )
-            self.set_id = shard.set_id
-            self.total = shard.total
-            self.digest_hex = shard.digest_hex
-        elif (
-            shard.set_id != self.set_id
-            or shard.total != self.total
-            or shard.digest_hex != self.digest_hex
-        ):
-            raise HandoffShardError(
-                "set_mismatch",
-                f"shard set {shard.set_id} does not match collector set {self.set_id}",
-            )
-        if shard.index < 0 or shard.index >= shard.total:
-            raise HandoffShardError(
-                "envelope",
-                f"handoff shard index {shard.index} outside total {shard.total}",
-            )
-        existing = self._shards.get(shard.index)
-        if existing is not None:
-            if existing.chunk_hash != shard.chunk_hash:
-                raise HandoffShardError(
-                    "conflict",
-                    f"handoff shard {shard.index} re-imported with different content",
-                )
-            return shard
-        self._shards[shard.index] = shard
-        self._arrival.append(shard.index)
-        return shard
-
-    def ingest_text(self, text: str) -> HandoffShard:
-        return self.ingest(parse_handoff_shard(text))
-
-    @property
-    def received_indices(self) -> list[int]:
-        return sorted(self._shards)
-
-    @property
-    def arrival_indices(self) -> list[int]:
-        return list(self._arrival)
-
-    @property
-    def missing_indices(self) -> list[int]:
-        if self.total is None:
-            return []
-        return [index for index in range(self.total) if index not in self._shards]
-
-    @property
-    def complete(self) -> bool:
-        return self.total is not None and not self.missing_indices
-
-    def reassemble(self) -> str:
-        if self.total is None:
-            raise HandoffShardError("missing", "no handoff shards imported")
-        ordered = [self._shards[index] for index in sorted(self._shards)]
-        return _decode_shards(ordered)
-
-
 def extract_handoff_shards(text: str) -> list[str]:
     """Extract shard blocks embedded in a larger text (e.g. a full packet).
 
@@ -689,7 +607,14 @@ def extract_handoff_shards(text: str) -> list[str]:
     """
 
     lines = text.split("\n")
-    starts = [index for index, line in enumerate(lines) if ENVELOPE_RE.match(line)]
+    starts = [
+        index for index, line in enumerate(lines) if line.startswith(ENVELOPE_PREFIX)
+    ]
+    if any(not ENVELOPE_RE.match(lines[index]) for index in starts):
+        raise HandoffShardError(
+            "envelope",
+            "malformed handoff envelope; obtain the unchanged producer output",
+        )
     if not starts:
         raise HandoffShardError("envelope", "no handoff shard envelope found")
     extracted: list[str] = []
@@ -713,7 +638,9 @@ def extract_handoff_shards(text: str) -> list[str]:
     return extracted
 
 
-def build_handoff_shard_manifest(original_text: str, shard_texts: list[str]) -> dict[str, Any]:
+def build_handoff_shard_manifest(
+    original_text: str, shard_texts: list[str]
+) -> dict[str, Any]:
     """Structured projection of a fragmented handoff for JSON surfaces."""
 
     parsed = [parse_handoff_shard(text) for text in shard_texts]
@@ -734,3 +661,13 @@ def build_handoff_shard_manifest(original_text: str, shard_texts: list[str]) -> 
             for shard, shard_text in zip(parsed, shard_texts)
         ],
     }
+
+
+def render_handoff_transport(text: str, shards: list[str]) -> str:
+    """Render complete plain text or an ordered transport set, never both."""
+    if not shards:
+        return text
+    return "\n\n".join(
+        f"【交接分片 {index + 1}/{len(shards)}；收齐后用 loopx handoff restore 校验；恢复不授予执行权限】\n{shard}"
+        for index, shard in enumerate(shards)
+    )

@@ -25,12 +25,13 @@ from ..control_plane.todos.todo_index import (
     compact_agent_lane_todo_index_for_status_display,
 )
 from ..diagnose import collect_diagnosis, render_diagnosis_markdown
+from ..control_plane.handoff.project_agent_context import build_project_agent_handoff
+from ..control_plane.handoff.handoff_fragments import render_handoff_transport
 from ..handoff_budget import build_handoff_interface_budget
 from ..presentation.renderers.status_markdown import render_status_markdown
 from ..quota import build_quota_should_run
 from ..review_packet import (
     build_review_packet,
-    render_handoff_only_text,
     render_review_packet_markdown,
 )
 from ..status import AUTONOMOUS_REPLAN_PERIODIC_LOOKBACK, collect_status
@@ -886,12 +887,15 @@ def handle_review_packet_command(
         )
         if args.agent_id:
             attach_agent_lane_next_actions(status_payload, agent_id=args.agent_id)
-        payload = build_review_packet(
-            status_payload,
-            goal_id=args.goal_id,
-            action_kind=args.action_kind,
-            review_url=args.review_url,
-        )
+        if args.handoff_only:
+            payload = build_project_agent_handoff(
+                status_payload, goal_id=args.goal_id, action_kind=args.action_kind,
+            )
+        else:
+            payload = build_review_packet(
+                status_payload, goal_id=args.goal_id, action_kind=args.action_kind,
+                review_url=args.review_url,
+            )
     except Exception as exc:
         payload = {
             "ok": False,
@@ -905,7 +909,7 @@ def handle_review_packet_command(
         if not isinstance(fragment_texts, list):
             fragment_texts = []
         print(
-            render_handoff_only_text(
+            render_handoff_transport(
                 str(payload.get("handoff_text") or ""), fragment_texts
             )
         )
