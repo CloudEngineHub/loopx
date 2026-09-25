@@ -219,7 +219,6 @@ type PersonalAgentTodoItem = {
   claimedBy?: string | null;
   done: boolean;
   evidence?: string | null;
-  index: number;
   priority?: string | null;
   status?: string | null;
   taskClass?: string | null;
@@ -725,7 +724,6 @@ function personalAgentTodoFromItem(todo: TodoItem, row: GoalDirectoryRow): Perso
     // Legacy summaries mark deferred entries checked; they are not completed work.
     done: todo.status === "deferred" ? false : todo.done,
     evidence: todo.evidence ? compactShareText(todo.evidence, 96) : null,
-    index: todo.index,
     priority: todo.priority ?? null,
     status: todo.status ?? null,
     taskClass: todo.task_class ?? null,
@@ -787,7 +785,6 @@ function personalAgentTodoFromProjection(
   return {
     claimedBy: todo.claimed_by ?? null,
     done: todo.status === "done" || todo.status === "completed",
-    index: -1,
     priority: todo.priority ?? null,
     status: todo.status ?? null,
     taskClass: todo.task_class ?? null,
