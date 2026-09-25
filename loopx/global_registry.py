@@ -855,6 +855,21 @@ def sync_project_registry_to_global(
     source_payload = load_registry(source_registry)
     runtime_root = resolve_runtime_root(source_payload, runtime_root_override)
     target_registry = global_registry_path(runtime_root)
+    if source_registry.resolve() == target_registry.resolve():
+        # This route's global registry is the source registry itself, which a
+        # caller such as configure-goal already owns through the source
+        # transaction lock. Acquiring the cross-runtime lock here would wait
+        # on this process while holding the source lock, so a single-runtime
+        # route would write the source and then fail to report it. The
+        # single-shot reducer already treats this route as an owned no-op.
+        return _sync_project_registry_to_global_once(
+            registry_path=source_registry,
+            runtime_root_override=runtime_root_override,
+            goal_id=goal_id,
+            dry_run=False,
+            allow_route_replacement=allow_route_replacement,
+            _global_registry_lock_held=_global_registry_lock_held,
+        )
     with exclusive_cross_runtime_file_lock(
         target_registry,
         operation="sync_global_registry",

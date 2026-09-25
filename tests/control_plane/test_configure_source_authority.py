@@ -14,6 +14,7 @@ from loopx.configuration_transaction import goal_capability_configuration_revisi
 from loopx.configure_goal import configure_goal
 from loopx.control_plane.goals import configure_goal_service
 from loopx.control_plane.goals.configure_goal_service import (
+    bind_goal_agent_with_global_sync,
     configure_goal_with_global_sync,
     read_goal_configuration_with_source_route,
 )
@@ -689,3 +690,87 @@ def test_chat_agent_binding_recovers_after_receipt_loss(
     assert recovered["status"] == "applied"
     assert recovered["receipt"]["outcome"] == "agent_already_bound"
     assert registered_agents(mirror) == ["agent-a", "agent-b"]
+
+
+@pytest.fixture
+def single_runtime_goal(tmp_path, monkeypatch):
+    """A source registry that is itself the route's global registry."""
+
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    monkeypatch.setenv("LOOPX_RUNTIME_ROOT", str(runtime))
+    registry = runtime / "registry.global.json"
+    registry.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "common_runtime_root": str(runtime),
+                "goals": [
+                    {
+                        "id": "example",
+                        "repo": str(tmp_path / "project"),
+                        "status": "active",
+                        "coordination": {"registered_agents": ["agent-a"]},
+                        "spawn_policy": {
+                            "mode": "default",
+                            "allowed": False,
+                            "max_children": 3,
+                        },
+                    }
+                ],
+            }
+        )
+    )
+    return registry, runtime
+
+
+def test_single_runtime_configure_keeps_the_source_write(single_runtime_goal):
+    registry, _runtime = single_runtime_goal
+
+    applied = configure_goal_with_global_sync(
+        registry_path=registry,
+        goal_id="example",
+        runtime_root_override=None,
+        execute=True,
+        max_children=4,
+    )
+
+    assert applied["ok"] is True
+    assert applied["written"] is True
+    assert policy(registry)["max_children"] == 4
+    global_sync = applied["global_sync"]
+    assert global_sync["target_resolution"]["status"] == "single_runtime"
+    assert global_sync["sync"]["skipped"] is True
+    assert global_sync["readback"]["verified"] is True
+
+
+def test_single_runtime_agent_binding_keeps_the_source_write(single_runtime_goal):
+    registry, _runtime = single_runtime_goal
+
+    applied = bind_goal_agent_with_global_sync(
+        registry_path=registry,
+        goal_id="example",
+        agent_id="agent-b",
+        execute=True,
+    )
+
+    assert applied["ok"] is True
+    assert applied["written"] is True
+    assert applied["projection_verified"] is True
+    assert registered_agents(registry) == ["agent-a", "agent-b"]
+
+
+def test_single_runtime_standalone_sync_skips_without_lock_wait(single_runtime_goal):
+    registry, _runtime = single_runtime_goal
+
+    payload = sync_project_registry_to_global(
+        registry_path=registry,
+        runtime_root_override=None,
+        goal_id="example",
+        dry_run=False,
+    )
+
+    assert payload["ok"] is True
+    assert payload["skipped"] is True
+    assert payload["reason"] == "source registry is already the global registry"
+    assert policy(registry)["max_children"] == 3
