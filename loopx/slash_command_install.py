@@ -1392,6 +1392,11 @@ def install_slash_commands(
         status = str(item["status"])
         status_counts[status] = status_counts.get(status, 0) + 1
 
+    pi_target_note = (
+        "the user agent dir <agent-dir>/extensions/loopx/ (scope=user)"
+        if pi_scope == "user"
+        else "the project's .pi/extensions/ (scope=project)"
+    )
     return {
         "ok": not any(status.startswith("blocked_") for status in status_counts),
         "schema_version": SCHEMA_VERSION,
@@ -1441,7 +1446,7 @@ def install_slash_commands(
             f"Kiro CLI discovers global skills from {_KIRO_SKILLS_ROOT_LABEL}/<name>/SKILL.md (default ~/.kiro/skills) and exposes each as a `/<skill-name>` slash command; the kiro-cli surface is opt-in and resolves KIRO_HOME so install and uninstall target the profile the running host reads. Kiro resolves .kiro/prompts and KIRO_HOME/prompts before skills, so a same-named user prompt shadows the managed skill.",
             "OpenCode discovers global skills from OPENCODE_CONFIG_DIR/skills in addition to the static command facade; a command is typed by the user, a skill can be reached by the model itself.",
             "The default all surface installs only OpenCode's static command facade; the executable goal bridge requires --with-goal-bridge.",
-            "The Pi surface is opt-in and installs the self-contained goal extension and its loop runtime into the project's .pi/extensions/; it is not part of the default all surface.",
+            f"The Pi surface is opt-in and installs the self-contained goal extension and its loop runtime into {pi_target_note}; it is not part of the default all surface.",
             "The OpenCode goal bridge uses Bun-managed config-directory dependencies and must replace any direct goal-plugin registration.",
             "OpenCode bridge uninstall preserves package.json dependencies because they may be shared by user-owned local plugins.",
             "Uninstall is fail-closed: it retires only files carrying the LoopX managed marker and leaves user-owned files in place.",

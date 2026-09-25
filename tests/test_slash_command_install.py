@@ -613,6 +613,7 @@ def test_pi_user_scope_installs_atomic_extension_unit(tmp_path: Path) -> None:
     assert payload["summary"]["pi_scope"] == "user"
     assert payload["summary"]["pi_extension_path"] == str(root / "index.ts")
     assert payload["summary"]["pi_runtime_path"] == str(root / "pi-goal-loop-runtime.mjs")
+    assert any("scope=user" in note for note in payload["notes"])
     assert (root / "index.ts").is_file()
     assert (root / "pi-goal-loop-runtime.mjs").is_file()
     assert inspect_pi_installations(pi_project=str(tmp_path), pi_user_home=str(home))["location"] == "user-global"
