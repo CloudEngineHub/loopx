@@ -20,15 +20,13 @@ def restore_handoff_input(text: str, *, input_format: str) -> str:
     if input_format == "markdown":
         if not text.strip():
             raise HandoffShardError("missing", "empty handoff input")
-        if ENVELOPE_PREFIX in text:
-            return restore_handoff_text(text)
-        if text.startswith("【LoopX Review Packet】"):
+        if text.startswith("【LoopX Review Packet】") and ENVELOPE_PREFIX not in text:
             raise HandoffShardError(
                 "input",
                 "use full packet JSON or handoff-only Markdown for an unfragmented packet",
             )
-        # Unframed input is content, not integrity-verified transport.
-        return text
+        # Unframed input remains content; apparent fragments must verify first.
+        return restore_handoff_text(text)
     try:
         value = json.loads(text)
     except json.JSONDecodeError as exc:

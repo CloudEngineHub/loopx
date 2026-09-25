@@ -714,9 +714,12 @@ loopx handoff restore --input handoff.json --format json
 ```
 
 For raw sharded Markdown use `--input-format markdown`; `--input -` reads stdin.
-JSON avoids relying on a renderer preserving HTML comment envelopes. A complete
-unfragmented handoff-only Markdown input is accepted as plain text without an
-integrity claim; use JSON for unfragmented full Review Packets. Missing,
+JSON avoids relying on a renderer preserving HTML comment envelopes. A fragment
+title without its envelope, or an indented envelope, is rejected rather than
+returned as plain text. If both title and envelope disappear, only the original
+JSON output can establish completeness. Complete unfragmented handoff-only
+Markdown is accepted as plain text without an integrity claim; use JSON for
+unfragmented full Review Packets. Missing,
 reordered, duplicate, mixed or changed parts fail with a nonzero exit and
 `error_code`, without partial text. Obtain the original complete output and
 retry. There is no collector or business-request deduplication by content hash.

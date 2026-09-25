@@ -1698,8 +1698,13 @@ Review Packet source-of-truth rule:
   sharded Markdown (full packet or handoff-only). `--input -` reads stdin.
   Unfragmented Markdown must be handoff-only; unfragmented full packets should
   use JSON. JSON is recommended because Markdown renderers may strip comments.
-  Plain unframed text has no integrity proof. Reserved envelope, continuation
-  and fence markers cannot be supplied as oversized source content;
+  A Markdown fragment title with a missing envelope, or an envelope moved off
+  the start of its line, fails restoration instead of becoming unverified plain
+  text. If a renderer removes both titles and envelopes, the remaining text
+  cannot be identified as fragmented; obtain the original JSON output.
+  Plain unframed text has no integrity proof. Reserved fragment titles,
+  envelopes, continuation and fence markers cannot be supplied as oversized
+  source content;
 - restoration strictly rejects missing, reordered, duplicate, mixed-set or
   modified shards, malformed envelopes, inconsistent complete text fields and
   mismatched manifests. Failures exit nonzero, expose an `error_code`, and return

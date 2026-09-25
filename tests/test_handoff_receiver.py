@@ -12,7 +12,11 @@ import pytest
 from loopx.control_plane.handoff.project_agent_context import (
     build_project_agent_handoff,
 )
-from loopx.control_plane.handoff.handoff_fragments import split_handoff_text
+from loopx.control_plane.handoff.handoff_fragments import (
+    ENVELOPE_PREFIX,
+    render_handoff_transport,
+    split_handoff_text,
+)
 from loopx.review_packet import build_review_packet
 
 
@@ -128,6 +132,45 @@ def test_restore_cli_success_does_not_execute_or_adopt(tmp_path):
     assert code == 0
     assert payload == {"ok": True, "handoff_text": packet["project_agent_handoff"]}
     assert "RETURN-VALIDATION" in payload["handoff_text"]
+
+
+def test_restore_cli_accepts_complete_markdown_transport(tmp_path):
+    packet = build_review_packet(status_fixture(), goal_id="handoff-contract")
+    markdown = render_handoff_transport(
+        packet["project_agent_handoff"], packet["project_agent_handoff_fragments"]
+    )
+    code, payload = receive(tmp_path, markdown, input_format="markdown")
+    assert code == 0
+    assert payload == {"ok": True, "handoff_text": packet["project_agent_handoff"]}
+
+
+def test_restore_cli_keeps_unframed_markdown_without_transport_titles(tmp_path):
+    text = "目标校验：g\n交接分片只是普通讨论文字，不是传输标题"
+    code, payload = receive(tmp_path, text, input_format="markdown")
+    assert code == 0
+    assert payload == {"ok": True, "handoff_text": text}
+
+
+@pytest.mark.parametrize("mutation", ["stripped", "indented", "one_missing"])
+def test_restore_cli_rejects_markdown_with_unverifiable_envelopes(tmp_path, mutation):
+    packet = build_review_packet(status_fixture(), goal_id="handoff-contract")
+    markdown = render_handoff_transport(
+        packet["project_agent_handoff"], packet["project_agent_handoff_fragments"]
+    )
+    assert len(packet["project_agent_handoff_fragments"]) > 1
+    lines = markdown.split("\n")
+    if mutation == "stripped":
+        lines = [line for line in lines if not line.startswith(ENVELOPE_PREFIX)]
+    elif mutation == "indented":
+        lines = [
+            "  " + line if line.startswith(ENVELOPE_PREFIX) else line for line in lines
+        ]
+    else:
+        lines.remove(next(line for line in lines if line.startswith(ENVELOPE_PREFIX)))
+    code, payload = receive(tmp_path, "\n".join(lines), input_format="markdown")
+    assert code == 1
+    assert payload["error_code"] == "envelope"
+    assert "handoff_text" not in payload
 
 
 @pytest.mark.parametrize(

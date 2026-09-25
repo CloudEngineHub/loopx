@@ -45,6 +45,7 @@ ENVELOPE_RE = re.compile(
     r"p=(?P<p>-|[0-9a-f]{16}) "
     r"d=(?P<d>[0-9a-f]{64})-->$"
 )
+SHARD_TITLE_PREFIXES = ("【交接分片 ", "【给项目 Agent · 交接分片 ")
 
 # Transport-only markers. They never occur in prepared handoff content; the
 # splitter rejects input that already contains them (fail closed).
@@ -112,8 +113,10 @@ def _envelope_line(
 
 def _assert_no_transport_markers(lines: list[str]) -> None:
     for line in lines:
-        if line.startswith(ENVELOPE_PREFIX) or line.startswith(
-            LINE_CONTINUATION_MARKER
+        if (
+            line.startswith(ENVELOPE_PREFIX)
+            or line.startswith(LINE_CONTINUATION_MARKER)
+            or line.lstrip().startswith(SHARD_TITLE_PREFIXES)
         ):
             raise HandoffShardError(
                 "reserved_marker",
@@ -581,7 +584,32 @@ def restore_handoff_text(value: str | Iterable[str]) -> str:
     """
 
     if isinstance(value, str):
-        if any(line.startswith(ENVELOPE_PREFIX) for line in value.split("\n")):
+        lines = value.split("\n")
+        envelopes = [
+            index
+            for index, line in enumerate(lines)
+            if line.startswith(ENVELOPE_PREFIX)
+        ]
+        titles = [
+            index
+            for index, line in enumerate(lines)
+            if line.lstrip().startswith(SHARD_TITLE_PREFIXES)
+        ]
+        if any(
+            ENVELOPE_PREFIX in line and not line.startswith(ENVELOPE_PREFIX)
+            for line in lines
+        ):
+            raise HandoffShardError(
+                "envelope", "handoff shard envelope is not at the start of a line"
+            )
+        if titles and (
+            len(titles) != len(envelopes)
+            or any(index + 1 not in envelopes for index in titles)
+        ):
+            raise HandoffShardError(
+                "envelope", "handoff fragment title is missing its verifiable envelope"
+            )
+        if envelopes:
             return reassemble_handoff_shards(extract_handoff_shards(value))
         return value
     shard_texts = list(value)
