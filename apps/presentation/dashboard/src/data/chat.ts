@@ -876,10 +876,26 @@ export async function streamChatTurn(
 }
 
 export async function interruptChatTurn(sessionId: string, turnId: string) {
-  return requestJson<{ ok: true; session_id: string; turn_id: string; status: string }>(
+  const receipt = await requestJson<{ ok: true; session_id: string; turn_id: string; status: string }>(
     `/api/chat/sessions/${sessionId}/turns/${turnId}/interrupt`,
     { method: "POST", body: "{}" },
   );
+  if (receipt.ok !== true || receipt.session_id !== sessionId || receipt.turn_id !== turnId) {
+    throw new ChatApiError("中断回执与本次请求不一致，请刷新后查看。", { error_code: "interrupt_receipt_mismatch" });
+  }
+  return receipt;
+}
+
+export async function steerChatTurn(sessionId: string, turnId: string, message: string, ingressId: string) {
+  const receipt = await requestJson<{ ok: boolean; session_id: string; turn_id: string; client_ingress_id: string; status: string }>(
+    `/api/chat/sessions/${sessionId}/turns/${turnId}/steer`,
+    { method: "POST", body: JSON.stringify({ message, client_ingress_id: ingressId }) },
+  );
+  if (receipt.ok !== true || receipt.session_id !== sessionId || receipt.turn_id !== turnId
+    || receipt.client_ingress_id !== ingressId || receipt.status !== "delivered") {
+    throw new ChatApiError("追加指令的回执不匹配，请保留草稿并检查当前状态。", { error_code: "steer_receipt_mismatch" });
+  }
+  return receipt;
 }
 
 export type LoopXModeSnapshot = {
@@ -1029,7 +1045,8 @@ async function receiveChatTurnStreaming(
           options.onDelta?.(String(event.payload.text ?? ""));
         }
         if (event.kind === "agent.phase") {
-          options.onActivity?.(String(event.payload.label ?? "Agent 正在处理"));
+          const label = typeof event.payload.label === "string" ? event.payload.label.trim() : "";
+          if (label) options.onActivity?.(label);
         }
         if (event.kind === "turn.completed") {
           finalResponse = event.payload.response;

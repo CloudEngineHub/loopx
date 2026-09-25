@@ -2060,13 +2060,25 @@ export function PersonalWorkspacePage({
                         run={activeSessionRun}
                       />
                     ) : null}
-                    <ChannelTimeline items={visibleTimelineItems} onSelect={setSelection} selectedGoal={selectedGoal} />
+                    <ChannelTimeline items={visibleTimelineItems} onSelect={setSelection} selectedGoal={selectedGoal}
+                      onSteerTurn={!readOnly && callbacks.onSteerConversationTurn
+                        ? (turnId, text, ingressId) => callbacks.onSteerConversationTurn!(selectedGoal.goalId, turnId, text, ingressId)
+                        : undefined}
+                      onInterruptTurn={!readOnly && callbacks.onInterruptConversationTurn
+                        ? (turnId) => callbacks.onInterruptConversationTurn!(selectedGoal.goalId, turnId)
+                        : undefined} />
                   </>),
                 }} />
             ) : !managerChatOpen ? (
               <ManagerHomeBoard goals={workspaceGoals} onRetry={() => void callbacks.onRefresh?.()} onSelectGoal={selectGoal} systemHealth={model.systemHealth} />
             ) : (
               <ChannelTimeline items={managerChatItems} onSelect={setSelection} selectedGoal={null} showManagerTeamResults
+                onSteerTurn={!readOnly && callbacks.onSteerConversationTurn
+                  ? (turnId, text, ingressId) => callbacks.onSteerConversationTurn!("manager", turnId, text, ingressId)
+                  : undefined}
+                onInterruptTurn={!readOnly && callbacks.onInterruptConversationTurn
+                  ? (turnId) => callbacks.onInterruptConversationTurn!("manager", turnId)
+                  : undefined}
                 onOpenGoalEvidence={(goalId) => { selectGoal(goalId); openGoalConversation(); }} />
             )}
           </div>
