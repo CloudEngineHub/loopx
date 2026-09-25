@@ -73,7 +73,9 @@ _REGEX_IGNORECASE_ASCII_TRANSLATION = str.maketrans({"\u0130": "i", "\u0131": "i
 def _prefilter_fold(text: str) -> str:
     if text.isascii():
         return text.lower()
-    return text.translate(_REGEX_IGNORECASE_ASCII_TRANSLATION).casefold()
+    if "\u0130" in text or "\u0131" in text:
+        text = text.translate(_REGEX_IGNORECASE_ASCII_TRANSLATION)
+    return text.casefold()
 
 
 # Required literals are only a cheap necessary condition for running a rule.
