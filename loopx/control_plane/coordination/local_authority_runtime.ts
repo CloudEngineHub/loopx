@@ -1,3 +1,4 @@
+import {requirePromotionRegisteredAgents} from "./shadow_registry_source.ts";
 import {readPromotionReceipt, commitPromotionAndReadBack} from './promotion_receipt.ts';
 import {reviewedPromotionPlan, promotionPlanDigest, decodeReviewedPromotionOperation, REVIEWED_PROMOTION_OPERATION_RESULT_SCHEMA} from './reviewed_promotion_plan.ts';
 import {registryAuthoritySourceCheck} from "./authority_source.ts";
@@ -141,9 +142,7 @@ export async function reviewLocalCoordinationAuthorityPromotion(
 ): Promise<JsonObject> {
   const schema = LOCAL_COORDINATION_PROMOTION_REVIEW_RESULT_SCHEMA;
   let writerFenceVerified = false;
-  const fenceEvidence: {current: {runtimeRoot: string; goalId: string; fence: JsonObject} | null} = {
-    current: null,
-  };
+  let sourceScope: {runtimeRoot: string; goalId: string} | null = null;
   try {
     const input = decodeRuntimeShadowRequest(
       value,
@@ -151,6 +150,7 @@ export async function reviewLocalCoordinationAuthorityPromotion(
       ["operation_id", "minimum_operations", "required_event_kinds", "execute",
         "handoff_mode_migration", "registered_agents", "expected_promotion_plan_sha256"],
     );
+    sourceScope = {runtimeRoot: input.runtime_root, goalId: input.goal_id};
     const operationId = requireAuthorityStoreId(input.operation_id, "operation id");
     const minimumOperations = requiredPositiveSafeInteger(
       input.minimum_operations,
@@ -278,7 +278,6 @@ export async function reviewLocalCoordinationAuthorityPromotion(
           } : {}),
           writer_fence: fence,
         };
-        fenceEvidence.current = {runtimeRoot: input.runtime_root, goalId: input.goal_id, fence};
         const existing = await canonical.loadAuthority();
         if (existing.status === "loaded") {
           const readback = await promotionReadback(canonical, request);
@@ -334,6 +333,7 @@ export async function reviewLocalCoordinationAuthorityPromotion(
             legacy_fallback_used: false,
           };
         }
+        if (explicitHandoffMigration) requirePromotionRegisteredAgents(input.source_snapshot, registeredAgents);
         const plan = {
           reviewed_plan: reviewedPromotionPlan({schema_version:LOCAL_COORDINATION_PROMOTION_REQUEST_SCHEMA,...request}, promotionPlanSha256),
           operation_id: operationId,
@@ -417,21 +417,15 @@ export async function reviewLocalCoordinationAuthorityPromotion(
       }),
     );
   } catch (error) {
-    if (!writerFenceVerified && fenceEvidence.current !== null) {
+    // A fresh source rejection can occur before a plan is built. It must not
+    // tell an operator that legacy writes are available if an earlier cutover
+    // already fenced them. Presence and exact-plan ownership are distinct.
+    let fencePresence: boolean | null = writerFenceVerified;
+    if (sourceScope !== null) {
       try {
-        const evidence = fenceEvidence.current;
-        const persistedFence = await loadLegacyCoordinationWriterFence(
-          evidence.runtimeRoot,
-          evidence.goalId,
-        );
-        writerFenceVerified = persistedFence.status === "loaded"
-          && canonicalAuthorityBytes(persistedFence.fence).equals(
-            canonicalAuthorityBytes(evidence.fence),
-          );
-      } catch {
-        // The result below must not claim a fence that this call could not
-        // read back exactly.
-      }
+        const retained = await loadLegacyCoordinationWriterFence(sourceScope.runtimeRoot, sourceScope.goalId);
+        fencePresence = retained.status === "loaded" ? true : retained.status === "missing" ? false : null;
+      } catch { fencePresence = null; }
     }
     return {
       schema_version: schema,
@@ -441,7 +435,7 @@ export async function reviewLocalCoordinationAuthorityPromotion(
         ? error.reason_code
         : "invalid_local_coordination_promotion_review_request",
       reason: error instanceof Error ? error.message : "promotion review unavailable",
-      legacy_writer_fenced: writerFenceVerified,
+      legacy_writer_fenced: fencePresence,
       legacy_fallback_used: false,
       ...localAuthorityOpenFailure(error),
     };
@@ -1518,6 +1512,10 @@ export async function executeReviewedCoordinationPromotion(
         operation_id:request.operation_id,minimum_operations:request.minimum_operations,
         required_event_kinds:request.required_event_kinds,execute:input.execute,
         expected_promotion_plan_sha256:input.expected_plan_sha256,
+        ...(request.handoff_mode_migration === undefined ? {} : {
+          handoff_mode_migration: request.handoff_mode_migration,
+          registered_agents: request.registered_agents,
+        }),
         projection:input.projection,source_snapshot:input.source_snapshot,
       },dependencies);
     return {...result, reviewed_plan_sha256:input.expected_plan_sha256,
