@@ -42,6 +42,12 @@ Retain T0 caller/parity inventory, T1/T2 transaction/effect convergence, T3 comp
 
 ## Current implementation checkpoint
 
+Long-history closeout now reuses byte-verified TS receipt prefixes and the
+single committed-monitor rule. Python retires its duplicate run-log scan and
+adapts Todo facts only; lost queries are distinguished from ambiguous writes.
+This is bounded retirement within closeout, not complete Python removal.
+[Delivery and limits](ledger/shared-goal-authority-state-provider-v0/2026-09-24-default-cutover-reconciliation.md#long-history-closeout-this-repair-and-its-remaining-boundary).
+
 Promotion admission now binds complete sources to a current registry witness
 and rechecks it inside the TS lock scope. Saved execution retains the reviewed
 handoff policy, and failures report durable fence presence. Recovery of a
