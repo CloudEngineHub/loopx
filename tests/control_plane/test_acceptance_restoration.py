@@ -17,11 +17,23 @@ from loopx.control_plane.goals.goal_frontier.acceptance import acceptance_gaps_f
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
 def test_cli_restore_then_reacquire_preserves_acceptance_and_exact_retry(tmp_path, monkeypatch, provider):
     isolate_sqlite_runtime(tmp_path, monkeypatch)
-    runtime, state, registry = tmp_path / "runtime", tmp_path / "state.md", tmp_path / "registry.json"
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=project, check=True)
+    subprocess.run(["git", "remote", "add", "origin",
+                    "https://github.com/example/acceptance-restoration-fixture.git"],
+                   cwd=project, check=True)
+    subprocess.run(["git", "-c", "user.name=LoopX Test",
+                    "-c", "user.email=loopx-test@example.invalid", "commit",
+                    "--quiet", "--allow-empty", "-m", "fixture"], cwd=project, check=True)
+    delivery = tmp_path / "delivery-worktree"
+    subprocess.run(["git", "worktree", "add", "--quiet", "--detach", str(delivery)],
+                   cwd=project, check=True)
+    runtime, state, registry = project / "runtime", project / "state.md", project / "registry.json"
     goal, target = "acceptance-restoration", "todo_artifact"
     state.write_text("---\nstatus: active-read-only\nowner_mode: goal\nobjective: Validate a bounded artifact\n---\n# Goal\n\n## Agent Todo\n")
     registry.write_text(json.dumps({"common_runtime_root": str(runtime), "goals": [{
-        "id": goal, "repo": str(tmp_path), "state_file": state.name,
+        "id": goal, "repo": str(project), "state_file": state.name,
         "domain": "acceptance-restoration", "status": "active-read-only",
         "adapter": {"kind": "read_only_project_map_v0", "status": "connected-read-only"},
         "quota": {"compute": 1.0, "window_hours": 24, "allowed_slots": 2},
@@ -45,7 +57,7 @@ def test_cli_restore_then_reacquire_preserves_acceptance_and_exact_retry(tmp_pat
     def cli(*args, expected=0):
         proc = subprocess.run([sys.executable, "-m", "loopx.cli", "--registry", str(registry),
                                "--format", "json", *args, "--goal-id", goal],
-                              capture_output=True, text=True, timeout=60)
+                              cwd=delivery, capture_output=True, text=True, timeout=60)
         assert proc.returncode == expected, proc.stdout + proc.stderr
         return json.loads(proc.stdout)
 
@@ -61,7 +73,7 @@ def test_cli_restore_then_reacquire_preserves_acceptance_and_exact_retry(tmp_pat
     assert first["acquired"]
     turn_binding = ["--agent-id", "agent-a", "--todo-id", target,
                     "--turn-instance-id", "turn-restore-acceptance"]
-    guard = cli("quota", "should-run", "--codex-app", *turn_binding, "--scan-path", str(tmp_path))
+    guard = cli("quota", "should-run", "--codex-app", *turn_binding, "--scan-path", str(delivery))
     assert guard["heartbeat_receipt"]["settlement_identity"]["todo_id"] == target
     cli("todo", "update", "--todo-id", target, "--agent-id", "agent-a", "--clear-resume-when",
         "--task-lease-idempotency-key", "execution-one", "--task-lease-expected-version", "1")
@@ -114,8 +126,9 @@ def test_cli_restore_then_reacquire_preserves_acceptance_and_exact_retry(tmp_pat
                   "--delivery-batch-scale", "single_surface", "--delivery-outcome", "outcome_progress",
                   "--no-global-sync", "--suppress-external-sinks")
     assert refresh["ok"]
+    assert refresh["delivery_workspace"]["workspace_kind"] == "independent_git_worktree"
     spend_args = ["quota", "spend-slot", *turn_binding, "--slots", "1", "--source", "heartbeat",
-                  "--execute", "--scan-path", str(tmp_path)]
+                  "--execute", "--scan-path", str(delivery)]
     first_spend = cli(*spend_args)
     assert first_spend["settlement_result"]["ok"]
     assert cli(*restore)["status"] == "replayed"
