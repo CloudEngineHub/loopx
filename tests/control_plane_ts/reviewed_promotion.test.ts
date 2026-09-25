@@ -353,3 +353,28 @@ for (const strategy of ["preserve", "hard_lease"] as const) {
     assert.equal(replay.status, "replayed");
   });
 }
+
+for (const rejection of ["qualification", "plan", "migration"] as const) {
+  test(`failed ${rejection} admission observes the existing promotion fence`, async (t) => {
+    const {root, request} = await fixture(t);
+    assert.equal((await reviewLocalCoordinationAuthorityPromotion({...request, execute: true})).status, "applied");
+    const changed = rejection === "qualification" ? {minimum_operations: 10000}
+      : rejection === "plan" ? {expected_promotion_plan_sha256: "0".repeat(64)}
+      : {handoff_mode_migration: "hard_lease", registered_agents: []};
+    const result = await reviewLocalCoordinationAuthorityPromotion({...request, ...changed});
+    assert.equal(result.status, "not_ready", JSON.stringify(result));
+    assert.equal(result.legacy_writer_fenced, true);
+    assert.equal(result.executed, false);
+    assert.equal((await loadLegacyCoordinationWriterFence(root, "goal-a")).status, "loaded");
+  });
+}
+
+test("a downstream timeout is not mislabeled as registry contention", async (t) => {
+  const {request} = await fixture(t);
+  const {withShadowRegistrySource} = await import("../../loopx/control_plane/coordination/shadow_registry_source.ts");
+  const {EffectRuntimeLockTimeoutError} = await import("../../loopx/control_plane/effect_runtime_errors.ts");
+  const downstream = new EffectRuntimeLockTimeoutError("canonical store lock timed out");
+  await assert.rejects(withShadowRegistrySource(request.source_snapshot as JsonObject, async () => {
+    throw downstream;
+  }), (error) => error === downstream);
+});

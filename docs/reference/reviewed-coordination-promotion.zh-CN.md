@@ -45,7 +45,10 @@ TS 在现有跨 runtime 锁内再次核对，并持锁到准入/提交结束。�
 `source_registry_changed_retry`，保存计划的 Agent 事实改变返回
 `promotion_registration_changed_retry`。重新读取来源与审核预览，不要修改摘要。
 注册修改正在持锁时返回 `source_registry_busy_retry`；释放来源锁后可重试，避免与
-先锁 registry 再锁状态的配置命令互相等待。未启用 shadow 的普通路径不增加这把锁。
+先锁 registry 再锁状态的配置命令互相等待。普通 Todo 写入不新增锁。
+项目和全局 registry 的修改共用既有 marker + kernel 组合锁，包括全局同步、
+Goal 启停及删除；这一 registry 互操作协议也适用于未启用 shadow 的场景，只读
+预览仍不取写锁。已进入受保护操作后发生的其他锁超时保留原始原因，不冒充 registry 竞争。
 
 这是本机来源一致性，不是授权授予，也不是跨主机数据库事务。完整 registry 的无关
 修改也可能要求重试，优先保证来源证据明确。旧持久回执和 fence 的恢复不要求新增

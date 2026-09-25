@@ -104,7 +104,7 @@ def test_sync_reads_and_writes_inside_the_global_registry_lock(
             events.append(f"write:{'locked' if held else 'unlocked'}")
         real_write(path, payload)
 
-    monkeypatch.setattr(global_registry, "exclusive_file_lock", recording_lock)
+    monkeypatch.setattr(global_registry, "exclusive_cross_runtime_file_lock", recording_lock)
     monkeypatch.setattr(global_registry, "_load_global_registry", recording_load)
     monkeypatch.setattr(global_registry, "write_json", recording_write)
 
@@ -140,7 +140,7 @@ def test_dry_run_sync_does_not_take_the_write_lock(
         acquired.append(path)
         yield path
 
-    monkeypatch.setattr(global_registry, "exclusive_file_lock", recording_lock)
+    monkeypatch.setattr(global_registry, "exclusive_cross_runtime_file_lock", recording_lock)
 
     result = sync_project_registry_to_global(
         registry_path=registry_path,
@@ -195,7 +195,7 @@ def test_retire_reads_and_writes_inside_the_global_registry_lock(
             events.append(f"backup:{'locked' if held else 'unlocked'}")
         real_write(path, payload)
 
-    monkeypatch.setattr(global_registry, "exclusive_file_lock", recording_lock)
+    monkeypatch.setattr(global_registry, "exclusive_cross_runtime_file_lock", recording_lock)
     monkeypatch.setattr(global_registry, "_load_global_registry", recording_load)
     monkeypatch.setattr(global_registry, "write_json", recording_write)
 
@@ -231,7 +231,7 @@ def test_retire_rechecks_live_route_inside_the_global_registry_lock(
     registry_path.unlink()
     state_path.unlink()
     global_path = global_registry_path(runtime_root)
-    real_lock = global_registry.exclusive_file_lock
+    real_lock = global_registry.exclusive_cross_runtime_file_lock
     restored: list[Path] = []
 
     @contextmanager
@@ -247,7 +247,7 @@ def test_retire_rechecks_live_route_inside_the_global_registry_lock(
 
     monkeypatch.setattr(
         global_registry,
-        "exclusive_file_lock",
+        "exclusive_cross_runtime_file_lock",
         restore_live_route_before_lock,
     )
 

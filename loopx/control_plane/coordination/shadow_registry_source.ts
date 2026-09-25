@@ -50,16 +50,18 @@ export function requirePromotionRegisteredAgents(snapshot: JsonObject, agents: r
 
 export async function withShadowRegistrySource<T>(snapshot: JsonObject, operation: () => Promise<T>): Promise<T> {
   const source = registrySource(snapshot);
+  let acquired = false;
   try {
     // Existing registry administration can hold R before requesting a source
     // lock. We already hold source locks: never wait for R in the reverse order.
     // A busy registry releases our locks so its writer can finish and we retry.
     return await withFileMutationLock(source.path, async () => {
+      acquired = true;
       await verifyShadowRegistrySource(snapshot);
       return await operation();
     }, 0);
   } catch (error) {
-    if (error instanceof EffectRuntimeLockTimeoutError) {
+    if (!acquired && error instanceof EffectRuntimeLockTimeoutError) {
       throw new ShadowManagementError("source_registry_busy_retry");
     }
     throw error;

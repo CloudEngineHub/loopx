@@ -147,3 +147,58 @@ def test_strict_registry_envelope_keeps_existing_codec(tmp_path: Path):
     )
     projection, snapshot = capture(state, runtime, registry, goal)
     assert bootstrap(runtime, goal, projection, snapshot)["status"] == "applied"
+
+
+@pytest.mark.parametrize("writer", ["sync", "activation", "deletion"])
+def test_global_registry_writers_respect_native_promotion_marker(tmp_path, writer):
+    from loopx.file_lock import exclusive_mutation_file_lock, LockAcquireTimeoutError
+    from loopx.global_registry import sync_project_registry_to_global
+    from loopx.control_plane.goals.activation_service import set_goal_activation_state
+    from loopx.control_plane.goals.deletion_service import delete_stopped_goal
+
+    _state, runtime, registry, goal, _data = workspace(tmp_path)
+    global_path = runtime / "registry.global.json"
+
+    def sync():
+        return sync_project_registry_to_global(
+            registry_path=registry, runtime_root_override=str(runtime), dry_run=False
+        )
+
+    assert sync()["ok"]
+    if writer == "deletion":
+        assert set_goal_activation_state(
+            registry_path=global_path,
+            goal_id=goal["id"],
+            state="stopped",
+            actor_kind="owner",
+            execute=True,
+        )["ok"]
+    action = (
+        sync
+        if writer == "sync"
+        else (
+            lambda: set_goal_activation_state(
+                registry_path=global_path,
+                goal_id=goal["id"],
+                state="stopped",
+                actor_kind="owner",
+                execute=True,
+            )
+        )
+        if writer == "activation"
+        else (
+            lambda: delete_stopped_goal(
+                registry_path=global_path, goal_id=goal["id"], execute=True
+            )
+        )
+    )
+    before = (registry.read_bytes(), global_path.read_bytes())
+    # This is the exact marker protocol held by native promotion. No mock can
+    # make a kernel-only writer pass this exclusion test.
+    with exclusive_mutation_file_lock(
+        global_path, operation="native-promotion-fixture"
+    ):
+        with pytest.raises(LockAcquireTimeoutError):
+            action()
+        assert (registry.read_bytes(), global_path.read_bytes()) == before
+    assert action()["ok"]

@@ -59,7 +59,12 @@ lock and retains that lock through admission/commit. Stale sources return
 `promotion_registration_changed_retry`. Refresh the source and review a new
 preview, never edit the digest. A held registry lock returns
 `source_registry_busy_retry`, releasing source locks before retry so registry-first
-configuration writers cannot deadlock. Ordinary shadow-disabled paths gain no lock.
+configuration writers cannot deadlock. Ordinary Todo writes gain no new lock.
+Project and global registry mutations share the existing marker-plus-kernel lock
+protocol, including global sync, Goal activation and deletion. This registry
+interoperability applies even without shadow opt-in; read-only previews still
+take no mutation lock. A timeout inside the protected operation retains its
+original cause instead of being relabeled as registry contention.
 
 This is local source consistency, not an authority grant or cross-host database
 transaction. Unrelated registry edits may conservatively require a retry.
