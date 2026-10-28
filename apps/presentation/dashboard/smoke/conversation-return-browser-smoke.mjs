@@ -190,6 +190,23 @@ async function verifyBoundReadRecovery() {
     const draft = "Keep this draft in the original conversation; read without sending.";
     await composer.fill(draft);
     const notice = page.getByRole("status").filter({hasText: "会话历史暂时无法读取"});
+    // Source discovery can succeed while the original transcript read fails.
+    // Inject only the HTTP outage; the binding and Session stay in real Core.
+    const snapshotRoute = `**/api/chat/sessions/${sessionId}*`;
+    await page.route(snapshotRoute, route => new URL(route.request().url()).pathname === `/api/chat/sessions/${sessionId}`
+      ? route.fulfill({status: 503, json: {ok: false, error: "Synthetic transcript read outage"}})
+      : route.fallback());
+    await page.reload();
+    await notice.waitFor();
+    assert.equal(await send.isDisabled(), true);
+    assert.equal(await page.getByText("今天的工作区很安静", {exact: true}).count(), 0,
+      "A verified source with unreadable history is not an empty workspace");
+    await mkdir(outputDir, {recursive: true});
+    await page.screenshot({path: resolve(outputDir, "conversation-history-unavailable-desktop.png"), animations: "disabled"});
+    await page.unroute(snapshotRoute);
+    await notice.waitFor({state: "hidden"});
+    await page.getByRole("heading", {name: "合成报告 6 / Synthetic report", exact: true}).waitFor();
+    assert.equal(await composer.inputValue(), draft);
     await command("deny");
     await notice.waitFor();
     assert.equal(await send.isDisabled(), true);

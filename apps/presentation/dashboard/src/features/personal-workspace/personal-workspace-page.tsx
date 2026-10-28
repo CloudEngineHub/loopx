@@ -3026,8 +3026,9 @@ export function PersonalWorkspacePage({
                 onViewAllOperations={() => setSelectedGoalTab("chat")} />
             ) : (
               <ChannelTimeline key={`${selectionScope}:${conversationKey}:${selectedAgentId}`} {...timelineReading} readOnly={readOnly}
-                emptyState={originalSourceUnresolved ? {
-                  title: originalConversation?.error
+                emptyState={originalConversation && (originalSourceUnresolved
+                  || (conversationHistoryState && conversationHistoryState.phase !== "ready")) ? {
+                  title: originalConversation.error || conversationHistoryState?.phase === "unavailable" || conversationHistoryState?.phase === "partial"
                     ? (locale === "zh-CN" ? "原会话暂不可用" : "Original conversation unavailable")
                     : (locale === "zh-CN" ? "正在读取原会话…" : "Reading the original conversation…"),
                   description: "",
