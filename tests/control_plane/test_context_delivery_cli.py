@@ -173,6 +173,44 @@ def test_page_output_budget_rejects_guard_use_without_admission(tmp_path, monkey
 
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
 @pytest.mark.parametrize("profile", ["codex_app", "generic_cli"])
+def test_resumed_task_keeps_its_condition_without_expanding_diagnostic_siblings(tmp_path, monkeypatch, provider, profile):
+    isolate_sqlite_runtime(tmp_path, monkeypatch)
+    project, runtime, registry = _write_fixture(tmp_path, required_capability="shell")
+    state = project / f".codex/goals/{GOAL_ID}/ACTIVE_GOAL_STATE.md"
+    template = read_fixture_todos(state)[0]
+    todos = [{**deepcopy(template), "todo_id": TODO_ID if i == 0 else f"todo_work_{i}",
+        "text": f"Work item {i}. " + "Keep the complete requirement. " * 20 + "Final condition: stop before publication.",
+        "title": f"Work item {i}", "index": i} for i in range(8)]
+    for item in todos:
+        item["title"] = item["text"]
+    todos[1]["resume_when"] = "todo_done:todo_dependency"
+    todos.append({**deepcopy(template), "todo_id": "todo_dependency", "status": "done", "done": True,
+        "text": "Dependency accepted.", "index": 8, "no_followup": True})
+    initialize_canonical_authority(runtime, GOAL_ID,
+        build_todo_runtime_shadow_projection(goal_id=GOAL_ID, todos=todos, handoff_mode="soft_claim"),
+        state_path=state, provider=provider)
+    host = ["--codex-app"] if profile == "codex_app" else ["--runtime-profile", profile]
+    before = state.read_bytes()
+    code, guard = _run_cli(registry, runtime, "quota", "should-run", *host,
+        "--goal-id", GOAL_ID, "--agent-id", AGENT_ID, "--todo-id", TODO_ID,
+        "--turn-instance-id", "mixed-diagnostics", cwd=project)
+    assert code == 0 and guard["should_run"], guard
+    summary = guard["agent_todo_summary"]
+    assert [item["todo_id"] for item in summary["backlog_items"]] == ["todo_work_1"]
+    condition = summary["backlog_items"][0]["resume_condition"]
+    assert condition["satisfied"] and condition["target_todo_id"] == "todo_dependency"
+    assert len(summary["first_executable_items"]) == 3
+    candidates = guard["capability_gate"]["runnable_candidates"]
+    assert {row["todo_id"] for row in candidates} == {row["todo_id"] for row in todos[:8]}
+    assert all(row["title"].endswith("Final condition: stop before publication.") for row in candidates)
+    assert state.read_bytes() == before and _spend_run_count(runtime) == 0
+    code, detailed = _run_cli(registry, runtime, "todo", "list", "--goal-id", GOAL_ID,
+        "--todo-id", "todo_work_7", cwd=project)
+    assert code == 0 and detailed["todo"]["text"] == todos[7]["text"]
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+@pytest.mark.parametrize("profile", ["codex_app", "generic_cli"])
 def test_cli_capture_exact_delta_and_same_capture_recovery(tmp_path: Path, monkeypatch, provider, profile):
     isolate_sqlite_runtime(tmp_path, monkeypatch)
     project, runtime, registry = _write_fixture(tmp_path)
