@@ -741,6 +741,12 @@ selects the root. Missing pointers or invalid array indices reject the whole
 batch; a present JSON `null` is a valid value. Duplicate pointers are removed
 and the remaining pointers are sorted.
 
+Explicit `context-read` capture/hash or native-location arguments are independent
+of Goal registry discovery and machine configuration. Conflicting default runtime
+roots cannot block that read; capture integrity and native-session scope still
+apply. A read without an explicit source keeps its existing machine lookup.
+Admission and accounting retain their registry/runtime route checks.
+
 The existing page envelope keeps the original `sha256` and adds
 `selected_pointers` and `selection_sha256`. Concatenated `content` is a
 `context_capture_selection_v1` object with `selections: [{pointer, value}]`.
@@ -763,6 +769,10 @@ pointer 从原始摘要绑定的 capture 批量读取详情。提供已有 `--ca
 `--capture-sha256`，或从已有会话查询入口开始；省略 `--select` 保持原有全量读取。
 选择模式仅支持 JSON：`~1` 表示 `/`，`~0` 表示 `~`，空 pointer 选择根对象。
 任一路径不存在或数组索引无效时整批失败；已存在的 `null` 合法。路径去重并排序。
+
+显式提供 capture/hash 或原生会话位置的 `context-read` 不依赖 Goal registry 发现或
+机器配置。默认 runtime root 冲突不阻断该读取，原 capture 完整性与原生会话作用域
+检查仍生效。未显式指定来源时仍沿原机器配置查找；准入与记账保留原路由检查。
 
 分页保留原始 `sha256`，新增 `selected_pointers` 与 `selection_sha256`。
 拼接 `content` 后得到带 `selections: [{pointer, value}]` 的
