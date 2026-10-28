@@ -180,7 +180,7 @@ def test_cli_capture_exact_delta_and_same_capture_recovery(tmp_path: Path, monke
     body = "Preserve every source row and cancellation condition. " * 500
     body += "FINAL CONDITION: stop before publication."
     todos = read_fixture_todos(state)
-    todos[0].update(text=body, title=body)
+    todos[0].update(text=body, title=body, required_capabilities=["shell"])
     initialize_canonical_authority(runtime, GOAL_ID,
         build_todo_runtime_shadow_projection(goal_id=GOAL_ID, todos=todos, handoff_mode="soft_claim"),
         state_path=state, provider=provider)
@@ -227,6 +227,13 @@ def test_cli_capture_exact_delta_and_same_capture_recovery(tmp_path: Path, monke
         delta = prepare_context_delivery(projection, scope=scope, capture_id="whole-b", surface=surface,
             baseline=first, retained={"complete": True, "target": first["target"]})
         assert delta["mode"] == "delta"
+        if surface == "quota_packet":
+            candidates = projection["capability_gate"]["runnable_candidates"]
+            assert any(row["todo_id"] == TODO_ID and row["title"] == body for row in candidates)
+            # The real producer retains every candidate in the cold input. Its
+            # unchanged full body must not recur in the warm model input.
+            assert first["context"]["capability_gate"] == projection["capability_gate"]
+            assert body not in json.dumps(delta["changes"], ensure_ascii=False)
         restored = restore_context_delivery(delta, baseline=first, current=next_capture)
         assert restored["mode"] == "delta" and restored["context"] == projection
         missing = restore_context_delivery(delta, baseline=None, current=next_capture)

@@ -284,6 +284,14 @@ Unknown, failed, incompatible or ambiguous hook views stay complete. A changed
 scope or lost baseline still selects full delivery; reuse never makes a retired
 or expired preference actionable or grants authority.
 
+Quota capability candidates use the same exact codec for registered Todo text,
+title and note strings. Every candidate remains in the complete cold input;
+warm input still carries current membership/order, identity, revision, ownership,
+eligibility, handoff and unknown fields. Unknown schemas, duplicate identities or
+structured values in those text fields stay literal. This removes repeated
+authoring only when a complete baseline is usable; it neither narrows candidate
+selection nor implements the proposed decision-stage read contract.
+
 Object edits may group complete current fields in `values`, alongside recursive
 `changed` edits and `removed` keys. Array edits use exact indices in `items` and
 `values`, with `length` for resizing. These literals are present in the current
@@ -608,6 +616,11 @@ TurnEnvelope。在基线连续性成立的口径内，两入口仍逐轮发送 `
 读取不完整时保留完整投递。
 仅因移除可复用字段而变空的容器，不会把这些字段重新带回差分；原本为空的未知对象和
 非字符串来源引用仍逐轮发送。复用保留定位符的精确值，不重读其指向的材料，也不刷新权限。
+quota 能力候选沿用同一精确 codec 复用已登记 Todo 的正文、标题与笔记字符串。
+冷启动仍完整交付全部候选；warm 仍逐轮携带当前成员与顺序、身份、修订、归属、
+准入能力、交接及未知字段。未知 schema、重复身份或文本字段中的结构化值保持原文。
+这只在完整基线可用时减少重复正文，不缩小候选选择范围，也不等于按决策阶段读取的
+替代契约已经实现。
 对象编辑可以在 `values` 中合并携带本轮完整字段，同时保留递归 `changed` 与删除
 `removed`；数组的 `items` 与 `values` 使用精确索引，`length` 调整长度。
 字段仍在本轮输入中，只减少重复 wrapper；codec 比较普通编辑、合并字段
