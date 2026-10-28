@@ -408,7 +408,7 @@ function delegationAcceptanceFacts(todoId: unknown, acceptance: JsonObject | nul
   if (matching && acceptance?.state === "unbound" && typeof acceptance.reason === "string"
       && todoValidationReasons.has(acceptance.reason)) {
     return {acceptance_ready: false, acceptance_reason_code: acceptance.reason,
-      acceptance_next_action: "review_original_todo_validation"};
+      acceptance_next_action: todoId == null ? "review_original_request_validation" : "review_original_todo_validation"};
   }
   if (matching && acceptance?.state === "ready" && filesCurrent === false) {
     return {acceptance_ready: false, acceptance_reason_code: "validation_files_unavailable",
@@ -493,6 +493,7 @@ export function delegationPreflight(params: JsonObject): JsonObject {
   }
   if (params.request_required === true) return {
     schema_version: "loopx_delegation_preflight_v0", binding, state: "turn_blocked",
+    request_required: true,
     dispatch_allowed: false, turn_eligible: false, turn_route: null, acceptance_ready: false,
     authority_ready: true, authority_reason: null, authority_state: "promoted",
     authority_next_action: "none", promotion_from_surface_allowed: false,
