@@ -11,6 +11,15 @@ read obligations before capture. Recovering delivery from that immutable capture
 does not refresh authority; a legitimate new selection/authority check remains
 distinct from retrying transport.
 
+The RFC's [candidate context by decision stage](../architecture/rfcs/controller-executor-unified-contract-v0.md#candidate-context-by-decision-stage)
+proposes complete captured alternatives with discoverable decision facts and
+same-capture batch detail reads. It does not change current read obligations.
+The current capability gate leaves candidate selection to the Agent; a selected
+Todo display is not proof that it can ignore alternatives. Existing full-context
+captures must still be read completely. A future staged caller must replace its
+delivery, required reads and recovery together, including unknown-scope full
+fallback; an index read cannot establish delivery of hidden bodies.
+
 Ordinary Heartbeat/quota delivers the full effective selected Todo, enabled
 canonical acceptance and Agent-scoped User obligations at
 `interaction_contract.agent_channel.work_context`. These are current work
