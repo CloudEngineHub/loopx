@@ -101,17 +101,23 @@ def test_original_request_executes_and_settles_without_changing_todos(delegation
     assert runner._cli(binding, "todo", "list", "--goal-id", runner.goal_id)["todos"] == before
 
 
-def test_exact_goal_request_preparation_replay_and_runtime_boundary(delegation_service, monkeypatch):
+@pytest.mark.parametrize("with_todo", [False, True], ids=["original-request", "existing-todo"])
+def test_exact_goal_request_preparation_replay_and_runtime_boundary(delegation_service, monkeypatch, with_todo):
     from loopx.control_plane.collaboration import delegation_results, delegation_validation
     from loopx.control_plane.collaboration.inbox import _read
 
-    root, runner, binding = _ordinary_binding(delegation_service)
+    if with_todo:
+        root, runner = delegation_service
+        binding = runner.binding("analysis")
+    else:
+        root, runner, binding = _ordinary_binding(delegation_service)
     root, runner = _exact_goal_service((root, runner))
     monkeypatch.setattr(runner, "_spawn", lambda operation: None)
     initial = runner.start("analysis", "exact-request", brief())
     row = _read(runner.path("exact-request"))
-    assert initial["status"] == "prepared" and initial["todo_id"] is None
-    assert delegation_validation.ordinary_request_subject(runner, row, binding) == initial["request_subject"]
+    assert initial["status"] == "prepared" and initial["todo_id"] == binding["todo_id"]
+    subject = delegation_validation.ordinary_request_subject(runner, row, binding)
+    assert subject == (None if with_todo else initial["request_subject"])
     assert delegation_results.operation_brief(runner, row) == brief()
     assert runner.start("analysis", "exact-request", brief()) == initial
     # The exact profile currently admits collaboration/lifecycle only. Its

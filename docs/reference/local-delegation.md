@@ -9,6 +9,18 @@ Ordinary Inbox delivery can use an original request as its execution subject,
 under the [request activation contract](#ordinary-inbox-activation-boundary).
 A saved request and an execution grant remain separate.
 
+Native execution remains limited to runtime-compatible project registries.
+The lifecycle-only `source_session_v1` profile can prepare and inspect the exact
+Goal-instance request, but its existing runtime guard rejects execution before
+launching a Host. Replay retains that rejection, and recreating a Goal cannot
+retarget an old request to the new instance. Request-subject support does not
+enable a new registry runtime profile.
+
+中文：原生执行仍要求 runtime-compatible project registry。仅供生命周期操作的
+`source_session_v1` 可准备、读取准确 Goal 实例的请求，但既有 runtime guard 会在
+Host 启动前明确拒绝执行；重放保留该拒绝，Goal 重建也不会把旧请求转给新实例。
+原请求身份支持不等于启用了新的 registry runtime profile。
+
 ## Ordinary Inbox activation boundary
 
 The existing binding, Turn and settlement owners support an ordinary request
@@ -142,15 +154,17 @@ refuses fresh input before Host launch. Recovery consumes the original capture
 rather than replacing it with a fresh source read during settlement. Historical
 operations without this recorded input profile retain their original recovery;
 the bootstrap file remains for existing generic hosts that explicitly read it.
-This task-bound input repair does not close ordinary Todo-less activation or
-qualify installed App/model adoption.
+The input carrier serves both Todo-bound and independently validated original
+requests under the activation boundary above; it does not qualify installed
+App/model adoption.
 
 中文：新操作通过既有工作上下文和不可变 Turn 捕获交付完整 peer brief，以及 Chat
 委派经认证的原始消息，不再依赖成员自行发现 `DELEGATION.json`。内部 Host locator
 必须匹配原操作、接收者、Todo、工作区与 Turn，不授予权限；原材料缺失或被替换时，
 在 Host 启动前拒绝新输入。恢复沿用原捕获，不在结算时改读新材料。未登记此输入
 profile 的历史操作保留原恢复路径，仍由既有 generic host 使用的 bootstrap 文件
-继续支持。本切片仍绑定 Todo，不代表普通无 Todo 唤醒或正式 App/模型采用已完成。
+继续支持。该输入载体同时服务绑定 Todo 和经独立验证的原请求，执行仍遵守上述
+激活边界，不代表正式 App/模型采用已完成。
 
 Chat retry also verifies the saved operation against the original Inbox request,
 complete brief, peer request, current binding and original return Session/Turn
