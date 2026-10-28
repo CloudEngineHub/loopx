@@ -36,6 +36,10 @@ def outcome(document):
 def test_cold_warm_and_repeated_compaction_keep_requirements_without_replaying_material(tmp_path, monkeypatch):
     event = setup(tmp_path, monkeypatch)
     original = payload()
+    candidate_text = "Preserve this candidate's complete final constraint. " * 120
+    original["capability_gate"] = {"schema_version": "capability_gate_v0", "action": "run",
+        "runnable_candidates": [{"schema_version": "todo_item_v0", "todo_id": "todo_work",
+            "text": candidate_text, "status": "open", "claimed_by": "agent"}], "blocked_candidates": []}
     _, first = project(tmp_path, payload=original)
     view = first["context"]
     assert first["mode"] == "full" and view["stop"] == original["stop"]
@@ -61,6 +65,7 @@ def test_cold_warm_and_repeated_compaction_keep_requirements_without_replaying_m
     assert context._state(tmp_path)["candidate"]["capture_file"] == first["recovery"]["path"]
 
     _, warm = project(tmp_path, "warm", payload=original)
+    assert warm["mode"] == "delta" and candidate_text not in json.dumps(warm["changes"])
     assert warm["target"]["context_epoch"] == first["target"]["context_epoch"]
     deliver(tmp_path, event, read_pages(tmp_path, warm))
     before = context._state(tmp_path)
@@ -72,6 +77,7 @@ def test_cold_warm_and_repeated_compaction_keep_requirements_without_replaying_m
         assert "Previous failure" not in json.dumps(result)
     _, fresh = project(tmp_path, "fresh", payload={**original, "stop": "Stop all delivery."})
     assert fresh["mode"] == "full" and fresh["context"]["stop"] == "Stop all delivery."
+    assert fresh["context"]["capability_gate"] == original["capability_gate"]
     assert json.loads(Path(archive["path"]).read_bytes()) == original
 
 
