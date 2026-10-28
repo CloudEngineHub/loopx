@@ -76,7 +76,8 @@ def test_cold_warm_and_repeated_compaction_keep_requirements_without_replaying_m
 
 
 @pytest.mark.parametrize("failure", [None, "wire", "inline_read"])
-def test_saved_native_projection_recovers_the_required_view(tmp_path, monkeypatch, failure):
+@pytest.mark.parametrize("output_limit", [None, 4000])
+def test_saved_native_projection_recovers_the_required_view(tmp_path, monkeypatch, failure, output_limit):
     from loopx.cli_commands import quota_capture
     from loopx.control_plane.turn_driver import decision_capture
 
@@ -91,6 +92,8 @@ def test_saved_native_projection_recovers_the_required_view(tmp_path, monkeypatc
     command = ["quota", "context-project", "--capture-file", str(source), "--capture-sha256", digest,
         "--goal-id", "fixture", "--agent-id", "agent", "--turn-instance-id", "original-turn",
         "--context-delivery", "on", "--codex-app", "--codex-context-dir", str(tmp_path)]
+    if output_limit is not None:
+        command += ["--max-page-output-bytes", str(output_limit)]
     write_capture = decision_capture.write_decision_capture
 
     def fail_wire(path, value, **kwargs):
@@ -112,19 +115,31 @@ def test_saved_native_projection_recovers_the_required_view(tmp_path, monkeypatc
         assert {key: view["recovery"][key] for key in ("path", "sha256")} == {
             key: journal[key] for key in ("path", "sha256")}
         argv = shlex.split(view["recovery"]["command"])
-        code, recovered = _run_cli(registry, runtime, *argv[argv.index("quota"):], cwd=tmp_path)
-        assert code == 0 and recovered["eof"]
-        required = json.loads(recovered["content"])
+        if output_limit is not None:
+            assert int(argv[argv.index("--max-page-output-bytes") + 1]) <= output_limit
+        pages, combined = [], b""
+        while True:
+            code, recovered = _run_cli(registry, runtime, *argv[argv.index("quota"):], cwd=tmp_path)
+            assert code == 0 and recovered["offset"] == len(combined)
+            if output_limit is not None:
+                assert len((json.dumps(recovered, ensure_ascii=False, separators=(",", ":")) + "\n").encode()) <= output_limit
+            pages.append(recovered)
+            combined += recovered["content"].encode()
+            if recovered["eof"]:
+                break
+            argv = shlex.split(recovered["next_command"])
+        assert combined == Path(view["recovery"]["path"]).read_bytes()
+        required = json.loads(combined)
         assert Path(view["recovery"]["path"]).name == "required-context.json"
         assert required["stop"] == original["stop"]
         assert outcome(required)["requirements"][0]["description"] == outcome(original)["requirements"][0]["description"]
         assert "sources" not in outcome(required)
         assert json.loads(Path(required["context_details"]["path"]).read_bytes()) == original
-        return recovered
+        return pages
 
     recovered = check_recovery(view)
     if failure is None:
-        deliver(tmp_path, event, [recovered])
+        deliver(tmp_path, event, recovered)
         assert context._state(tmp_path)["candidate"]["capture_file"] == view["recovery"]["path"]
         code, warm = _run_cli(registry, runtime, *command, cwd=tmp_path)
         assert code == 0 and warm["target"]["context_epoch"] == view["target"]["context_epoch"], warm
