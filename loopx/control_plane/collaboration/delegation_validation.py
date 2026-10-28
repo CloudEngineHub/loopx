@@ -373,17 +373,24 @@ def record_turn_result(
         service._fenced_write(path, row)
 
 
-def ordinary_request_subject(service, row: dict, binding: dict) -> dict | None:
+def ordinary_request_subject(service, row: dict, binding: dict, *, require_active: bool = True) -> dict | None:
     if binding["todo_id"] is not None:
         return None
     identity = row["identity"]
     from .inbox import _entry
-    entry = _entry(service.root, service.goal_id, binding["agent_id"],
-                   identity.get("source_request_id") or identity["request_id"])
-    return effect_runtime_result("collaboration.delegation.request_subject", {
-        "entry": entry, "binding": binding,
-        **({"expected": identity["request_subject"]} if "request_subject" in identity else {}),
-    })
+    from .goal_instance_scope import collaboration_goal_scope, decide_collaboration_lifecycle
+    with collaboration_goal_scope(service.registry, goal_id=service.goal_id, agents=(binding["agent_id"],),
+            caller_goal_ref=service._caller_goal_ref(), require_active=require_active) as scope:
+        try:
+            entry = _entry(service.root, service.goal_id, binding["agent_id"],
+                           identity.get("source_request_id") or identity["request_id"], scope=scope)
+        except OSError as exc:
+            raise ValueError("delegation request source unavailable for the captured Goal instance") from exc
+        decide_collaboration_lifecycle(scope, operation="read_record" if require_active else "history_inspect", record=entry)
+        return effect_runtime_result("collaboration.delegation.request_subject", {
+            "entry": entry, "binding": binding,
+            **({"expected": identity["request_subject"]} if "request_subject" in identity else {}),
+        })
 
 
 def matching_turn_key(service, row: dict, binding: dict) -> str | None:
@@ -395,7 +402,7 @@ def matching_turn_key(service, row: dict, binding: dict) -> str | None:
         agent_id=binding["agent_id"],
         todo_id=binding["todo_id"],
         turn_instance_id=service._turn_instance_id(row),
-        request_subject=ordinary_request_subject(service, row, binding),
+        request_subject=ordinary_request_subject(service, row, binding, require_active=False),
     )
 
 

@@ -47,6 +47,22 @@ print(json.dumps(build_result""")
     return root, runner, runner.binding("analysis")
 
 
+def _exact_goal_service(delegation_service):
+    from loopx.collaboration_mcp import Delegations
+    from loopx.control_plane.projects.registry_codec import source_session_registry_transaction
+
+    root, runner = delegation_service
+    payload = json.loads(runner.registry.read_text())
+    payload.update(profile_id="source_session_v1", session_bindings=[], session_receipts=[], lifetime_receipts=[])
+    payload["goals"][0]["goal_instance_id"] = "ginst_" + "a" * 32
+    # Replace only this disposable fixture's legacy document using the v2 writer.
+    runner.registry.unlink()
+    with source_session_registry_transaction(runner.registry, operation="exact-request-fixture",
+                                            create=lambda: payload) as transaction:
+        transaction.commit(transaction.payload_copy())
+    return root, Delegations(runner.root, runner.registry, runner.goal_id, runner.agent_id, runner.config)
+
+
 def test_original_request_executes_and_settles_without_changing_todos(delegation_service, monkeypatch):
     root, runner, binding = _ordinary_binding(delegation_service)
     before = runner._cli(binding, "todo", "list", "--goal-id", runner.goal_id)["todos"]
@@ -83,6 +99,55 @@ def test_original_request_executes_and_settles_without_changing_todos(delegation
     assert settlement().spend_run == original.spend_run
     assert (workspace / "host-invocations").read_text() == "1"
     assert runner._cli(binding, "todo", "list", "--goal-id", runner.goal_id)["todos"] == before
+
+
+def test_exact_goal_request_preparation_replay_and_runtime_boundary(delegation_service, monkeypatch):
+    from loopx.control_plane.collaboration import delegation_results, delegation_validation
+    from loopx.control_plane.collaboration.inbox import _read
+
+    root, runner, binding = _ordinary_binding(delegation_service)
+    root, runner = _exact_goal_service((root, runner))
+    monkeypatch.setattr(runner, "_spawn", lambda operation: None)
+    initial = runner.start("analysis", "exact-request", brief())
+    row = _read(runner.path("exact-request"))
+    assert initial["status"] == "prepared" and initial["todo_id"] is None
+    assert delegation_validation.ordinary_request_subject(runner, row, binding) == initial["request_subject"]
+    assert delegation_results.operation_brief(runner, row) == brief()
+    assert runner.start("analysis", "exact-request", brief()) == initial
+    # The exact profile currently admits collaboration/lifecycle only. Its
+    # native runtime rejection must stay visible and must not launch a Host.
+    runner.execute("exact-request")
+    rejected = runner.read("exact-request")
+    assert rejected["status"] == "rejected"
+    assert "lifecycle-only profile source_session_v1" in rejected["error"]
+    runner.execute("exact-request")
+    assert runner.read("exact-request") == rejected
+    assert not (Path(binding["workspace"]) / "host-invocations").exists()
+
+
+@pytest.mark.parametrize("new_service", [False, True], ids=["captured-service", "restarted-service"])
+def test_recreated_goal_cannot_execute_the_original_request(delegation_service, monkeypatch, new_service):
+    from loopx.collaboration_mcp import Delegations
+    from loopx.control_plane.projects.registry_codec import source_session_registry_transaction
+
+    root, runner, binding = _ordinary_binding(delegation_service)
+    root, runner = _exact_goal_service((root, runner))
+    historical = runner
+    monkeypatch.setattr(runner, "_spawn", lambda operation: None)
+    initial = runner.start("analysis", "recreated-request", brief())
+    with source_session_registry_transaction(runner.registry, operation="recreated-request-fixture") as transaction:
+        payload = transaction.payload_copy()
+        payload["goals"][0]["goal_instance_id"] = "ginst_" + "b" * 32
+        transaction.commit(payload)
+    if new_service:
+        runner = Delegations(runner.root, runner.registry, runner.goal_id, runner.agent_id, runner.config)
+    runner.execute("recreated-request")
+    result = historical.read("recreated-request")
+    assert result["status"] == "rejected"
+    expected_error = "unavailable" if new_service else "historical_mutation_forbidden"
+    assert expected_error in result["error"]
+    assert not (Path(binding["workspace"]) / "host-invocations").exists()
+    assert result["request_id"] == initial["request_id"]
 
 
 @pytest.fixture

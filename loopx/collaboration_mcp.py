@@ -590,10 +590,7 @@ class Delegations:
             if source_request_id is not None:
                 identity["source_request_id"] = source_request_id
             if binding["todo_id"] is None:
-                entry = _entry(self.root, self.goal_id, binding["agent_id"], source_request_id or delivered["request_id"])
-                identity["request_subject"] = effect_runtime_result("collaboration.delegation.request_subject", {
-                    "entry": entry, "binding": binding,
-                })
+                identity["request_subject"] = delegation_validation.ordinary_request_subject(self, {"identity": identity}, binding)
             if confirmed_operation_id is not None:
                 # Internal callback adapter only: a canonical locator/CAS fence,
                 # not an executor identity or domain execution permission.
