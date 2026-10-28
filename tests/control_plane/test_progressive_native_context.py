@@ -1,0 +1,166 @@
+"""Necessary native context and immutable supporting detail have distinct coverage."""
+import argparse
+import copy
+import json
+from pathlib import Path
+
+import pytest
+
+from loopx.cli_commands.quota_capture import read_context_capture
+from loopx.control_plane.turn_driver import codex_context as context
+from test_codex_context_lifecycle import setup, project, deliver, read_pages
+from test_goal_acceptance_cli import acceptance_goal as acceptance_goal
+
+
+def payload():
+    return {"ok": True, "goal_id": "fixture", "stop": "Stop before publication.",
+        "planning_horizon": {"core_goal": {"acceptance_contract": {"outcome_requirements": {
+            "schema_version": "loopx_goal_outcomes_v0", "current_lifetime": True, "revision": 1,
+            "outcomes": [{"id": "outcome", "owner_agent_id": "agent", "revision": 1,
+                "objective": "Deliver the complete requested result.", "todo_ids": ["todo_work"],
+                "sources": [{"ref": "original", "summary": "Historical supporting evidence. " * 100}],
+                "requirements": [{"id": "last", "description": "Preserve this final requirement.",
+                    "status": "unverified", "planning_satisfied": False,
+                    "agent_review": {"id": "last", "conclusion": "unmet", "basis_current": False,
+                        "independently_verified": False, "note": "Previous failure and its reasons. " * 100,
+                        "evidence_refs": ["negative:original"]}}]}]}}}}}
+
+
+def outcome(document):
+    return document["planning_horizon"]["core_goal"]["acceptance_contract"]["outcome_requirements"]["outcomes"][0]
+
+
+def test_cold_warm_and_repeated_compaction_keep_requirements_without_replaying_material(tmp_path, monkeypatch):
+    event = setup(tmp_path, monkeypatch)
+    original = payload()
+    _, first = project(tmp_path, payload=original)
+    view = first["context"]
+    assert first["mode"] == "full" and view["stop"] == original["stop"]
+    assert outcome(view)["requirements"][0]["description"] == outcome(original)["requirements"][0]["description"]
+    review = outcome(view)["requirements"][0]["agent_review"]
+    assert review == {"id": "last", "conclusion": "unmet", "basis_current": False, "independently_verified": False}
+    assert "sources" not in outcome(view)
+    archive = view["context_details"]
+    assert json.loads(Path(archive["path"]).read_bytes()) == original
+    assert Path(first["recovery"]["path"]).name == "required-context.json"
+    assert json.loads(Path(first["recovery"]["path"]).read_bytes()) == view
+
+    # Reading complete selected details cannot acknowledge the required view.
+    request = argparse.Namespace(capture_file=archive["path"], capture_sha256=archive["sha256"],
+        select=[outcome(view)["supporting_material_pointer"]], offset=0,
+        page_bytes=16000, max_page_output_bytes=20000, format="json")
+    page = read_context_capture(request)
+    assert page["ok"] and page["eof"]
+    assert json.loads(page["content"])["selections"][0]["value"] == outcome(original)
+    deliver(tmp_path, event, [page])
+    assert "candidate" not in context._state(tmp_path)
+    deliver(tmp_path, event, read_pages(tmp_path, first))
+    assert context._state(tmp_path)["candidate"]["capture_file"] == first["recovery"]["path"]
+
+    _, warm = project(tmp_path, "warm", payload=original)
+    assert warm["target"]["context_epoch"] == first["target"]["context_epoch"]
+    deliver(tmp_path, event, read_pages(tmp_path, warm))
+    before = context._state(tmp_path)
+    for _ in range(2):
+        result = context.codex_context_hook(str(tmp_path), {**event, "source": "compact"})
+        after = context._state(tmp_path)
+        assert after["recovery"] == before["recovery"] and "candidate" not in after
+        assert "Do not replay read context or rerun admission solely" in result["hookSpecificOutput"]["additionalContext"]
+        assert "Previous failure" not in json.dumps(result)
+    _, fresh = project(tmp_path, "fresh", payload={**original, "stop": "Stop all delivery."})
+    assert fresh["mode"] == "full" and fresh["context"]["stop"] == "Stop all delivery."
+    assert json.loads(Path(archive["path"]).read_bytes()) == original
+
+
+@pytest.mark.parametrize("change", ["unknown_outcome", "unknown_requirement", "unknown_review", "unknown_schema", "signed"])
+def test_unknown_semantics_are_never_hidden(tmp_path, monkeypatch, change):
+    setup(tmp_path, monkeypatch)
+    original = payload()
+    if change == "unknown_outcome":
+        outcome(original)["new_obligation"] = "Read this."
+    elif change == "unknown_requirement":
+        outcome(original)["requirements"][0]["new_obligation"] = "Read this."
+    elif change == "unknown_review":
+        outcome(original)["requirements"][0]["agent_review"]["new_obligation"] = "Read this."
+    elif change == "unknown_schema":
+        original["planning_horizon"]["core_goal"]["acceptance_contract"]["outcome_requirements"]["schema_version"] = "future"
+    else:
+        original["contract_binding"] = {"signature": "original"}
+    _, result = project(tmp_path, payload=original)
+    assert result.get("context", result) == original
+    assert "context_details" not in result.get("context", result)
+
+
+def test_off_and_unsupported_surface_remain_exact(tmp_path, monkeypatch):
+    setup(tmp_path, monkeypatch)
+    original, unchanged = payload(), payload()
+    assert context.project_codex_context(original, directory=None, capture_directory=tmp_path,
+        goal_id="fixture", agent_id="agent", surface="quota_packet", capture_id="one") is original
+    required, _ = context._capture_required_context(original, directory=tmp_path, surface="turn_envelope")
+    assert required is original and original == unchanged
+
+
+def test_projection_preserves_numbers_and_original_values(tmp_path, monkeypatch):
+    setup(tmp_path, monkeypatch)
+    original = payload()
+    original["opaque_counter"] = 9007199254740993
+    before = copy.deepcopy(original)
+    required, _ = context._capture_required_context(original, directory=tmp_path, surface="quota_packet")
+    assert original == before and required["opaque_counter"] == before["opaque_counter"]
+
+
+def test_unavailable_typed_plan_keeps_original_capture(tmp_path, monkeypatch):
+    from loopx.control_plane.quota import turn_envelope
+    from loopx.control_plane.effect_runtime import EffectRuntimeStartupError
+
+    def unavailable(*args, **kwargs):
+        raise EffectRuntimeStartupError("Synthetic unavailable runtime", diagnostic_code="fixture_unavailable")
+
+    monkeypatch.setattr(turn_envelope, "plan_progressive_context", unavailable)
+    original = payload()
+    required, recovery = context._capture_required_context(original, directory=tmp_path, surface="quota_packet")
+    assert required is original
+    assert Path(recovery["path"]).name == "projection.json"
+    assert json.loads(Path(recovery["path"]).read_bytes()) == original
+    assert not (tmp_path / "required-context.json").exists()
+
+
+def test_public_quota_cli_delivers_required_view_and_original_evidence(acceptance_goal, tmp_path, monkeypatch):
+    workspace, document, cli, run = acceptance_goal
+    original = {"outcome_id": "export", "owner_agent_id": "agent-a", "todo_ids": ["todo_export"],
+        "objective": "Deliver the complete export.", "requirements": [
+            {"id": "first", "description": "Retain the original content."},
+            {"id": "last", "description": "Stop before publication."}],
+        "source": {"ref": "message:original", "summary": ("Original supporting material. " * 10).strip()}}
+    document.write_text(json.dumps(original))
+    code, refined = cli("refine", "--agent-id", "agent-a", "--document", str(document),
+        "--expected-provider-revision", cli("inspect")[1]["provider_revision"],
+        "--operation-id", "original-outcome", "--execute")
+    assert code == 0, refined
+    before = cli("inspect")[1]
+    lifecycle = tmp_path / "native"
+    lifecycle.mkdir(mode=0o700)
+    (tmp_path / "captures").mkdir(mode=0o700)
+    setup(lifecycle, monkeypatch)
+    code, packet = run("quota", "should-run", "--goal-id", "goal-acceptance", "--agent-id", "agent-a",
+        "--todo-id", "todo_export", "--context-delivery", "on", "--codex-app",
+        "--codex-context-dir", str(lifecycle), "--decision-output-root", str(tmp_path / "captures"),
+        "--turn-instance-id", "original-turn")
+    assert code == 0, {key: packet.get(key) for key in ("error", "error_code", "error_detail", "reason", "reason_code")}
+    recovery = context._state(lifecycle)["recovery"]
+    assert Path(recovery["path"]).name == "required-context.json"
+    required = json.loads(Path(recovery["path"]).read_bytes())
+    source = next(row for row in required["interaction_contract"]["agent_channel"]["work_context"]["sources"]
+        if row["source"] == "goal_acceptance")
+    shown = source["content"]["goal_acceptance_contract"]["outcome_requirements"]["outcomes"][0]
+    assert [row["description"] for row in shown["requirements"]] == [row["description"] for row in original["requirements"]]
+    assert "sources" not in shown and "on demand" in source["reason"]
+    details = required["context_details"]
+    code, page = run("quota", "context-read", "--capture-file", details["path"],
+        "--capture-sha256", details["sha256"], "--select", shown["supporting_material_pointer"],
+        "--page-bytes", "16000", "--max-page-output-bytes", "20000")
+    assert code == 0 and page["eof"], page
+    recovered = json.loads(page["content"])["selections"][0]["value"]
+    assert recovered["sources"] == [original["source"]]
+    assert "candidate" not in context._state(lifecycle)
+    assert cli("inspect")[1] == before, "presentation must not rewrite canonical acceptance"
