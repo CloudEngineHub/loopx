@@ -262,6 +262,22 @@ def test_real_cli_host_rendezvous_sends_delta_and_keeps_same_capture_full(tmp_pa
     initialize_canonical_authority(runtime, GOAL_ID,
         build_todo_runtime_shadow_projection(goal_id=GOAL_ID, todos=todos, handoff_mode="soft_claim"),
         state_path=state, provider=provider)
+    state.write_text(state.read_text().replace("status: active-read-only", "status: active"))
+    settings = json.loads(registry.read_text())
+    settings["goals"][0]["status"] = "active"
+    registry.write_text(json.dumps(settings))
+    code, acceptance = _run_cli(registry, runtime, "goal-acceptance", "inspect", "--goal-id", GOAL_ID)
+    assert code == 0, acceptance
+    source_ref = "owner:validated-request-" + "original-scope-" * 4
+    document = tmp_path / "outcome.json"
+    document.write_text(json.dumps({"outcome_id": "delivery", "owner_agent_id": AGENT_ID,
+        "objective": "Deliver the requested artifact", "todo_ids": [TODO_ID],
+        "requirements": [{"id": "original", "description": "Retain evidence and stop before publication"}],
+        "source": {"ref": source_ref, "summary": "The original owner requested the artifact."}}))
+    code, declared = _run_cli(registry, runtime, "goal-acceptance", "refine", "--goal-id", GOAL_ID,
+        "--agent-id", AGENT_ID, "--document", str(document), "--operation-id", "declare-outcome",
+        "--expected-provider-revision", acceptance["provider_revision"], "--execute")
+    assert code == 0, declared
     before_source = state.read_bytes()
     root = tmp_path / "captures"
     root.mkdir()
@@ -312,10 +328,12 @@ def test_real_cli_host_rendezvous_sends_delta_and_keeps_same_capture_full(tmp_pa
 
     cold, first = invoke({"scope": scope})
     assert cold["mode"] == "full"
+    assert source_ref in json.dumps(cold["context"])
     assert json.loads((first / "projection.json").read_bytes()) == cold["context"]
     warm, second = invoke({"scope": scope, "baseline": cold,
         "retained": {"complete": True, "target": cold["target"]}})
     assert warm["mode"] == "delta"
+    assert source_ref not in json.dumps(warm["changes"])
     projection = json.loads((second / "projection.json").read_bytes())
     current = prepare_context_delivery(projection, scope=scope,
         capture_id=warm["target"]["capture_id"], surface=surface)

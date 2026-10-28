@@ -249,7 +249,9 @@ test("fresh control with exact warm bodies; changed source revisions do not rese
 test("cumulative acceptance evidence reuses exact history while current judgments stay inline on every surface", () => {
   const evidence = "artifact:validation/" + "evidence-segment/".repeat(80);
   const outcome = {id: "result", objective: "Preserve the original goal.", revision: 1,
-    sources: [{ref: "owner:original", summary: long, unknown_source_control: {must_read: true}}],
+    sources: [{ref: "owner:original-" + "source-segment-".repeat(6), summary: long,
+      unknown_source_control: {must_read: true}, unknown_empty_control: {}},
+      {ref: "owner:second", summary: "A second source."}],
     requirements: Array.from({length: 12}, (_, i) => ({id: `r${i}`, description: "Verify the result.",
       status: "unverified", planning_satisfied: false,
       agent_review: {id: `r${i}`, conclusion: "uncertain", basis_current: false,
@@ -278,10 +280,15 @@ test("cumulative acceptance evidence reuses exact history while current judgment
     assert.equal(inline(delta, [...row, "status"]), "unverified");
     assert.equal(inline(delta, [...row, "planning_satisfied"]), false);
     assert.deepEqual(inline(delta, [...root, "outcomes", 0, "sources", 0, "unknown_source_control"]), {must_read: true});
+    assert.deepEqual(inline(delta, [...root, "outcomes", 0, "sources", 0, "unknown_empty_control"]), {});
+    assert.equal(inline(delta, [...root, "outcomes", 0, "sources", 0, "ref"]), undefined);
+    assert.equal(inline(delta, [...root, "outcomes", 0, "sources", 1, "ref"]), undefined);
     assert.deepEqual(restoreContextDelivery({delivery: delta, baseline, current: prepareContextDelivery(args)}).context, wrap(current));
     assert.deepEqual(baseline.context, original);
     // Changed, reordered, removed and empty evidence never inherit an old claim.
     updated.outcomes[0].sources[0].summary = "A new owner correction.";
+    updated.outcomes[0].sources[0].ref = "owner:corrected";
+    updated.outcomes[0].sources.reverse();
     updated.outcomes[0].requirements.reverse();
     updated.outcomes[0].requirements[0].agent_review.note = "";
     updated.outcomes[0].requirements[0].agent_review.evidence_refs = ["artifact:new"];
@@ -290,6 +297,18 @@ test("cumulative acceptance evidence reuses exact history while current judgment
     const edited = {...args, context: wrap(current)};
     const next = prepareContextDelivery({...edited, baseline, retained: {complete: true, target: baseline.target}});
     assert.deepEqual(restoreContextDelivery({delivery: next, baseline, current: prepareContextDelivery(edited)}).context, wrap(current));
+    for (const sources of [updated.outcomes[0].sources.slice(0, 1), [],
+      [{ref: {unknown_authority: "Do not reuse this control record."}, summary: long}]]) {
+      const changed = structuredClone(current) as JsonObject;
+      const outcomes = ((source(changed, 0).goal_acceptance_contract as JsonObject)
+        .outcome_requirements as JsonObject).outcomes as JsonObject[];
+      outcomes[0].sources = sources;
+      const args = {context: wrap(changed), scope, capture_id: "changed", surface};
+      const delta = prepareContextDelivery({...args, baseline, retained: {complete: true, target: baseline.target}});
+      assert.deepEqual(restoreContextDelivery({delivery: delta, baseline, current: prepareContextDelivery(args)}).context, wrap(changed));
+      if (sources.length && typeof sources[0].ref !== "string")
+        assert.deepEqual(inline(delta, [...root, "outcomes", 0, "sources", 0, "ref"]), sources[0].ref);
+    }
   }
   // An unavailable source is not historical evidence eligible for omission.
   const unavailable = structuredClone(work) as JsonObject;
