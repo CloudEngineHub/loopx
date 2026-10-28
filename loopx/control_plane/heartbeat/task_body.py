@@ -11,6 +11,7 @@ from .rules import (
     DEFAULT_PERMISSION_RULE,
     HEARTBEAT_NOTIFICATION_RULE_SHORT,
     HEARTBEAT_TURN_BOOTSTRAP_RULE,
+    HEARTBEAT_KNOWN_CHOICE_RULE,
     HEARTBEAT_VISION_WRITEBACK_RULE_SHORT,
     HOST_LOOP_QUOTA_DISPATCH_RULE,
     HOST_LOOP_SAFETY_RULE,
@@ -680,7 +681,7 @@ output only. ok=false -> recovery, no delivery. Language=user. Honor `boundary`,
 When present, read inline `agent_context` before planning. Read `detail_ref.full_decision` for
 selection, replan, missing/truncated commands or an `agent_context.detail_ref`:
 same-invocation observation, not fresh admission.
-Selection uses the saved `interaction_contract.cli_channel.selection_command`.
+{HEARTBEAT_KNOWN_CHOICE_RULE}use the saved `interaction_contract.cli_channel.selection_command`.
 Keep all supplied guard transport flags (--turn-envelope, --decision-output-root,
 and --decision-handoff-socket when present) on every fresh selection/repair/replan
 guard; each call saves its own immutable observation.
