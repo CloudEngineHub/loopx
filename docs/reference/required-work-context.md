@@ -89,7 +89,8 @@ references remain in the immutable original capture. Each projected outcome has
 a `supporting_material_pointer`; `context_details` supplies the original path,
 SHA-256 and `quota context-read --select` command. Read needed evidence before a
 decision, verification or review that depends on it; repeated selectors batch
-related details. An unmet or stale review stays visible before its explanation
+related source, note and evidence fields without replaying the outcome's inline
+requirements. An unmet or stale review stays visible before its explanation
 is opened. Agent review still does not establish independent acceptance.
 
 The archive remains `projection.json`; the required model view is
@@ -100,6 +101,10 @@ The adapter edits paths selected by the typed owner without round-tripping the
 original JSON values through JavaScript. Unknown outcome fields, unknown source
 read obligations, unsupported schemas, signed envelopes and unavailable planning
 retain their original full content. Context delivery off remains unchanged.
+If the required view and its index are not smaller in serialized UTF-8 bytes,
+delivery retains the original full view and read obligations; small material
+does not need a more expensive detail round trip. This is a transport-size
+comparison, not a relevance heuristic or a model-token estimate.
 Historical captures retain their original obligations. This acceptance-material
 slice does not yet stage candidate selection, preferences or Explore history,
 and a smaller body alone does not establish lower total model cost.

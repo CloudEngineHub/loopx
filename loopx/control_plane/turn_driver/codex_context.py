@@ -499,14 +499,21 @@ def _capture_required_context(payload: dict[str, Any], *, directory: Path,
     projected["context_details"] = {
         "path": archive["path"], "sha256": archive["sha256"],
         "command_template": context_capture_read_command(Path(archive["path"]), archive["sha256"],
-            page_bytes=page_bytes, max_page_output_bytes=output_bytes) + " --select '<supporting_material_pointer>'",
+            page_bytes=page_bytes, max_page_output_bytes=output_bytes) + " --select '<supporting_material_pointer>/sources'",
         "instruction": "This view retains complete requirements and current review/check states. "
             "Source history, review reasoning and evidence references are supporting material. "
             "Read them from this same immutable capture when a decision, verification or review depends on them. "
-            "Select an outcome's supporting_material_pointer, or append /sources or /requirements/<index>/agent_review "
-            "for narrower detail. Repeat --select to batch needed sections. Detail reads never establish a full baseline. "
+            "For source history use supporting_material_pointer plus /sources. For review detail append "
+            "/requirements/<index>/agent_review/note or /requirements/<index>/agent_review/evidence_refs instead. "
+            "Repeat --select to batch needed fields without replaying the outcome's requirements. "
+            "Detail reads never establish a full baseline. "
             "Uncertain or missing necessary facts must be recovered before dependent action; Agent review is not independent acceptance.",
     }
+    # These are transport bytes, not a semantic relevance heuristic or a model
+    # token estimate. Small material is cheaper inline than an index plus IO.
+    required_bytes = len((json.dumps(projected, ensure_ascii=False, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8"))
+    if required_bytes >= Path(archive["path"]).stat().st_size:
+        return payload, archive
     return projected, capture_context_projection(projected, directory=directory,
         filename="required-context.json", read_guidance=CONTEXT_CAPTURE_PAGE_GUIDANCE)
 

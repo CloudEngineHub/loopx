@@ -457,6 +457,9 @@ baseline and recovery move together. Selected detail reads never fulfill hidden
 required content or establish a full baseline. Unknown semantics and signed
 envelopes remain whole; the disabled path is unchanged. The original capture's
 values survive the typed path plan without a JavaScript numeric round trip.
+If the required view plus its detail index is not smaller in serialized UTF-8
+bytes, retain full delivery and its original obligations. Default detail examples
+select source, note or evidence fields rather than replaying the whole outcome.
 
 Native exec and code-mode fixtures also qualify two compactions within one work
 Turn: a sufficient working brief continues with the original work/settlement

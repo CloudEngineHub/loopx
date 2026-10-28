@@ -125,18 +125,35 @@ def test_unavailable_typed_plan_keeps_original_capture(tmp_path, monkeypatch):
     assert not (tmp_path / "required-context.json").exists()
 
 
+def test_small_material_keeps_full_capture_when_the_detail_index_costs_more(tmp_path):
+    original = payload()
+    outcome(original)["sources"][0]["summary"] = "Short supporting source."
+    review = outcome(original)["requirements"][0]["agent_review"]
+    review["note"], review["evidence_refs"] = "Failed.", ["negative:original"]
+    required, recovery = context._capture_required_context(original, directory=tmp_path, surface="quota_packet")
+    assert required is original
+    assert Path(recovery["path"]).name == "projection.json"
+    assert not (tmp_path / "required-context.json").exists()
+
+
 def test_public_quota_cli_delivers_required_view_and_original_evidence(acceptance_goal, tmp_path, monkeypatch):
     workspace, document, cli, run = acceptance_goal
     original = {"outcome_id": "export", "owner_agent_id": "agent-a", "todo_ids": ["todo_export"],
         "objective": "Deliver the complete export.", "requirements": [
             {"id": "first", "description": "Retain the original content."},
             {"id": "last", "description": "Stop before publication."}],
-        "source": {"ref": "message:original", "summary": ("Original supporting material. " * 10).strip()}}
-    document.write_text(json.dumps(original))
-    code, refined = cli("refine", "--agent-id", "agent-a", "--document", str(document),
-        "--expected-provider-revision", cli("inspect")[1]["provider_revision"],
-        "--operation-id", "original-outcome", "--execute")
-    assert code == 0, refined
+        "source": {"ref": "message:original", "summary": ("Original supporting material. " * 16).strip()}}
+    sources = []
+    # Enough valid history to outweigh the complete digest-bound read command;
+    # the small-material counterexample above deliberately keeps full delivery.
+    for i in range(8):
+        source = {**original["source"], "ref": f"message:original-{i}"}
+        sources.append(source)
+        document.write_text(json.dumps({**original, "source": source}))
+        code, refined = cli("refine", "--agent-id", "agent-a", "--document", str(document),
+            "--expected-provider-revision", cli("inspect")[1]["provider_revision"],
+            "--operation-id", f"original-outcome-{i}", "--execute")
+        assert code == 0, refined
     before = cli("inspect")[1]
     lifecycle = tmp_path / "native"
     lifecycle.mkdir(mode=0o700)
@@ -157,10 +174,10 @@ def test_public_quota_cli_delivers_required_view_and_original_evidence(acceptanc
     assert "sources" not in shown and "on demand" in source["reason"]
     details = required["context_details"]
     code, page = run("quota", "context-read", "--capture-file", details["path"],
-        "--capture-sha256", details["sha256"], "--select", shown["supporting_material_pointer"],
+        "--capture-sha256", details["sha256"], "--select", shown["supporting_material_pointer"] + "/sources",
         "--page-bytes", "16000", "--max-page-output-bytes", "20000")
     assert code == 0 and page["eof"], page
     recovered = json.loads(page["content"])["selections"][0]["value"]
-    assert recovered["sources"] == [original["source"]]
+    assert recovered == sources
     assert "candidate" not in context._state(lifecycle)
     assert cli("inspect")[1] == before, "presentation must not rewrite canonical acceptance"
