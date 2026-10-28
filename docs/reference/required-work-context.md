@@ -435,7 +435,14 @@ output profile. Both the initial guard and continuations use that page budget,
 including when the shell lacks the declaration. The worker applies this configuration
 automatically inside its isolated opt-in trial. The persistent instruction requests
 22000 tokens for each context-read tool result and 24000 for its code-mode emission,
-forwarding one stdout at a time. Remove the generated output overrides together with the
+forwarding one stdout at a time. The post-compaction/recovery hook carries the same
+per-call budget guidance so recovery does not depend on retaining the setup text.
+Both the nested reader and outer code-mode emission can truncate independently;
+per-call requests do not prove retained history or change host configuration.
+If either layer truncates, retry the affected range of the same capture with
+smaller content and complete-output byte budgets. This avoids a transport retry
+failure; it does not make an oversized total context fit or qualify scoped reads.
+Remove the generated output overrides together with the
 context setup on rollback; saving a machine preference alone does not apply them.
 This output sizing does not prove retained input, lower fees or task benefit.
 For an SSH Goal, replace `--codex-app`
@@ -677,6 +684,10 @@ exec stdout；把整包重打进哈希工具不构成原始字节已被保留的
 开启的 benchmark worker 在其
 隔离会话内自动应用；持久指引要求每次续读直接输出预算 22000 token、Code Mode
 输出预算 24000 token，每次直接转发一份 stdout。
+压缩/恢复 hook 同样携带这段调用预算指引，避免恢复依赖已经丢失的配置正文。
+内层读取与外层 Code Mode 输出可分别截断；单次预算请求不证明历史保留，也不修改宿主配置。
+任一层截断时，减小正文和完整输出字节预算，重读同一 capture 的受影响范围。
+这仅修复传输重试故障，不代表超大的完整上下文已能容纳，也不证明范围裁剪合格。
 回滚时同时移除生成的输出覆盖项；仅保存机器偏好并不会应用这些宿主配置。
 该设置不证明输入保留、总费用降低或任务效果改善。
 读取器校验不可变 capture 的摘要。Post-tool 适配层复用显式输入观察的字节范围校验，

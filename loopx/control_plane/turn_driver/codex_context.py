@@ -225,6 +225,13 @@ def _context_continuation_instructions(command: str) -> str:
     )
 
 
+# Both persistent setup and post-compaction recovery must describe the nested
+# output budgets. The hook may be the only instruction retained after loss.
+_NATIVE_CONTEXT_OUTPUT_GUIDANCE = (
+    "For 64000-byte pages request reader max_output_tokens=22000 and code-mode exec pragma max_output_tokens=24000. "
+)
+
+
 def codex_context_recovery_instructions(directory: str, *, goal_id: str, agent_id: str,
                                          cli_argv: list[str], session_root: bool = False,
                                          page_output_bytes: int = NATIVE_CONTEXT_PAGE_OUTPUT_BYTES) -> str:
@@ -239,8 +246,8 @@ def codex_context_recovery_instructions(directory: str, *, goal_id: str, agent_i
         _context_continuation_instructions(command) +
         "When recovering a required full read, follow next_command through eof and verify complete bytes/digest. " +
         ("The generated native configuration supports 64000-byte context-read outputs and a 20000-token history limit. "
-         "Read one continuation per tool call with max_output_tokens=22000. In code-mode, also set the exec "
-         "pragma max_output_tokens to 24000 and forward successful stdout directly with text(result.output). "
+         + _NATIVE_CONTEXT_OUTPUT_GUIDANCE +
+         "Read one continuation per tool call; in code-mode, forward successful stdout directly with text(result.output). "
          if page_output_bytes == NATIVE_CONTEXT_LARGE_OUTPUT_BYTES else "") +
         "For code-mode reads, size batches against both direct-result and retained-history output limits; "
         "max_output_tokens alone does not establish the latter. Read one output at a time with "
@@ -342,6 +349,7 @@ def codex_context_hook(directory: str | None, event: dict[str, Any]) -> dict[str
         return {"hookSpecificOutput": {"hookEventName": name, "additionalContext":
             "LoopX context baseline invalidated. "
             + _context_continuation_instructions(recovery["command"])
+            + _NATIVE_CONTEXT_OUTPUT_GUIDANCE
             + "When completing a required full-capture read: " + CONTEXT_CAPTURE_PAGE_GUIDANCE}}
     return {}
 
