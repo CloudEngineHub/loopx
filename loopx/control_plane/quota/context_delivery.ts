@@ -121,8 +121,11 @@ function splitContext(context: JsonObject, binding: JsonObject): Split {
         // controls still reach every input literally.
         if (Array.isArray(outcome.sources)) {
           outcome.sources.forEach((entry, index) => {
-            if (jsonObject(entry)) add(JSON.stringify([kind, outcome.id, "source_summary", index]),
-              [...path, "sources", index, "summary"]);
+            const source = jsonObject(entry);
+            if (!source) return;
+            add(JSON.stringify([kind, outcome.id, "source_summary", index]), [...path, "sources", index, "summary"]);
+            if (typeof source.ref === "string") add(JSON.stringify([kind, outcome.id, "source_ref", index]),
+              [...path, "sources", index, "ref"]);
           });
         }
         const requirements = outcome.requirements;
@@ -193,17 +196,19 @@ const REUSABLE_PACKET_FIELDS = new Set([
 function freshPaths(context: JsonObject, surface: Surface, legacyQuotaFields: readonly string[], binding: JsonObject): {paths: Path[]; valid: boolean} {
   const paths: Path[] = [];
   let valid = true;
-  const leaves = (value: unknown, path: Path) => {
-    if (Array.isArray(value) && value.length) value.forEach((v, i) => leaves(v, [...path, i]));
+  const leaves = (value: unknown, original: unknown, path: Path) => {
+    if (Array.isArray(value) && value.length) value.forEach((v, i) => leaves(v, (original as unknown[])[i], [...path, i]));
     else if (jsonObject(value) && Object.keys(value as JsonObject).length)
-      Object.entries(value as JsonObject).forEach(([k, v]) => leaves(v, [...path, k]));
-    else paths.push(path);
+      Object.entries(value as JsonObject).forEach(([k, v]) => leaves(v, (original as JsonObject)[k], [...path, k]));
+    // Removing only registered reusable fields leaves an empty container, not
+    // a current control. An originally empty unknown record still stays literal.
+    else if (!(jsonObject(value) && jsonObject(original) && Object.keys(original as JsonObject).length)) paths.push(path);
   };
   const work = (value: unknown, path: Path) => {
     const source = jsonObject(value);
     if (!source) { paths.push(path); return; }
     const split = splitContext(source, binding); valid &&= split.valid;
-    leaves(split.fresh, path);
+    leaves(split.fresh, source, path);
   };
   const vision = (value: unknown, path: Path) => {
     const audit = jsonObject(value);

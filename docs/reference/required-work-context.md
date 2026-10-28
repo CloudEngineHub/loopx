@@ -262,12 +262,16 @@ branch identity, selection, status, resume facts and orchestration gates remain
 current. Reordering, refutation, removed evidence and changed guidance reconstruct
 the exact current source; no timestamp, revision or text is normalized away.
 
-Within successfully read cumulative Goal outcomes, source summaries, review notes
-and string evidence references also use exact reuse. They are provenance and
-explanations, not current acceptance decisions. Requirement status, review
+Within successfully read cumulative Goal outcomes, string source references,
+source summaries, review notes and string evidence references also use exact
+reuse. They are provenance and explanations, not current acceptance decisions. Requirement status, review
 conclusion, basis currency, independent verification, revisions and unknown fields
 remain literal current input. Changed, removed or reordered evidence reconstructs
 the complete current source; failed or incomplete sources retain full delivery.
+Containers emptied solely by removing reusable fields do not force those fields
+back into the delta. Originally empty unknown records and non-string source
+references remain literal current input. Reuse keeps the locator's exact value;
+it neither rereads the referenced material nor refreshes its authority.
 
 The registered preference owner permits exact reuse of its complete instructions,
 statements, source quotes and source references. Each read still supplies the
@@ -598,10 +602,12 @@ TurnEnvelope。在基线连续性成立的口径内，两入口仍逐轮发送 `
 条件、身份、命令与未知控制仍逐轮发送。Explore owner 登记分支证据审计与证据关联
 模板的精确复用；分支身份、选择、状态、恢复事实与编排门仍是当前输入。重排、反证、
 移除与指导变更完整重建当前来源，不规范化时间戳、修订或正文。
-已成功完整读取的累计 Goal outcome 中，来源说明、复核笔记及字符串证据引用也按精确
+已成功完整读取的累计 Goal outcome 中，字符串来源引用、来源说明、复核笔记及字符串证据引用也按精确
 差分传输。它们是来源与解释；要求状态、复核结论、依据是否当前、独立验证标记、修订
 及未知字段仍逐轮完整发送。证据变化、移除或重排后仍须精确还原当前来源；来源失败或
 读取不完整时保留完整投递。
+仅因移除可复用字段而变空的容器，不会把这些字段重新带回差分；原本为空的未知对象和
+非字符串来源引用仍逐轮发送。复用保留定位符的精确值，不重读其指向的材料，也不刷新权限。
 对象编辑可以在 `values` 中合并携带本轮完整字段，同时保留递归 `changed` 与删除
 `removed`；数组的 `items` 与 `values` 使用精确索引，`length` 调整长度。
 字段仍在本轮输入中，只减少重复 wrapper；codec 比较普通编辑、合并字段
