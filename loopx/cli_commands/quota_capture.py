@@ -303,6 +303,12 @@ def project_saved_context_capture(args: argparse.Namespace) -> dict[str, Any]:
             capture_id=hashlib.sha256(raw).hexdigest(),
             continuity_generation=getattr(args, "_context_delivery_generation", None))
         native_prepared = True
+        if projected.get("schema_version") == "context_delivery_v1":
+            # Native publication owns the complete required view. Keep its
+            # committed recovery even if optional wire/inline delivery fails;
+            # the input capture digest below remains the original identity.
+            full_reference = dict(projected["recovery"])
+            reference = {key: full_reference[key] for key in ("path", "sha256", "command")}
         native_view = native_context_capture_view(projected, cache, context_directory=directory,
             metadata={"recovery": full_reference, "capture_sha256": args.capture_sha256,
                 "context_delivery": activation},

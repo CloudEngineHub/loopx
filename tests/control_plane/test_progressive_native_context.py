@@ -1,8 +1,10 @@
 """Necessary native context and immutable supporting detail have distinct coverage."""
 import argparse
 import copy
+import hashlib
 import json
 from pathlib import Path
+import shlex
 
 import pytest
 
@@ -10,6 +12,7 @@ from loopx.cli_commands.quota_capture import read_context_capture
 from loopx.control_plane.turn_driver import codex_context as context
 from test_codex_context_lifecycle import setup, project, deliver, read_pages
 from test_goal_acceptance_cli import acceptance_goal as acceptance_goal
+from test_quota_settlement_cli import _run_cli
 
 
 def payload():
@@ -70,6 +73,67 @@ def test_cold_warm_and_repeated_compaction_keep_requirements_without_replaying_m
     _, fresh = project(tmp_path, "fresh", payload={**original, "stop": "Stop all delivery."})
     assert fresh["mode"] == "full" and fresh["context"]["stop"] == "Stop all delivery."
     assert json.loads(Path(archive["path"]).read_bytes()) == original
+
+
+@pytest.mark.parametrize("failure", [None, "wire", "inline_read"])
+def test_saved_native_projection_recovers_the_required_view(tmp_path, monkeypatch, failure):
+    from loopx.cli_commands import quota_capture
+    from loopx.control_plane.turn_driver import decision_capture
+
+    event = setup(tmp_path, monkeypatch)
+    original = {**payload(), "agent_identity": {"agent_id": "agent"},
+        "heartbeat_receipt": {"turn_instance_id": "original-turn"}}
+    source = tmp_path / "original.json"
+    raw = json.dumps(original).encode()
+    source.write_bytes(raw)
+    digest = hashlib.sha256(raw).hexdigest()
+    registry, runtime = tmp_path / "absent-registry.json", tmp_path / "absent-runtime"
+    command = ["quota", "context-project", "--capture-file", str(source), "--capture-sha256", digest,
+        "--goal-id", "fixture", "--agent-id", "agent", "--turn-instance-id", "original-turn",
+        "--context-delivery", "on", "--codex-app", "--codex-context-dir", str(tmp_path)]
+    write_capture = decision_capture.write_decision_capture
+
+    def fail_wire(path, value, **kwargs):
+        if path.name == "delivery.json":
+            raise OSError("optional wire unavailable")
+        return write_capture(path, value, **kwargs)
+
+    with monkeypatch.context() as patch:
+        if failure == "wire":
+            patch.setattr(decision_capture, "write_decision_capture", fail_wire)
+        elif failure == "inline_read":
+            patch.setattr(quota_capture, "read_context_capture", lambda *args, **kwargs: {"ok": False})
+        code, view = _run_cli(registry, runtime, *command, cwd=tmp_path)
+    assert code == 0 and view["ok"] and view["mode"] == "full", view
+
+    def check_recovery(view):
+        journal = context._state(tmp_path)["recovery"]
+        assert view["capture_sha256"] == digest
+        assert {key: view["recovery"][key] for key in ("path", "sha256")} == {
+            key: journal[key] for key in ("path", "sha256")}
+        argv = shlex.split(view["recovery"]["command"])
+        code, recovered = _run_cli(registry, runtime, *argv[argv.index("quota"):], cwd=tmp_path)
+        assert code == 0 and recovered["eof"]
+        required = json.loads(recovered["content"])
+        assert Path(view["recovery"]["path"]).name == "required-context.json"
+        assert required["stop"] == original["stop"]
+        assert outcome(required)["requirements"][0]["description"] == outcome(original)["requirements"][0]["description"]
+        assert "sources" not in outcome(required)
+        assert json.loads(Path(required["context_details"]["path"]).read_bytes()) == original
+        return recovered
+
+    recovered = check_recovery(view)
+    if failure is None:
+        deliver(tmp_path, event, [recovered])
+        assert context._state(tmp_path)["candidate"]["capture_file"] == view["recovery"]["path"]
+        code, warm = _run_cli(registry, runtime, *command, cwd=tmp_path)
+        assert code == 0 and warm["target"]["context_epoch"] == view["target"]["context_epoch"], warm
+        check_recovery(warm)
+        context.codex_context_hook(str(tmp_path), {**event, "source": "compact"})
+        code, compacted = _run_cli(registry, runtime, *command, cwd=tmp_path)
+        assert code == 0 and compacted["mode"] == "full", compacted
+        check_recovery(compacted)
+    assert source.read_bytes() == raw and not registry.exists() and not runtime.exists()
 
 
 @pytest.mark.parametrize("change", ["unknown_outcome", "unknown_requirement", "unknown_review", "unknown_schema", "signed"])
