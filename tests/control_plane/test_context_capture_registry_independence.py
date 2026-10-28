@@ -87,6 +87,9 @@ def test_explicit_native_location_recovers_without_goal_routing(tmp_path, monkey
 @pytest.mark.parametrize("command", [("quota", "context-read"),
     ("quota", "should-run", "--goal-id", "fixture"), ("quota", "spend-slot", "--goal-id", "fixture")])
 def test_implicit_source_and_authority_commands_preserve_route_conflict(tmp_path, conflicting_defaults, command):
+    if command[1] != "context-read":
+        # Capture flags alone cannot classify a business command as read-only.
+        command = (*command, "--capture-file", str(tmp_path / "unrelated.json"), "--capture-sha256", "0" * 64)
     result = run_cli("loopx.entrypoint", tmp_path, *command)
     assert result.returncode != 0
     assert "Both default LoopX runtime roots contain state" in result.stdout + result.stderr
