@@ -366,7 +366,7 @@ def test_resume_partial_read_does_not_claim_full_model_retention(tmp_path, monke
     after = context._state(tmp_path)
     assert "candidate" not in after and after["context_epoch"] == before["context_epoch"]
     assert after["recovery"] == recovery
-    assert recovery["command"] in result["hookSpecificOutput"]["additionalContext"]
+    assert result == {}  # Ordinary resume must not induce a recovery/read loop.
     # Repeated notifications do not rotate the epoch or replace the recovery.
     context.codex_context_hook(str(tmp_path), resumed)
     assert context._state(tmp_path) == after
@@ -393,10 +393,7 @@ def test_fresh_capture_after_resume_does_not_require_reading_old_original(tmp_pa
     original = wire["recovery"]
     before = Path(original["path"]).read_bytes()
     resumed = context.codex_context_hook(str(tmp_path), {**event, "source": "resume"})
-    guidance = resumed["hookSpecificOutput"]["additionalContext"]
-    assert guidance.index("new work Turn") < guidance.index(original["command"])
-    assert "Do not replay read context or rerun admission solely" in guidance
-    assert "full-file traversal is not a prerequisite" in guidance
+    assert resumed == {}
     assert "candidate" not in context._state(tmp_path)
 
     # Ordinary resume preserves the file epoch without old-file rereads.
@@ -700,7 +697,10 @@ def _assert_recovery_after_fallback(root, event, source, capture):
     digest = hashlib.sha256(raw).hexdigest()
     assert page["ok"] is True and page["sha256"] == digest
     assert page["content"].encode() == raw[:len(page["content"].encode())]
-    assert digest in hook["hookSpecificOutput"]["additionalContext"]
+    if hook:
+        assert digest in hook["hookSpecificOutput"]["additionalContext"]
+    else:
+        assert source == "resume"  # The exact recovery remains available without a reread prompt.
 
 
 @pytest.mark.parametrize("source", ["compact", "resume"])

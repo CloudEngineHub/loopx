@@ -335,7 +335,12 @@ def codex_context_hook(directory: str | None, event: dict[str, Any]) -> dict[str
                     checkpoint_native_read(read_state, updated, event, pages)
                 if updated != state:
                     _save(root, updated)
-                recovery_needed = same and not updated.get("candidate")
+                saved = updated.get("recovery")
+                current_file_epoch = (isinstance(saved, dict)
+                    and saved.get("continuity_basis") == "captured_file"
+                    and isinstance(saved.get("target"), dict)
+                    and saved["target"].get("context_epoch") == updated.get("context_epoch"))
+                recovery_needed = same and not updated.get("candidate") and not current_file_epoch
             except (OSError, ValueError, TypeError, RecursionError, EffectRuntimeRemoteError, EffectRuntimeStartupError):
                 # A transient read/reduction failure can miss invalidation just
                 # as a failed write can. While holding the same lock, retire
@@ -561,7 +566,7 @@ def project_codex_context(payload: dict[str, Any], *, directory: str | None, cap
 
     Serialization prevents invalidation from moving the epoch during preparation.
     Full fallback must recover this capture or refuse lookup, never an older one.
-    Completed full or delta pages establish the explicit native-hook assumption.
+    Saved-file comparison is independent of any complete model-read observation.
     """
     from ..quota.error_codes import QuotaDecisionTransportError
 

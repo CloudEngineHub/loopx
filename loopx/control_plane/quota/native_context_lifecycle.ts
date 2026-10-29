@@ -56,9 +56,12 @@ export function updateNativeContextLifecycle(request: JsonObject): JsonObject {
     if (same && event.source === "resume" && request.resume_verified === true
         && !state.pending && candidate?.basis === NATIVE_CONTEXT_BASIS
         && candidate.capture_bytes_verified === true) return state;
-    if (same && event.source === "resume" && fileEpochCurrent) {
+    if (same && event.source === "resume" && fileEpochCurrent
+        && !(candidate?.native_resume || (state.candidate && !candidate))) {
       // Resuming a session is not compaction. File comparison does not depend
       // on model retention; retire that separate assumption when unverified.
+      // A previously qualified history checkpoint that now fails can include
+      // an unreported compaction/rollback, so conservatively rotate below.
       delete state.candidate;
       delete state.pending;
       delete state.active_call;

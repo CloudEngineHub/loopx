@@ -661,7 +661,7 @@ def handle_native_context_command(args: argparse.Namespace, *, print_payload: Ca
                        "Omit per-command activation and location flags to retain that inheritance. " if machine_runtime else
                        "Pass --context-delivery on with the same declared host mode, context location and a decision-output-root to heartbeat-prompt/should-run. ")
                     +
-                    "Normal completed full reads establish an explicit continuity assumption; no input diagnostics or provider change is required. "
+                    "Verified saved files support progressive reads and exact deltas without a full model read; compaction starts a new full baseline on the next work Turn. "
                     "The generated output profile uses 64000-byte continuations and a 20000-token native history limit; "
                     "the same page profile applies without the shell override. Explicit smaller reader budgets remain available for truncated-range recovery. "
                     "Set --context-delivery off and remove the generated context configuration, including its output overrides, to restore ordinary output. "

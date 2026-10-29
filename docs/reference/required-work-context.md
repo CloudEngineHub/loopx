@@ -15,8 +15,8 @@ The RFC's [candidate context by decision stage](../architecture/rfcs/controller-
 proposes complete captured alternatives with discoverable decision facts and
 same-capture batch detail reads. It does not change current read obligations.
 The current capability gate leaves candidate selection to the Agent; a selected
-Todo display is not proof that it can ignore alternatives. Existing full-context
-captures must still be read completely. A future staged caller must replace its
+Todo display is not proof that it can ignore alternatives. Default-off and signed-envelope captures retain their existing full-read obligations.
+Enabled native file delivery instead follows the progressive-read contract below. A future staged caller must replace its
 delivery, required reads and recovery together, including unknown-scope full
 fallback; an index read cannot establish delivery of hidden bodies.
 
@@ -62,7 +62,7 @@ change receipt replay validation or declare a model-input/token saving.
 Unmarked or mixed ownership keeps the original full progressive read in
 `agent_channel.required_reads`. Malformed markers, non-generated content inside
 a marked region, unavailable files and invalid UTF-8 fail closed. Unknown
-narrative is never classified by headings or clipped to a size budget. Read all
+narrative is never classified by headings or clipped to a size budget. For default-off and signed-envelope callers, read all
 delivered context and remaining reads before dependent work; changed sources need
 a fresh guard. Enabled scoped acceptance does not replace original Goal intent.
 
@@ -95,8 +95,9 @@ is opened. Agent review still does not establish independent acceptance.
 
 The archive remains `projection.json`; the required model view is
 `required-context.json`. Required reads, full/delta preparation and recovery use
-that same model view. A selected detail page cannot acknowledge the required
-view, establish a full baseline or prove that other hidden details were read.
+that same model view. A selected detail page cannot acknowledge full model retention of the required
+view or prove that other hidden details were read. Native file baselines are
+established independently from complete saved captures.
 The adapter edits paths selected by the typed owner without round-tripping the
 original JSON values through JavaScript. Unknown outcome fields, unknown source
 read obligations, unsupported schemas, signed envelopes and unavailable planning
@@ -125,12 +126,13 @@ existing behavior. The existing size comparison retains a full view when the
 reference guidance would cost more than the duplicate rows.
 
 A context epoch is not a work Turn. Compaction or a failed native hook invalidates
-delta reuse; it does not require another admission or unconditional replay of the
+the previous epoch’s delta reuse; it does not require another admission or unconditional replay of the
 old quota packet. Within the existing Turn, continue from the working brief with
 the Goal, applicable requirements/stops, task and original capture/settlement
 identity. Before an action that depends on missing or uncertain facts, recover
-those facts from the same immutable capture. An unfinished initial required read
-still requires its missing content; summarizing it does not fulfill that read.
+those facts from the same immutable capture. An unfinished selected section needs its missing facts before dependent work;
+summarizing it does not prove those facts were read. Legacy captures retain
+their original read contract until their current work Turn ends.
 Do not repeat completed work or settle the original Turn twice. If the original
 reference is lost, repair it before dependent work; independently authorized work
 can continue. A later work Turn obtains its own current guard and required
@@ -278,6 +280,10 @@ To roll back, install the prior revision and regenerate prompts; changing a
 transport flag does not restore the old exact Todo schema.
 
 ## Opt-in native reuse
+
+The retained-input codec described first in this section serves explicit
+confirmed-input clients. Native Codex uses the separate saved-file basis
+described under Machine default; it does not require full model retention.
 
 The existing [native context delivery option](../heartbeat-automation-prompt.md#opt-in-native-context-delivery)
 uses one TypeScript codec for ordinary quota and TurnEnvelope. Within a usable
@@ -463,7 +469,7 @@ For native setup, `quota context-config --codex-app --goal-id GOAL --agent-id AG
 under machine on prepares only that private transport leaf and renders the
 existing hooks, recovery instructions and `config_overrides`. Applying those overrides
 selects a 20000-token native history limit and declares the existing 64000-byte
-output profile. Both the initial guard and continuations use that page budget,
+output profile. The initial guard returns the small file manifest; requested reader pages use that budget,
 including when the shell lacks the declaration. The worker applies this configuration
 automatically inside its isolated opt-in trial. The persistent instruction requests
 22000 tokens for each context-read tool result and 24000 for its code-mode emission,
@@ -493,11 +499,11 @@ endpoints, provider selection and connection mode, including implicit history vi
 `previous_response_id`. It neither enables input diagnostics nor scans model-input
 history. Benchmark preparation stages those same hooks in its isolated trial home.
 
-`PostToolUse` records complete digest-bound reader ranges in the existing session
-journal; EOF without preceding pages, a known malformed/truncated page or a reader
-error cannot establish a baseline. Concurrent and repeated pages coalesce.
+`PostToolUse` can record complete digest-bound reader ranges in the existing session
+journal for the separate model-retention observation. EOF without preceding pages,
+a known malformed/truncated page or a reader error cannot establish that observation. Concurrent and repeated pages coalesce.
 `PreCompact`, `PostCompact`, clear, fork and a changed session/workspace invalidate
-it. A resume may supply different history under the same session ID; the
+that observation and rotate the file epoch for the next work Turn. A resume may supply different history under the same session ID; the
 [native event contract](https://learn.chatgpt.com/docs/hooks#sessionstart) alone
 does not attest retention. The shared Codex adapter can qualify a resume against
 the complete read's native replay checkpoint: the native-selected physical
@@ -520,19 +526,20 @@ it neither scans model requests nor asks the model for an ACK.
 Opted-in benchmark native children create owner-only files automatically; the
 parent process and off-mode file creation policy stay unchanged. Group-writable
 existing replay sources cannot establish cross-process continuity.
-A new independent decision uses its normal guarded
-context command and reads the resulting current full capture; it need not first
-read an older capture to seed a delta. Continuing a captured decision after context
-loss still requires complete recovery of that exact original, never a new guard
-as a substitute. Both paths establish a new chain only after a complete verified
-full read. Ordinary tools and turn endings do not invalidate it. An interrupted
-pending delivery requires full recovery. Repeated reset events are idempotent.
-Recovery reads the same immutable capture without re-admission or spend.
+A new independent decision uses its normal guarded context command. Actual
+compaction selects a new full saved baseline; ordinary resume preserves the file
+epoch without claiming model retention. A previously qualified replay checkpoint
+that now fails may conceal compaction and conservatively rotates the epoch.
+No prior complete-read checkpoint is required for file comparison. Continuing a
+captured decision after loss recovers only the necessary missing facts from that
+same original, with no new guard or spend. Ordinary tools and Turn endings do
+not invalidate file comparison. Repeated reset events are idempotent.
 The adapter commits the current complete capture reference and pending delivery
 under the existing session lock before optional material planning or encoding.
 A process exit during planning therefore recovers the current source rather
-than its predecessor. The planner reuses that archive; an unread current source
-still cannot establish a full native baseline.
+than its predecessor. The planner reuses that archive. A saved file can support
+file comparison without implying that its contents were read by the model.
+
 
 This deliberately replaces per-request complete-input proof with lifecycle
 assumptions. Downstream output loss or truncation not exposed to the hook, a
@@ -737,10 +744,11 @@ context journal。当前工作到达正常安全边界后，沿宿主正常启�
 和连接方式，包括带 `previous_response_id` 的隐式历史；不启用输入诊断，也不逐轮扫描
 模型完整输入。Benchmark 在各自隔离的 trial home 内自动准备同一组 hooks。
 
-`PostToolUse` 在现有 session journal 中合并摘要固定的完整读取范围；缺少前页的 EOF、
-已知的格式损坏／截断或读取失败不能建立基线。并发、重复页幂等合并。`PreCompact`、
-`PostCompact`、清空、分叉、会话／工作区切换使基线失效；同一会话 ID 的 resume
-也可能使用不同历史，[原生事件契约](https://learn.chatgpt.com/docs/hooks#sessionstart)本身不证明保留。
+`PostToolUse` 可在现有 session journal 中合并摘要固定的完整读取范围，用于独立的
+模型保留观察；缺少前页的 EOF、已知格式损坏／截断或读取失败不能建立该观察。
+并发、重复页幂等合并。`PreCompact`、`PostCompact`、清空、分叉、会话／工作区切换
+使该观察失效，并为下一个新工作 Turn 轮换文件 epoch；同一会话 ID 的 resume 也可能
+使用不同历史，[原生事件契约](https://learn.chatgpt.com/docs/hooks#sessionstart)本身不证明保留。
 共享 Codex adapter 可核对完整读取时的原生重放检查点：原生实际选择的物理历史文件，
 须保留从当前基线首次 reader 开始的摘要固定区间，以及每份精确 reader 输出，完整覆盖固定捕获的全部字节；
 会话、工作区、模型和权限模式相同，
@@ -754,14 +762,14 @@ code-mode 父调用的保留输出须包含嵌套 reader hook 观察到的全部
 工程假设，不声称证明未来模型输入；不扫描模型请求，也不要求模型 ACK。
 开启后的 benchmark 原生子进程自动以仅所有者可访问的权限创建文件，父进程与关闭态
 保持原权限策略；既有可组写的重放来源不能建立跨进程连续性。
-新的独立决定走正常准入与上下文命令，完整读取其返回的当前全量捕获；不必为了建立差分
-基线而先读旧捕获。若丢失上下文后继续某个已捕获决定的依赖工作，仍须完整恢复那份精确
-原捕获，不能用新 guard 替代。两条路径都只在完整且已校验的全量读取后建立新差分链。
-普通工具和正常轮次结束不无条件失效。尚未完成的交付被中断
-后须完整恢复。重复重置事件幂等；恢复读取同一不可变捕获，不重新准入或扣额。
+新的独立决定走正常准入与上下文命令。实际压缩后，下一个新工作 Turn 建立新的完整
+文件基线；普通 resume 保留文件 epoch，不声称模型保留。曾合格的重放检查点若核验
+失败，可能隐藏压缩，保守地轮换 epoch；文件比较本身不要求先有完整读取检查点。
+上下文丢失后继续原决定，只从同一原始捕获恢复缺失的必要事实，不重新准入或扣额。
+普通工具和 Turn 结束不会使文件比较失效；重复重置事件幂等。
 Adapter 在可选材料规划或编码前，先持既有 session 锁提交当前完整 capture 引用及
 pending delivery。规划过程中进程退出后，恢复指向当前来源而非上一份；planner
-复用同一 archive。尚未读取的当前来源仍不能建立完整 native baseline。
+复用同一 archive。完整落盘可支持文件比较，不表示模型已经读过其内容。
 
 这是以生命周期假设替换逐轮完整输入证明。Hook 未暴露的下游丢失／截断、漏掉失效事件，
 或在声明开关之外静默禁用 hooks，仍可能漏检；不把这些假设称为实测保留，也不新增审批门。

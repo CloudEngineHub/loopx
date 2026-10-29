@@ -723,6 +723,20 @@ def test_native_saved_preflight_uses_lifecycle_without_guard_replay(tmp_path, mo
                         del command_words[index:index + 2]
             assert words == original_words
             selected["command_args_template"] = original_command
+            # Main already deduplicates identical Todo rows within this exact
+            # capture. Resolve only that registered presentation carrier.
+            for rows in presentation["agent_todo_summary"].values():
+                if not isinstance(rows, list):
+                    continue
+                for i, row in enumerate(rows):
+                    if not isinstance(row, dict) or "context_ref" not in row:
+                        continue
+                    value = presentation
+                    for part in row["context_ref"].split("/")[1:]:
+                        value = value[int(part)] if isinstance(value, list) else value[part]
+                    assert "context_ref" not in value
+                    rows[i] = value
+            presentation.pop("context_reference_instruction", None)
             assert presentation == original  # only presentation transport differs
     else:
         assert cold["context"] == json.loads(sources[0][1]) and projected == json.loads(sources[1][1])
