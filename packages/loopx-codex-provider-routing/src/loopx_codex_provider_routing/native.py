@@ -279,7 +279,12 @@ class NativeAccounts:
                 # Only status/readback runs while paused; unchanged selection
                 # must not retry usage refresh, client shutdown or switching.
                 if state.get("failure_count", 0) >= 3 and not refresh and not manual_slot:
-                    return self._projection(state)
+                    if state.get("code") != "other_clients_busy":
+                        return self._projection(state)
+                    # Legacy busy pauses are safe to recheck: the native host
+                    # now resolves remaining owners BEFORE any client quit.
+                    # A released blocker must not require a manual account swap.
+                    state["failure_count"] = 0
                 # Inspect the active account even when it is not an authorized
                 # destination. Candidates stay strictly inside the allowlist.
                 slots = list(dict.fromkeys([native["active_slot"], *state["policy"]["slots"]]))
@@ -336,10 +341,10 @@ class NativeAccounts:
                 code = error.code if isinstance(error, HostError) else "native_unavailable"
                 # Unrelated/remaining owners still require a safe-boundary wait.
                 # Other repeated failures stop automatic attempts until Refresh.
-                failures = state.get("failure_count", 0) + (code not in ("waiting_for_idle", "handoff_pending"))
-                if code in ("other_clients_busy", "client_quit_refused", "client_quit_timeout"):
+                failures = state.get("failure_count", 0) + (code not in ("waiting_for_idle", "other_clients_busy", "handoff_pending"))
+                if code in ("client_quit_refused", "client_quit_timeout"):
                     failures = 3  # Do not repeatedly close/reopen a refused client.
-                state.update(action=code if code in ("waiting_for_idle", "selection_changed", "adapter_changed", "client_quit_refused", "client_quit_timeout", "client_changed", "handoff_pending") else "unavailable",
+                state.update(action="waiting_for_idle" if code == "other_clients_busy" else code if code in ("waiting_for_idle", "selection_changed", "adapter_changed", "client_quit_refused", "client_quit_timeout", "client_changed", "handoff_pending") else "unavailable",
                              code=code, retry_at=self.clock() + (5 if code == "handoff_pending" else min(300, 60 * 2 ** min(failures, 3))), failure_count=failures)
                 if manual_slot:
                     state["last_operation_id"] = operation_id
