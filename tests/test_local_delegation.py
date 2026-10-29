@@ -63,8 +63,12 @@ print(json.dumps(build_result(request, {'result_kind':'validated_progress', 'cla
 @pytest.fixture(params=["file", "sqlite"])
 def service(tmp_path, request, monkeypatch):
     isolate_sqlite_runtime(tmp_path, monkeypatch)
-    # The shared teardown authenticates this namespace after monkeypatches are
-    # restored and observes process exit in the parent that can reap its child.
+    # The shared owner authenticates this namespace and observes process exit
+    # in the parent that can reap its child. Global teardown retries after mocks.
+    # Keep an explicit finalizer for direct fixture callers and failed setup.
+    from managed_effect_runtime_fixture import stop_disposable_effect_runtimes
+
+    request.addfinalizer(lambda: stop_disposable_effect_runtimes(tmp_path))
     root = tmp_path / "team"
     demo.prepare(root, provider=request.param)
     fixture(root)
