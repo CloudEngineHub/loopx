@@ -176,6 +176,49 @@ def configured(native, tmp_path):
     return provider, transport, clock
 
 
+@pytest.mark.parametrize("detached", [False, True])
+def test_native_worker_inherits_loaded_core_outside_checkout(native, monkeypatch, tmp_path, detached):
+    import loopx
+    expected = str(Path(loopx.__file__).resolve())
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    # Probe real child import provenance through host's two launch paths.
+    # -S removes editable-install/site-package help, as in an archive bootstrap.
+    # The child substitutes only the account protocol result; no auth is read.
+    probe = '''
+import json, os, sys
+from pathlib import Path
+import loopx
+from loopx.runtime_activation import managed_chat_activation_guard
+packet = {"ok": True, "result": {"core": str(Path(loopx.__file__).resolve()),
+                               "guard": callable(managed_chat_activation_guard)}}
+if len(sys.argv) == 3 and sys.argv[1] == "--result-file":
+    packet["schema_version"] = "codex_native_accounts_v1"
+    fd = os.open(sys.argv[2], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as stream:
+        json.dump(packet, stream)
+else:
+    print(json.dumps(packet))
+'''
+    launch = native.subprocess.Popen if detached else native.subprocess.run
+    def child(command, **kwargs):
+        return launch([command[0], "-S", "-c", probe, *command[3:]], cwd=tmp_path, **kwargs)
+    monkeypatch.setattr(native.subprocess, "Popen" if detached else "run", child)
+    result = native.host({}, "status", **({"handoff_receipt": str(tmp_path / "reply.json")} if detached else {}))
+    assert result == {"core": expected, "guard": True}
+    assert "PYTHONPATH" not in os.environ  # No process-wide environment mutation.
+
+
+def test_native_worker_does_not_invent_a_core_owner(native, monkeypatch):
+    monkeypatch.delitem(sys.modules, "loopx", raising=False)
+    captured = []
+    def child(_command, **kwargs):
+        captured.append(kwargs["env"])
+        return SimpleNamespace(stdout='{"ok": true, "result": {}}')
+    monkeypatch.setattr(native.subprocess, "run", child)
+    assert native.host({}, "status") == {}
+    assert captured == [None]
+
+
 def test_default_off_has_no_native_effect_or_startup_observer(native, tmp_path):
     from loopx.presentation.codex_accounts_api import CodexAccountService
 

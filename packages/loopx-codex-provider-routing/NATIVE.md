@@ -125,6 +125,9 @@ unreadable state defer the entire handoff before App quit. A new/changed service
 cannot inherit the frozen restart set. The lock remains held through account
 readback and restoration. A standalone observer must run in the same upgraded
 LoopX environment to restart these services; missing Core support waits safely.
+An already loaded archive/bootstrap Core passes its import root to the native
+worker, including detached handoffs; the worker does not rely on its current
+directory to rediscover that owner.
 Prefer the serving App/Chat observer so normal LoopX updates also refresh it;
 retire any separately installed legacy watcher through its original manager.
 
@@ -134,6 +137,8 @@ retire any separately installed legacy watcher through its original manager.
 原账号 owner 在事务锁内复查只读例外，并再次核验句柄；不重启 VM，也不据此声称
 已检查 guest 内的认证缓存。停止 Chat 前复用原在途任务读取与 ingress 锁，排队、
 completing 或不可读状态均在退出 App 前等待；恢复期间保持锁与原失败/未知回执。
+已加载的 archive/bootstrap Core 向原 native 子进程传递其加载路径，包含脱离父进程的
+换号任务，避免依赖工作目录或误用旧安装；没有加载 Core 的独立入口仍安全等待。
 观察器应随实际 LoopX 服务升级；独立旧 watcher 通过原管理器退役，避免占住唯一观察权。
 
 Each service's restoration intent is saved privately before unloading. Version

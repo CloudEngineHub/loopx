@@ -69,13 +69,23 @@ def policy(request: dict) -> dict:
 def host(adapter: dict, operation: str, **parameters) -> dict:
     receipt = parameters.pop("handoff_receipt", None)
     command = [sys.executable, "-m", "loopx_codex_provider_routing.native_host"]
+    environment = None
+    core = sys.modules.get("loopx")
+    if core is not None and getattr(core, "__file__", None):
+        # An archive/private bootstrap can load Core through sys.path alone.
+        # Its detached child must use that same loaded owner, not an older
+        # installation (or no Core) discovered from the child's working dir.
+        environment = os.environ.copy()
+        root = str(Path(core.__file__).resolve().parent.parent)
+        inherited = environment.get("PYTHONPATH")
+        environment["PYTHONPATH"] = root + (os.pathsep + inherited if inherited else "")
     request = json.dumps({"adapter": adapter, "operation": operation, **parameters})
     if receipt:
         # Closing the calling native App must not close this continuation or
         # its result channel. All native sub-operations have bounded waits.
         process = subprocess.Popen([*command, "--result-file", receipt], stdin=subprocess.PIPE,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                   text=True, start_new_session=True)
+                                   text=True, start_new_session=True, env=environment)
         try:
             process.communicate(request, timeout=150)
         except subprocess.TimeoutExpired:
@@ -87,7 +97,8 @@ def host(adapter: dict, operation: str, **parameters) -> dict:
         if packet.get("ok") is not True:
             raise HostError(packet.get("code", "native_unavailable"))
         return packet["result"]
-    result = subprocess.run(command, input=request, capture_output=True, text=True, timeout=150)
+    result = subprocess.run(command, input=request, capture_output=True, text=True, timeout=150,
+                            env=environment)
     if len(result.stdout) > 131072:
         raise HostError("native_unavailable")
     try:
