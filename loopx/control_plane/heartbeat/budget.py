@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shlex
+from pathlib import Path
 from typing import Any
 
 from ...project_prompt import shell_arg_for_host
@@ -59,14 +60,14 @@ def heartbeat_prompt_mode(
 def prompt_budget_text(
     text: str, *, goal_id: str, active_state: str,
     registry_path: str | None = None,
-    runtime_root: str | None = None,
+    runtime_root: str | Path | None = None,
 ) -> str:
     normalized = text
     # Compare authored guidance independently of the host's selected path length.
     # char_count below still reports the actual transport/body size.
     routes = (
         (registry_path, "<REGISTRY_PATH>"), (active_state, "<ACTIVE_STATE>"),
-        (runtime_root, "<RUNTIME_ROOT>"),
+        (str(runtime_root) if runtime_root is not None else None, "<RUNTIME_ROOT>"),
     )
     # A route may contain the goal id or live below another selected route.
     # Normalize complete, shell-quoted paths before their substrings. Bootstrap
@@ -84,7 +85,7 @@ def build_interface_budget(
     goal_id: str,
     active_state: str,
     registry_path: str | None = None,
-    runtime_root: str | None = None,
+    runtime_root: str | Path | None = None,
     full: bool = False,
     compact: bool = False,
     brief: bool = False,
