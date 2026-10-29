@@ -379,7 +379,9 @@ def test_native_cli_capture_delta_and_compact_recovery(tmp_path, monkeypatch, ho
                         quota = argv.index("quota")
                         if argv[quota:quota + 2] != ["quota", "context-read"]:
                             continue
-                        if (argv[argv.index(context_option) + 1] != str(lifecycle)
+                        # The worker advertises its own trial-local directory
+                        # in the actual guard; it need not use this fixture's.
+                        if (argv[argv.index(context_option) + 1] != command[command.index(context_option) + 1]
                                 or argv[argv.index("--goal-id") + 1] != GOAL_ID
                                 or argv[argv.index("--agent-id") + 1] != AGENT_ID):
                             continue
