@@ -99,4 +99,3 @@ def _project_quota_cli_payload(
         degraded = dict(payload)
         degraded["turn_envelope_skipped"] = str(envelope_error)[:200]
         return degraded
-
