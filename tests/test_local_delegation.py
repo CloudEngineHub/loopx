@@ -63,22 +63,8 @@ print(json.dumps(build_result(request, {'result_kind':'validated_progress', 'cla
 @pytest.fixture(params=["file", "sqlite"])
 def service(tmp_path, request, monkeypatch):
     isolate_sqlite_runtime(tmp_path, monkeypatch)
-    # Each case owns a private server. Do not accumulate five-minute idle
-    # runtimes across the delegation suite, including failed setup/test cases.
-    runtime_env = os.environ.copy()
-    run_cleanup = subprocess.run  # Tests may replace the shared module before teardown.
-    def retire_runtime():
-        run_cleanup([
-            sys.executable, "-c",
-            "from pathlib import Path; import sys; "
-            "from loopx.control_plane.effect_runtime import _runtime_dir, restart_effect_runtime; "
-            "assert _runtime_dir().parent == Path(sys.argv[1]); "
-            "result = restart_effect_runtime(wait_for_exit=True); "
-            "assert result['status'] in {'stopped', 'not_running'}, result",
-            str(tmp_path),
-        ], cwd=Path(__file__).resolve().parents[1], env=runtime_env,
-            capture_output=True, text=True, timeout=30, check=True)
-    request.addfinalizer(retire_runtime)
+    # The shared teardown authenticates this namespace after monkeypatches are
+    # restored and observes process exit in the parent that can reap its child.
     root = tmp_path / "team"
     demo.prepare(root, provider=request.param)
     fixture(root)
