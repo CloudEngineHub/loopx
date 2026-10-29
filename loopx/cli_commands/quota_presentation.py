@@ -64,6 +64,14 @@ def _project_quota_cli_payload(
 
     reject_retired_quota_format(payload)
     if payload.get("ok") is False and not isinstance(payload.get("interaction_contract"), Mapping):
+        if (not bool(getattr(args, "turn_envelope", False))
+                and getattr(args, "quota_command", None) == "monitor-poll"
+                and isinstance(payload.get("before"), Mapping)):
+            # A refused poll still has its decided before snapshot. Its
+            # existing compaction is pure and does not reenter the runtime.
+            return compact_quota_monitor_poll_cli_payload(
+                payload, include_decision_detail="decisions" in detail_sections,
+            )
         # A collection failure has no decided contract and must not reenter
         # its unavailable runtime. Decided refusals still need signed views.
         # Keep the decided diagnostic, including its original recovery/receipt.
