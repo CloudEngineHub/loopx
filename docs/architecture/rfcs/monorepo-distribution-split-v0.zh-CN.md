@@ -317,6 +317,7 @@ checkpoint/恢复策略、数据集与 verifier 版本。按 run/arm 隔离记�
 | **Minimal 与 standard 各自一套引擎** | 重复状态迁移，破坏产品/benchmark 一致性。 |
 | **全部治理规则插件化** | 预算、停止、租约、结算可能随预设消失。 |
 | **以上游 agent runtime 替代 LoopX 内核** | 模型执行可以是宿主 provider，不能替代 LoopX 工作 authority。 |
+| **每种装配都强制依赖一个 daemon 或远程服务** | 增加有界本地使用的生命周期与部署成本；可选 daemon 仍遵循其既有契约。 |
 
 Pi 展示了小型 agent core、工具/事件执行，以及与 coding 产品分离的显式上下文转换。
 DSH 展示了同一 runtime 的多预设装配与自包含的最小 SDK bundle。
@@ -337,6 +338,8 @@ minimal 包含持久 shell、图像读取与 compaction。SDK minimal 还提供�
 宿主可用、安装和 capability 声明都是观测，不是授权。Provider 调用保持 Goal/Agent/workspace/delivery
 作用域。预设不能把必需上下文或停止/预算规则变为可选。未迁 CLI 路由保留 fallback，直到
 parsing、global options、输出、错误与 exit code 合格；不兼容版本在 dispatch 前拒绝。
+只有全部受支持命令完成迁移、help 与诊断一致性验证通过后，才能退役完整 parser。
+不能让两个 writer 同时写同一 binding 来制造混合版本 rollout 可用的假象。
 
 ## 8. 迁移与回滚
 
@@ -412,9 +415,9 @@ Live、性能和晋级证据分别记录。
 | R0 | 已刻画的 `performance-diagnosis` selected route 与实测加载接缝 | 现有路由/owner/依赖图；D6 测量决策；不依赖包发布 | 本路由 V1/V3、V10 基线；行为不变 | 撤回路由提取 |
 | M1 | `loopx/chat_*` → `loopx/chat/` 遵守 I3 兼容；预算按净减少调低 | M0 | 第 9 节第 1–2 行 | revert |
 | M2 | `loopx/*_goal_mode` → `loopx/hosts/` 遵守 I3 兼容 | M0 | 第 1–2 行 | revert |
-| M3 | `loopx-core` + `loopx-workspace` + meta `loopx` 以预发布发布；Node 按 D1 以 extra 或捆绑交付 | M1、M2；D1 已决；所选 D2/D5 装配已映射 | 第 3–4、7 行；在干净拆包安装上重验 R1 | 撤下预发布 |
+| M3 | `loopx-core` + `loopx-workspace` + meta `loopx` 以预发布发布；Node 按 D1 以 extra 或捆绑交付 | M1、M2；D1 已决；所选 D2/D5 装配已映射 | 第 3–4、7 行；在干净拆包安装上重验已合格的 R1/R2 旅程 | 撤下预发布 |
 | R1 | Opt-in 可执行 minimal，含一个真实 managed Turn、重启与结果回读 | R0；所选 D2 内容和 D5 宿主/authority；可先于 M3 验证源码装配 | 此受支持组合的 V1–V5/V10；源码证据本身不代表拆包安装合格 | 核对后返回旧合格装配 |
-| R2 | Standard 使用同一内核，只激活所选产品工作流 | M3、R1；现有前端/Session 准入 | V2/V5/V6/V10、冷安装与关闭一致性 | 关闭 opt-in 装配，保留状态 |
+| R2 | Standard 使用同一内核，只激活所选产品工作流 | R1；现有前端/Session 准入；可先于 M3 验证源码装配 | V2/V5/V6/V10、关闭一致性；声称拆包资格前，在 M3 重验冷安装旅程 | 关闭 opt-in 装配，保留状态 |
 | M4 | 第一个无内核调用方的 capability 迁入 `packages/` | M3；D2 清单 | 第 5–6 行 | revert 单包 |
 | M5 | 其余符合条件的 capability 迁移；M1/M2 的公开 shim 在文档化兼容窗口结束后移除 | M4 | 完整 smoke 一致 | 不适用 |
 | R3 | 匹配的产品路径 benchmark 及长程/peer 旅程 | 所选界面的 R1 或 R2；冻结设计与单独运行授权 | V7/V8、完整成本、隐私与既有 C0–C4 资格 | 停用实验 overlay，保留有界证据 |

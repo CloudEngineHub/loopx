@@ -452,6 +452,7 @@ weakening the initial result, adding more text or running longer is not progress
 | **Separate minimal and standard engines** | Duplicates state transitions and breaks product/benchmark parity. |
 | **Make every governance rule a plugin** | Budget, stop, lease and settlement could disappear with a preset. |
 | **Use an upstream agent runtime as the LoopX kernel** | Model execution can be a host provider; it does not replace LoopX work authority. |
+| **Require one daemon or remote service for every composition** | Adds lifecycle and deployment cost to bounded local use; any optional daemon remains under its existing contract. |
 
 Pi demonstrates a small agent core with tool/event execution and explicit
 context transformation separate from the coding product. DSH demonstrates
@@ -485,6 +486,9 @@ not grants. Preserve Goal/Agent/workspace/delivery scope through provider calls.
 No required context or stop/budget rule becomes optional with a preset.
 Unmigrated CLI routes retain fallback until parsing, global options, output,
 errors and exit codes qualify; incompatible versions fail before dispatch.
+Retire the full parser only after every supported command has migrated and
+help and diagnostic parity pass. Never run two writers against one binding
+to make a mixed-version rollout appear available.
 
 ## 8. Migration and rollback
 
@@ -572,9 +576,9 @@ owner. Capacity/backpressure and recovery retain existing work/host contracts.
 | R0 | Characterized `performance-diagnosis` selected route and measured loading seam | Current route/owner/dependency map; D6 measurement decision; independent of package publication | V1/V3 for this route, V10 baseline; unchanged behavior | Revert route extraction |
 | M1 | `loopx/chat_*` → `loopx/chat/` with I3 compatibility; budget lowered by net reduction | M0 | Section 9 rows 1–2 | revert |
 | M2 | `loopx/*_goal_mode` → `loopx/hosts/` with I3 compatibility | M0 | rows 1–2 | revert |
-| M3 | `loopx-core` + `loopx-workspace` + meta `loopx` published as pre-release; Node as extra or bundle per D1 | M1, M2; D1 decided; selected D2/D5 composition mapped | rows 3–4, 7; repeat R1 against clean split-package install | Unpublish pre-release |
+| M3 | `loopx-core` + `loopx-workspace` + meta `loopx` published as pre-release; Node as extra or bundle per D1 | M1, M2; D1 decided; selected D2/D5 composition mapped | rows 3–4, 7; repeat qualified R1/R2 journeys against clean split-package install | Unpublish pre-release |
 | R1 | Opt-in executable minimal with one real managed Turn, restart and result readback | R0; selected D2 contents and D5 host/authority; may qualify source composition before M3 | V1–V5/V10 for the supported combination; source evidence alone does not qualify split-package installation | Return to previous qualified composition after reconciliation |
-| R2 | Standard uses the same kernel and activates one chosen product workflow | M3, R1; existing frontend/session admission | V2/V5/V6/V10, cold install and feature-off parity | Disable opt-in composition, retain state |
+| R2 | Standard uses the same kernel and activates one chosen product workflow | R1; existing frontend/session admission; may qualify source composition before M3 | V2/V5/V6/V10 and feature-off parity; repeat cold-install journey at M3 before claiming split-package qualification | Disable opt-in composition, retain state |
 | M4 | First capability without kernel callers moved to `packages/` | M3; D2 inventory | rows 5–6 | revert package |
 | M5 | Remaining eligible capabilities moved; public shims from M1/M2 removed after the documented compatibility window | M4 | full smoke identical | not applicable |
 | R3 | Matched product-path benchmark and a long-horizon/peer journey | R1 or R2 for the selected surface; frozen design and separate run authorization | V7/V8, complete costs, privacy and existing C0–C4 qualification | Retire experimental overlay, retain bounded evidence |
