@@ -101,11 +101,19 @@ class NativeContextReader:
     def follow(self, request):
         if self.pending is None:
             return None
-        page = last_context_page(request)
+        page = last_context_page(request, allow_reference=True)
         assert page and page["ok"], "Native reader output must reach the model intact"
+        if page.get("schema_version") != "context_capture_page_v1":
+            assert self.pending["descriptor"] is None and "reference" not in self.pending
+            # This fixture voluntarily reads the complete saved input for its
+            # byte oracle. A model-visible reference alone proves no coverage.
+            self.pending["reference"] = page
+            return self.tool(page["command"])
         self.pending["page_calls"] += 1
         if self.pending["descriptor"] is None:
             assert page["offset"] == 0 and page["mode"] in {"full", "delta"}
+            if reference := self.pending.get("reference"):
+                assert all(page[key] == reference[key] for key in ("path", "sha256", "mode"))
             self.pending["descriptor"] = page
         first = self.pending["descriptor"]
         assert page["sha256"] == first["sha256"]

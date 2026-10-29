@@ -6,7 +6,7 @@ import shlex
 
 import pytest
 
-from tests.control_plane.codex_checkpoint_fixture import last_context_page
+from tests.control_plane.codex_checkpoint_fixture import NativeContextReader, last_context_page
 from loopx.cli_commands.quota_capture import read_context_capture
 from loopx.control_plane.turn_driver.decision_capture import capture_page_range
 from test_quota_settlement_cli import _run_cli
@@ -23,9 +23,17 @@ def test_native_saved_reference_is_not_reader_coverage(wrapped):
     request = {"input": [item]}
     assert last_context_page(request) is None
     assert last_context_page(request, allow_reference=True) == reference
+    reader = NativeContextReader()
+    reader.begin("admit current Turn", "synthetic")
+    call = reader.follow(request)
+    assert json.loads(call["arguments"])["cmd"] == reference["command"]
+    assert not reader.deliveries and not reader.retained
+    assert reader.pending["page_calls"] == 0
     # A damaged current response cannot borrow the earlier complete reference.
     request["input"].append({"type": "function_call_output", "output": '{"ok":true'})
     assert last_context_page(request, allow_reference=True) is None
+    with pytest.raises(AssertionError, match="output must reach the model intact"):
+        reader.follow(request)
 
 
 def fixture_capture(tmp_path):
