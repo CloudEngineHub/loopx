@@ -159,6 +159,15 @@ Paired diffs do not certify translation accuracy.
     top-level module count with an architecture test. No kernel semantics,
     licence or schema change; multi-repository split remains a non-goal.
 
+- [Small Kernel and Runtime Composition v0](small-kernel-runtime-composition-v0.md)
+  ([中文版](small-kernel-runtime-composition-v0.zh-CN.md))
+  - **Delivery on `main`:** Proposal only; no runtime or default change.
+  - **Current boundary:** One governance implementation, minimal/standard
+    composition and frozen research configurations. Defines demand loading,
+    activation and context boundaries, product/benchmark parity, and staged
+    managed-task, product-journey and external-operation qualification under
+    the existing distribution and controller/executor contracts.
+
 - [Automatic Execution Admission v0](automatic-execution-admission-v0.md)
   ([中文版](automatic-execution-admission-v0.zh-CN.md))
   - **Delivery on `main`:** M1 policy, managed Turn admission and M3
