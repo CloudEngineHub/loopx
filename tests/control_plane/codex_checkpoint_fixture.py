@@ -111,10 +111,15 @@ class NativeContextReader:
             return self.tool(page["command"])
         self.pending["page_calls"] += 1
         if self.pending["descriptor"] is None:
-            assert page["offset"] == 0 and page["mode"] in {"full", "delta"}
+            assert page["offset"] == 0
             if reference := self.pending.get("reference"):
-                assert all(page[key] == reference[key] for key in ("path", "sha256", "mode"))
-            self.pending["descriptor"] = page
+                assert page["sha256"] == reference["sha256"]
+                # The generic saved-file reader returns bytes and cursors;
+                # delivery identity stays in the original visible reference.
+                self.pending["descriptor"] = {**reference, **page}
+            else:
+                assert page["mode"] in {"full", "delta"}
+                self.pending["descriptor"] = page
         first = self.pending["descriptor"]
         assert page["sha256"] == first["sha256"]
         if not page["eof"]:

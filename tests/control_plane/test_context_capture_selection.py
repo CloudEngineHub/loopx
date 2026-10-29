@@ -50,6 +50,36 @@ def args(path, raw):
         offset=0, page_bytes=256, max_page_output_bytes=2000, format="json", select=["/rows/0"]))
 
 
+def test_native_reference_reader_uses_real_pages_before_recording_delivery(tmp_path):
+    path, raw, _ = fixture_capture(tmp_path)
+    options = args(path, raw)
+    options.select = None
+    reference = {"ok": True, "mode": "full", "path": str(path),
+        "sha256": options.capture_sha256, "command": "read saved capture",
+        "target": {"capture_id": "synthetic-source"}, "recovery": {"path": str(path)}}
+    request = {"input": [{"type": "function_call_output", "output": json.dumps(reference)}]}
+    reader = NativeContextReader()
+    reader.begin("admit current Turn", "source")
+    reader.follow(request)
+    page_count = 0
+    while True:
+        page = read_context_capture(options)
+        assert page["ok"] and "mode" not in page and "target" not in page
+        request["input"].append({"type": "function_call_output", "output": json.dumps(page)})
+        call = reader.follow(request)
+        page_count += 1
+        if page["eof"]:
+            assert call is None
+            break
+        assert not reader.deliveries and not reader.retained
+        assert json.loads(call["arguments"])["cmd"] == page["next_command"]
+        options.offset = page["next_offset"]
+    assert page_count > 1
+    assert reader.deliveries[0]["page_calls"] == page_count
+    assert reader.deliveries[0]["mode"] == "full"
+    assert reader.retained["synthetic-source"]["raw"] == raw.decode().rstrip("\n")
+
+
 def test_actual_cli_batch_pages_preserve_values_without_live_state(tmp_path):
     path, raw, original = fixture_capture(tmp_path)
     digest = hashlib.sha256(raw).hexdigest()
