@@ -242,6 +242,32 @@ function freshPaths(context: JsonObject, surface: Surface, legacyQuotaFields: re
       });
     }
   };
+  const candidates = (value: unknown, path: Path) => {
+    const gate = jsonObject(value), ids = new Set<string>();
+    const lanes = ["runnable_candidates", "blocked_candidates"];
+    if (gate?.schema_version !== "capability_gate_v0"
+        || lanes.some(lane => !Array.isArray(gate[lane]) || (gate[lane] as unknown[]).some(value => {
+          const row = jsonObject(value), id = row?.todo_id;
+          if (typeof id !== "string" || !id || ids.has(id)) return true;
+          ids.add(id); return false;
+        }))) { paths.push(path); return; }
+    for (const [field, item] of Object.entries(gate)) {
+      if (!lanes.includes(field)) { paths.push([...path, field]); continue; }
+      if (!(item as unknown[]).length) { paths.push([...path, field]); continue; }
+      (item as JsonObject[]).forEach((row, i) => {
+        const prefix = [...path, field, i];
+        if (row.schema_version !== COORDINATION_STATE_CONTRACT.todo_read_record.item_schema_version
+            || ["text", "title", "note"].some(key => Object.hasOwn(row, key) && typeof row[key] !== "string")) {
+          paths.push(prefix); return;
+        }
+        // Reuse only registered authoring strings through the exact codec.
+        // Selection, order, revisions, ownership, capability facts, handoffs and
+        // all unknown controls remain current literals, even when unchanged.
+        for (const key of Object.keys(row))
+          if (!["text", "title", "note"].includes(key)) paths.push([...prefix, key]);
+      });
+    }
+  };
   const horizon = (value: unknown, path: Path) => {
     const object = jsonObject(value);
     if (!object) { paths.push(path); return; }
@@ -278,6 +304,7 @@ function freshPaths(context: JsonObject, surface: Surface, legacyQuotaFields: re
   } else {
     for (const [key, value] of Object.entries(context)) {
       if (key === "planning_horizon") { horizon(value, [key]); continue; }
+      if (key === "capability_gate") { candidates(value, [key]); continue; }
       if (key !== "interaction_contract") {
         if (!REUSABLE_PACKET_FIELDS.has(key) && !legacyQuotaFields.includes(key)) paths.push([key]);
         continue;
