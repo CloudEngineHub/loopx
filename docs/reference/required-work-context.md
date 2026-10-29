@@ -829,6 +829,12 @@ This bounds traversal depth, not the capture size or readable content. Prefer a
 focused subtree to recursively listing unrelated evidence. Omit selectors for the
 root. The generated capture guidance teaches this choice without making an index
 read mandatory or changing which requirements must be read before work.
+Normal capture replies, persistent native setup and post-compaction recovery
+carry the same selection advice. Recovery points directly to `--select`, so a
+known pointer does not require another index round trip. Batch within the combined
+output budget, avoid overlapping parent/child selections, and inspect a missing
+pointer's parent before retrying the rejected batch. These are caller guidelines;
+selection validation, required reads and authority checks remain unchanged.
 
 The `context_capture_index_v1` view shares the digest-bound pagination contract.
 An expanded index includes its `list_depth`; `next_command` preserves the depth,
@@ -864,6 +870,10 @@ pointer 从原始摘要绑定的 capture 批量读取详情。提供已有 `--ca
 发现多层字段。深度默认为 1，可选 1–8；需要更深时选择新的父节点继续。这只限制
 单次遍历深度，不限制 capture 容量或可读正文。优先展开相关子树，省略路径才从根开始。
 生成的读取指引会提示上述选择，不把查目录变成前置步骤，也不改变工作前的必读要求。
+普通 capture 回复、原生持久配置与压缩后恢复携带同一份选择指引。恢复命令直接指向
+`--select`，已知路径无须多查一轮目录。按合计输出预算分批，避免同时选择父节点和
+子节点；路径缺失时先查其父节点，再重试被拒绝的批次。这些是调用建议，不改变
+选择校验、必读要求或权限检查。
 
 `context_capture_index_v1` 沿用双摘要分页；展开的目录包含 `list_depth`，
 `next_command` 保留深度、路径和两个摘要。更改深度会拒绝旧视图的续读，目录 cursor
