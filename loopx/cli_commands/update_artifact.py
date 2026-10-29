@@ -230,7 +230,7 @@ def download_artifact(manifest: dict[str, Any], *, progress=lambda _event: None,
             url = urls[attempt % len(urls)]
             offset, etag = 0, None
             try:
-                saved = json.loads(metadata.read_text())
+                saved = json.loads(metadata.read_text(encoding="utf-8"))
                 candidate = saved.get("etag")
                 if (saved.get("url_hash") == hashlib.sha256(url.encode()).hexdigest()
                     and isinstance(candidate, str) and candidate.startswith('"') and not candidate.startswith('W/')
@@ -377,7 +377,7 @@ def install_artifact(manifest: dict[str, Any], *, env: dict[str, str], timeout_s
     progress({"stage": "verify"})
     with tempfile.TemporaryDirectory(prefix="loopx-runtime-") as raw:
         root = extract_artifact(archive, Path(raw))
-        identity = json.loads((root / "runtime-artifact.json").read_text())
+        identity = json.loads((root / "runtime-artifact.json").read_text(encoding="utf-8"))
         if identity.get("source_revision") != manifest["source_revision"] or identity.get("package_version") != manifest["package_version"]:
             raise ValueError("Runtime identity disagrees with its release metadata")
         selected = dict(env)
@@ -404,7 +404,7 @@ def main() -> int:
         entry = Path(os.environ.get("LOOPX_BIN_DIR") or Path.home() / ".local/bin") / "loopx"
         if entry.is_symlink():
             try:
-                installed = json.loads((entry.resolve().parents[1] / "release.json").read_text()).get("source", {})
+                installed = json.loads((entry.resolve().parents[1] / "release.json").read_text(encoding="utf-8")).get("source", {})
             except (OSError, ValueError):
                 pass
         if (entry.exists() or entry.is_symlink()) and not installed:
