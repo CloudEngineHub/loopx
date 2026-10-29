@@ -536,17 +536,28 @@ export function prepareContextDelivery(request: JsonObject, legacyQuotaFields: r
   const assumed = !retained && continuity?.basis === "native_hook_assumption"
     && continuity.capture_bytes_verified === true
     && equal(continuity.target, binding);
-  if (!binding || !prior || (!confirmed && !assumed) || !compatible(binding, target)
+  // File comparison is exact artifact reconstruction, not a retention claim.
+  // A Host must verify its immutable base within the current context epoch.
+  const fileBacked = !retained && continuity?.basis === "captured_file"
+    && continuity.capture_bytes_verified === true && equal(continuity.target, binding);
+  if (!binding || !prior || (!confirmed && !assumed && !fileBacked) || !compatible(binding, target)
       || binding.context_digest !== digest(prior)) return full("baseline_unavailable");
   const depth = baseline?.ancestry;
   if (!Number.isSafeInteger(depth) || Number(depth) < 0 || Number(depth) >= MAX_ANCESTRY) return full("full_refresh_due");
   const before = freshPaths(prior, surface, legacyQuotaFields, binding), after = freshPaths(context, surface, legacyQuotaFields, target);
-  if (!before.valid || !after.valid) return full("source_not_reusable");
-  const changes = changeTree(prior, context, after.paths);
+  if (!fileBacked && (!before.valid || !after.valid)) return full("source_not_reusable");
+  const changes = changeTree(prior, context, fileBacked ? [] : after.paths);
   const delta: JsonObject = {schema_version: VERSION, mode: "delta", target, base: binding,
     ancestry: Number(depth) + 1, changes,
-    ...(assumed ? {continuity_basis: "native_hook_assumption"} : {}),
-    instruction: "Current controls are inline even when unchanged. Other fields inherit the "
+    ...(fileBacked ? {continuity_basis: "captured_file"} : assumed ? {continuity_basis: "native_hook_assumption"} : {}),
+    instruction: fileBacked ? "This is an exact difference between saved files, not proof of retained model context. "
+      + "Use the baseline file for inherited fields or select necessary facts directly from the current full file. "
+      + "Choose the relevant changes and details; you need not read the entire baseline or delta. "
+      + "Unchanged fields, including controls, are inherited from the verified baseline file; all current constraints remain binding. "
+      + "Before dependent work recover any missing necessary facts from the current file. This view grants no authority. "
+      + "value replaces; from copies from the immutable baseline and edit patches that copy; values assigns fields; "
+      + "changed/items recurse, removed deletes keys, length sets array length. "
+      : "Current controls are inline even when unchanged. Other fields inherit the "
       + (assumed ? "exact baseline under the native-hook continuity assumption" : "confirmed baseline")
       + "; all requirements remain binding. "
       + (assumed ? "After reading this delta completely, use it with the retained model context. "
@@ -564,7 +575,7 @@ export function prepareContextDelivery(request: JsonObject, legacyQuotaFields: r
   // Native consumers page the wire before they can use its baseline. Deliver
   // the existing basis and interpretation before the potentially large tree;
   // do not duplicate them in a second host instruction or change strict IO.
-  return assumed ? {schema_version: VERSION, mode: "delta",
+  return assumed || fileBacked ? {schema_version: VERSION, mode: "delta",
     continuity_basis: delta.continuity_basis, instruction: delta.instruction, ...delta} : delta;
 }
 
@@ -583,13 +594,14 @@ export function restoreContextDelivery(request: JsonObject, legacyQuotaFields: r
     const surface = surfaceOf(target.surface);
     const delivery = requireJsonObject(request.delivery, "delivery"), baseline = requireJsonObject(request.baseline, "baseline");
     const base = requireJsonObject(baseline.target, "baseline target"), context = requireJsonObject(baseline.context, "baseline context");
+    const fileBacked = delivery.continuity_basis === "captured_file";
     if (delivery.schema_version !== VERSION || delivery.mode !== "delta" || !equal(delivery.target, target)
         || !equal(delivery.base, base) || !compatible(base, target) || base.context_digest !== digest(context)
         || !Number.isSafeInteger(baseline.ancestry) || Number(baseline.ancestry) < 0
         || delivery.ancestry !== Number(baseline.ancestry) + 1 || Number(delivery.ancestry) > MAX_ANCESTRY) return fallback();
     const before = freshPaths(context, surface, legacyQuotaFields, base), after = freshPaths(currentContext, surface, legacyQuotaFields, target);
-    if (!before.valid || !after.valid) return fallback();
-    const expected = changeTree(context, currentContext, after.paths);
+    if (!fileBacked && (!before.valid || !after.valid)) return fallback();
+    const expected = changeTree(context, currentContext, fileBacked ? [] : after.paths);
     // Also rejects omitted unchanged controls, redundant/conflicting edits,
     // malformed array indices/lengths and unsupported operations before applying.
     if (!equal(delivery.changes, expected)) return fallback();
