@@ -450,8 +450,13 @@ session, surface, projection version and configuration generation remain scoped;
 the context epoch is also bound. After compaction the next work Turn starts a new
 full saved baseline; later Turns may use file deltas without a full model read.
 Missing, changed, unsafe or incompatible baselines fall back to the current
-full-file reference. Integers outside JavaScript's exact range use that same
-fallback, preserving the original file values. Each base is a full saved version,
+full-file reference. Integers outside JavaScript's exact range and changes to
+integral-float source values (including type or signed-zero changes) use that
+same fallback: the bridge cannot preserve all their source distinctions.
+Unchanged numeric values stay inherited in place; the codec avoids replacing
+their parents or relocating normalized numeric subtrees. The original values remain
+available through the same progressive reader, without a full-read obligation.
+Each base is a full saved version,
 so selective reading never creates a requirement to replay a chain of deltas.
 
 The model chooses the changes and details its current decision needs. It must

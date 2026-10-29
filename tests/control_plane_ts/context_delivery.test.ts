@@ -962,3 +962,18 @@ test("file epochs survive ordinary resume but rotate once for an actual compacti
     event: {...event, source: "compact"}, new_epoch: "do-not-rotate-again", pages: []});
   assert.deepEqual(repeated, compacted);
 });
+
+test("file delta recovery preserves inherited numeric leaves across sibling edits", () => {
+  const original = {body: long, state: {number: 1, a: false, b: false, c: false}, array: [0, "old"]};
+  const current = {...original, state: {...original.state, a: true, b: true, c: true}, array: [0, "new"]};
+  const baseline = full(original), complete = full(current, "capture-2");
+  const delta = prepareContextDelivery({context: current, scope, capture_id: "capture-2", baseline,
+    continuity: {basis: "captured_file", target: baseline.target, capture_bytes_verified: true}});
+  assert.equal(delta.mode, "delta");
+  const changes = delta.changes as {changed: Record<string, JsonObject>};
+  assert.deepEqual(changes.changed.state, {values: {a: true, b: true, c: true}});
+  assert.deepEqual(changes.changed.array, {items: {"1": {value: "new"}}});
+  const restored = restoreContextDelivery({delivery: delta, baseline, current: complete});
+  assert.equal(restored.mode, "delta");
+  assert.deepEqual(restored.context, current);
+});

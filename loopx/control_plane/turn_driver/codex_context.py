@@ -451,6 +451,17 @@ def _file_codec_numbers_supported(value: Any) -> bool:
     return not isinstance(value, int) or abs(value) <= 9007199254740991
 
 
+def _integral_float_sources(value: Any, path: tuple = ()) -> dict[tuple, str]:
+    """Identify source distinctions that the JSON/JavaScript bridge erases."""
+    if isinstance(value, dict):
+        return {key: token for name, item in value.items()
+            for key, token in _integral_float_sources(item, (*path, name)).items()}
+    if isinstance(value, list):
+        return {key: token for index, item in enumerate(value)
+            for key, token in _integral_float_sources(item, (*path, index)).items()}
+    return {path: repr(value)} if isinstance(value, float) and value.is_integer() else {}
+
+
 def _native_context_request(state: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
     """Compare verified durable versions independently of model retention.
 
@@ -617,7 +628,9 @@ def project_codex_context(payload: dict[str, Any], *, directory: str | None, cap
                     recovery = planned_recovery
                     publish_recovery(recovery)
 
-                if not _file_codec_numbers_supported(required):
+                prior = request.get("baseline", {}).get("context")
+                if (not _file_codec_numbers_supported(required)
+                        or prior is not None and _integral_float_sources(prior) != _integral_float_sources(required)):
                     request = {"scope": scope}
 
                 result = project_captured_context(required, directory=capture_directory,

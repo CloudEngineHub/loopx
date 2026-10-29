@@ -343,7 +343,7 @@ function groupCurrentValues(delta: Exclude<Delta, {value: unknown} | {from: Path
   return size(grouped) < size(delta) ? grouped : delta;
 }
 
-function changeTree(before: unknown, after: unknown, forced: Path[]): Delta | null {
+function changeTree(before: unknown, after: unknown, forced: Path[], preserveFileNumbers = false): Delta | null {
   // Contexts have passed strict JSON digest validation; patch containers remain
   // immutable after sizing. Reuse child sizes within this one tree calculation.
   const sizes = new WeakMap<object, number>();
@@ -366,6 +366,26 @@ function changeTree(before: unknown, after: unknown, forced: Path[]): Delta | nu
   };
   const exact = new Set(forced.map(pathKey)), ancestors = new Set<string>();
   for (const path of forced) for (let i = 0; i < path.length; i++) ancestors.add(pathKey(path.slice(0, i)));
+  // Saved files distinguish 1 from 1.0 and positive from negative zero even
+  // when this bridge cannot. The adapter rejects changed source tokens.
+  // Preserve unchanged numeric leaves without rewriting their parents or
+  // relocating a normalized numeric subtree from another file location.
+  const numericSubtrees = new Set<string>(), inheritedNumbers = new Set<string>();
+  const numericPaths = (a: unknown, b: unknown, path: Path): void => {
+    if (typeof a === "number" && Number.isInteger(a)) {
+      for (let i = 0; i <= path.length; i++) {
+        const key = pathKey(path.slice(0, i));
+        numericSubtrees.add(key);
+        if (Object.is(a, b)) inheritedNumbers.add(key);
+      }
+    } else if (Array.isArray(a)) {
+      a.forEach((value, i) => numericPaths(value, Array.isArray(b) ? b[i] : undefined, [...path, i]));
+    } else if (jsonObject(a)) {
+      for (const [key, value] of Object.entries(a as JsonObject))
+        numericPaths(value, jsonObject(b)?.[key], [...path, key]);
+    }
+  };
+  if (preserveFileNumbers) numericPaths(before, after, []);
   // Binding or source reordering can relocate already-read authoring. Index
   // exact strings and structured subtrees from the immutable base. A target
   // with current descendants needs literal overrides, never a bare reference.
@@ -379,7 +399,7 @@ function changeTree(before: unknown, after: unknown, forced: Path[]): Delta | nu
         strings.set(value, reference);
     } else if (Array.isArray(value) || jsonObject(value)) {
       const reference = {from: path}, valueSize = size(value);
-      if (bytes(reference) < size({value})) {
+      if (!numericSubtrees.has(pathKey(path)) && bytes(reference) < size({value})) {
         const bucket = subtrees.get(valueSize) ?? {candidates: []};
         bucket.candidates.push({reference, value});
         subtrees.set(valueSize, bucket);
@@ -444,7 +464,7 @@ function changeTree(before: unknown, after: unknown, forced: Path[]): Delta | nu
     } else delta = {value: clone(b)};
     // Sizing does not publish a value. Copy only a replacement that is chosen,
     // rather than every unchanged subtree and every discarded ancestor value.
-    let result = size(delta) < size({value: b}) ? delta : {value: clone(b)};
+    let result = inheritedNumbers.has(key) || size(delta) < size({value: b}) ? delta : {value: clone(b)};
     if (reference && size(reference) < size(result)) result = clone(reference);
     return overlay && size(overlay) < size(result) ? overlay : result;
   };
@@ -546,7 +566,7 @@ export function prepareContextDelivery(request: JsonObject, legacyQuotaFields: r
   if (!Number.isSafeInteger(depth) || Number(depth) < 0 || Number(depth) >= MAX_ANCESTRY) return full("full_refresh_due");
   const before = freshPaths(prior, surface, legacyQuotaFields, binding), after = freshPaths(context, surface, legacyQuotaFields, target);
   if (!fileBacked && (!before.valid || !after.valid)) return full("source_not_reusable");
-  const changes = changeTree(prior, context, fileBacked ? [] : after.paths);
+  const changes = changeTree(prior, context, fileBacked ? [] : after.paths, fileBacked);
   const delta: JsonObject = {schema_version: VERSION, mode: "delta", target, base: binding,
     ancestry: Number(depth) + 1, changes,
     ...(fileBacked ? {continuity_basis: "captured_file"} : assumed ? {continuity_basis: "native_hook_assumption"} : {}),
@@ -601,7 +621,7 @@ export function restoreContextDelivery(request: JsonObject, legacyQuotaFields: r
         || delivery.ancestry !== Number(baseline.ancestry) + 1 || Number(delivery.ancestry) > MAX_ANCESTRY) return fallback();
     const before = freshPaths(context, surface, legacyQuotaFields, base), after = freshPaths(currentContext, surface, legacyQuotaFields, target);
     if (!fileBacked && (!before.valid || !after.valid)) return fallback();
-    const expected = changeTree(context, currentContext, fileBacked ? [] : after.paths);
+    const expected = changeTree(context, currentContext, fileBacked ? [] : after.paths, fileBacked);
     // Also rejects omitted unchanged controls, redundant/conflicting edits,
     // malformed array indices/lengths and unsupported operations before applying.
     if (!equal(delivery.changes, expected)) return fallback();

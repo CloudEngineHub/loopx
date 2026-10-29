@@ -1133,11 +1133,70 @@ def test_unread_file_baseline_must_still_be_available_exact_and_scoped(tmp_path,
     assert "baseline_reference" not in second
 
 
-@pytest.mark.parametrize("before,after", [(9007199254740992, 9007199254740993), (1, 9007199254740993), (9007199254740993, 1)])
-def test_file_delta_falls_back_before_integer_rounding_can_hide_changes(tmp_path, monkeypatch, before, after):
+@pytest.mark.parametrize("before,after", [
+    (9007199254740992, 9007199254740993), (1, 9007199254740993), (9007199254740993, 1),
+    (1, 1.0), (1.0, 1), (0.0, -0.0), (-0.0, 0.0),
+    ({"nested": [1]}, {"nested": [1.0]}),
+])
+def test_file_delta_falls_back_before_numeric_normalization_can_hide_changes(tmp_path, monkeypatch, before, after):
+    from argparse import Namespace
+    from loopx.cli_commands.quota_capture import native_context_capture_view, read_context_capture
+
     setup(tmp_path, monkeypatch)
     body = "Same unchanged requirements. " * 1000
     project(tmp_path, payload={"body": body, "counter": before})
     _, result = project(tmp_path, "two", payload={"body": body, "counter": after})
     assert result["mode"] == "full"
-    assert json.loads(Path(result["recovery"]["path"]).read_bytes())["counter"] == after
+    assert "baseline_reference" not in result
+    view = native_context_capture_view(result, tmp_path / "two", context_directory=str(tmp_path))
+    assert view["path"] == result["recovery"]["path"]
+    assert hashlib.sha256(Path(view["path"]).read_bytes()).hexdigest() == view["sha256"]
+    page = read_context_capture(Namespace(capture_file=view["path"], capture_sha256=view["sha256"],
+        format="json", offset=0, page_bytes=64000, max_page_output_bytes=64000))
+    assert page["eof"]
+    # Numeric equality conflates integer/float types and the sign of zero.
+    # The public reader must preserve the independently supplied source value.
+    assert json.dumps(json.loads(page["content"])["counter"]) == json.dumps(after)
+
+
+@pytest.mark.parametrize("before,after", [(1, 2), (True, 1), (0.25, 0.5)])
+def test_exact_bridge_numbers_still_use_file_deltas(tmp_path, monkeypatch, before, after):
+    setup(tmp_path, monkeypatch)
+    body = "Same unchanged requirements. " * 1000
+    project(tmp_path, payload={"body": body, "counter": before})
+    _, result = project(tmp_path, "two", payload={"body": body, "counter": after})
+    assert result["mode"] == "delta" and result["continuity_basis"] == "captured_file"
+    assert "baseline_reference" in result
+    assert json.dumps(result["changes"]["changed"]["counter"]["value"]) == json.dumps(after)
+
+
+def test_unchanged_integral_floats_inherit_without_rewriting_their_parent(tmp_path, monkeypatch):
+    setup(tmp_path, monkeypatch)
+    original = {"body": "Same unchanged requirements. " * 1000,
+        "state": {"number": 1.0, "a": False, "b": False, "c": False}, "array": [-0.0, "old"]}
+    current = {**original, "state": {**original["state"], "a": True, "b": True, "c": True},
+        "array": [-0.0, "new"]}
+    _, first = project(tmp_path, payload=original)
+    _, result = project(tmp_path, "two", payload=current)
+    assert result["mode"] == "delta"
+    edits = result["changes"]["changed"]
+    # A short parent replacement would normalize both original numeric values.
+    # These literals update only independently specified nonnumeric children.
+    assert edits["state"] == {"values": {key: True for key in ("a", "b", "c")}}
+    assert edits["array"] == {"items": {"1": {"value": "new"}}}
+    saved = json.loads(Path(first["recovery"]["path"]).read_bytes())
+    saved["state"].update({key: True for key in ("a", "b", "c")})
+    saved["array"][1] = "new"
+    assert json.dumps(saved, sort_keys=True) == json.dumps(current, sort_keys=True)
+
+
+def test_numeric_subtree_cannot_relocate_a_float_into_an_integer_field(tmp_path, monkeypatch):
+    setup(tmp_path, monkeypatch)
+    original = {"source": {"number": 1.0, "description": "Same source text. " * 2000}}
+    current = {**original, "destination": {**original["source"], "number": 1}}
+    project(tmp_path, payload=original)
+    _, result = project(tmp_path, "two", payload=current)
+    assert result["mode"] == "delta"
+    destination = result["changes"]["changed"]["destination"]
+    assert "from" not in destination  # Whole-subtree reuse would copy 1.0.
+    assert json.dumps(destination["changed"]["number"]["value"]) == "1"
