@@ -773,12 +773,6 @@ CLI_OUTPUT_COMMAND_CLASSIFICATIONS: tuple[CliOutputCommandClassification, ...] =
         rationale="agent work-queue read path",
     ),
     CliOutputCommandClassification(
-        command_id="task-lease",
-        qualification="explicit_cold_path_exception",
-        surface_id=None,
-        rationale="explicit per-todo lease lifecycle command family",
-    ),
-    CliOutputCommandClassification(
         command_id="coordination-shadow",
         qualification="explicit_cold_path_exception",
         surface_id=None,
