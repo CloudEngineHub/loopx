@@ -243,7 +243,7 @@ def test_real_worker_generated_guard_selection_reentry_and_settle_once(
                LOOPX_WAKE_LOG_DIR=str(logs), LOOPX_TURN_ENVELOPE='1' if enabled else '0')
     if context_delivery:
         # No native proof in this CLI fixture: composed capture must still
-        # release ordinary full output and preserve reentry and settlement.
+        # save a full baseline and preserve reentry and settlement.
         (tmp_path / 'context').mkdir(mode=0o700)
         env.update(LOOPX_CONTEXT_DELIVERY='on', LOOPX_EXECUTION_MODE='heartbeat', LOOPX_CODEX_CONTEXT_DIR=str(tmp_path / 'context'))
         # Generated CLI reentry uses this process's environment; preserve the
@@ -260,6 +260,16 @@ def test_real_worker_generated_guard_selection_reentry_and_settle_once(
     first = json.loads(result.stdout)
     assert result.returncode == 0, first
     def complete_page(value):
+        if context_delivery:
+            # This compatibility test elects to read the full saved view.
+            # A manifest only supplies navigation; it is not delivered body.
+            assert value['mode'] == 'full'
+            digest = value['sha256']
+            read = subprocess.run(shlex.split(value['command']), env=env, cwd=project,
+                capture_output=True, text=True, check=True)
+            value = json.loads(read.stdout)
+            assert value['schema_version'] == 'context_capture_page_v1'
+            assert value['sha256'] == digest
         if value.get('schema_version') != 'context_capture_page_v1':
             return value
         digest, body = value['sha256'], b''
