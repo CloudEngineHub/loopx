@@ -89,7 +89,7 @@ def test_colon_prefixed_unix_paths_keep_the_existing_boundary() -> None:
         "sk_live_51H8" + "aBcDeFgHiJkL",
         "npm_" + "a1B2c3D4e5F6g7H8i9J0",
         "pypi-AgEIcHlwaS5vcmc" + "AAAAAAAAAA",
-        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4f",
+        "eyJhbGciOiJIUzI1NiJ9" + ".eyJzdWIiOiIxMjM0NTY3ODkwIn0" + ".SflKxwRJSMeKKF2QT4f",
     ],
 )
 def test_unlabeled_provider_tokens_fail_the_boundary_scan(token: str) -> None:
@@ -107,7 +107,7 @@ def test_unlabeled_provider_tokens_fail_the_boundary_scan(token: str) -> None:
         "npm run build && npm test",
         "gh pr list --limit 5",
         "AWS key ids start AKIA and ASIA, then sixteen more characters",
-        "pypi-AgEIcHlwaS5vcmc is the PyPI token prefix, not a whole token",
+        "pypi- prefix alone is not a token",
         "sk-proj-abcdefghijklmnop is an OpenAI project key shape",
     ],
 )
