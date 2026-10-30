@@ -104,6 +104,16 @@ Quota capture 与 Turn journal capture 都调用
 context-delivery owner。C1 应收敛剩余的组合逻辑与消费者假设，不另建 capture service，
 也不重写已经共享的差分与 native-resume 逻辑。
 
+独立的原生展示切片复用已提交的完整恢复原件作为 reader 目标，避免再次发布未使用的
+wire 副本。Delta 与未包装输入仍保留各自的不可变文件，reader/lifecycle owner 不变。
+同一 107,289 字节合成来源的 capture 写入从 216,754 降为 107,289 字节；完整 reader
+字节及 3,937 字节的 warm delta 均不变。这只验证重复 capture IO 的消除，不证明模型
+输入减少、完整成本收益、成果验收或 C1 writer/consumer 切换。
+显式小预算下，原生展示还可省略重复的目录/选读快捷命令，保留完整恢复命令；
+在其后追加 `--list` 或 `--select`，无须基线即可发现或读取当前事实。
+原有 4,000 字节冷态、温态及压缩恢复用例保留完整要求、Stop、原身份和完整恢复；
+这属于传输验证。
+
 Journal 持久化是独立的来源保真前置。本次提议由 Python adapter 复用 context
 delivery 的稀疏数值 token 收集器；两个 TypeScript 消费者复用同一来源数值校验器。
 Journal 继续传递 JSON 对象，仅为整值浮点、带符号零和非安全整数增加元数据。

@@ -209,21 +209,25 @@ def native_context_capture_view(projected: dict[str, Any], directory: Path, *,
                                 max_page_output_bytes: int | None = None) -> dict[str, Any]:
     """Publish file references for an already-decided native capture.
 
-    Persist the complete wire and expose navigation without eagerly importing
-    content into model history. Reading never collects or admits a decision.
+    Reuse full recovery; persist delta or unwrapped wire before exposing it.
+    Reading never collects or admits a decision.
     """
     from ..control_plane.turn_driver.decision_capture import write_decision_capture
 
     if max_page_output_bytes is not None and max_page_output_bytes <= 0:
         raise QuotaDecisionTransportError("Native context output limit must be positive.")
-    wire = directory / "delivery.json"
-    write_decision_capture(wire, projected)
-    reference = {"path": str(wire), "sha256": hashlib.sha256(wire.read_bytes()).hexdigest()}
+    reference = None
     mode, target = "full", None
     if projected.get("schema_version") == "context_delivery_v1":
         mode, target = projected["mode"], projected["target"]
         if mode == "full":
             reference = {key: projected["recovery"][key] for key in ("path", "sha256")}
+    if reference is None:
+        # Full delivery already reads its committed recovery. Delta and
+        # unwrapped inputs still need their own immutable reader target.
+        wire = directory / "delivery.json"
+        write_decision_capture(wire, projected)
+        reference = {"path": str(wire), "sha256": hashlib.sha256(wire.read_bytes()).hexdigest()}
     page_bytes, output_bytes = native_context_page_budget()
     if max_page_output_bytes is not None:
         output_bytes = min(output_bytes, max_page_output_bytes)
@@ -265,7 +269,7 @@ def native_context_capture_view(projected: dict[str, Any], directory: Path, *,
     result["instruction"] = CONTEXT_CAPTURE_NAVIGATION_GUIDANCE
     if mode != "full":
         result["instruction"] += (" command reads the delta; baseline_reference identifies its exact saved base when file-backed. "
-            "index_command/select_command read current facts directly without that baseline.")
+            "recovery.command reads current facts directly without that baseline.")
     # The reference must fit even under an explicit small caller ceiling.
     def fits():
         return len(json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode()) + 1 <= min(output_bytes, 7900)
@@ -275,6 +279,9 @@ def native_context_capture_view(projected: dict[str, Any], directory: Path, *,
         result.pop("select_command")  # --select also works on the current recovery command.
     if not fits() and "baseline_reference" in result:
         result["baseline_reference"].pop("command", None)  # Exact path/hash remain usable.
+    if not fits():
+        result.pop("index_command")
+        result["instruction"] += " Append --list or --select to recovery.command to discover or read current fields."
     if not fits():
         raise QuotaDecisionTransportError("Native context reference exceeds the output limit; "
             "read the saved original decision and receipt without rerunning admission.")

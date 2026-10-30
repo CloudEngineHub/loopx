@@ -130,6 +130,19 @@ the existing context-delivery owner. C1 must converge the remaining composition
 and consumer assumptions, rather than introduce another capture service or
 rewrite already shared delta/native-resume logic.
 
+A separate native-presentation slice reuses the committed full recovery as its
+reader target, avoiding an unused second wire publication. Delta and unwrapped
+inputs retain their own immutable files and the same reader/lifecycle owners.
+On a matched 107,289-byte synthetic source, capture writes fall from 216,754 to
+107,289 bytes; full reader bytes and the 3,937-byte warm delta are unchanged.
+This qualifies only duplicate capture IO removal, not model-input reduction,
+complete cost, accepted outcomes or C1 writer/consumer cutover.
+For a small explicit output ceiling, native presentation can also omit repeated
+directory/selection commands while retaining the complete recovery command:
+append `--list` or `--select` to discover/read current facts without a baseline.
+The original 4,000-byte cold/warm/compaction cases retain their requirements,
+Stop, original identity and full recovery; this is transport qualification.
+
 Journal persistence is an independent source-fidelity prerequisite. The proposed
 Python adapter reuses context delivery's sparse number-token collector; both
 TypeScript consumers reuse one source-number validator. Journals remain JSON
