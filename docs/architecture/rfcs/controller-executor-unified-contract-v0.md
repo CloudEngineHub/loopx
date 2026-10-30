@@ -130,6 +130,15 @@ the existing context-delivery owner. C1 must converge the remaining composition
 and consumer assumptions, rather than introduce another capture service or
 rewrite already shared delta/native-resume logic.
 
+Optional host polling is part of that original observation. The source-fidelity
+slice records `--record-host-poll` once before capture and reuses its receipt in
+ordinary CLI, envelope and native-context delivery. Recovery reads do not poll
+again. A later capture/handoff failure retains the already-recorded observation
+in its error response; it does not imply missing admission or authorize replay.
+Default-off behavior and unreadable receipt diagnostics remain unchanged. This
+repairs capture completeness, not the unified writer/consumer cutover or a
+long-horizon cost-benefit result.
+
 | Current source / obligation | Present envelope treatment | Required C1 disposition |
 | --- | --- | --- |
 | `interaction_contract.agent_channel.work_context` and pending required reads | `work_context` plus `required_reads`; identical inline material can be referenced | One complete requirement/evidence source with resolvable references; preserve pending reads and their completion conditions |
