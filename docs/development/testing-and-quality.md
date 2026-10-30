@@ -477,7 +477,11 @@ Effect 后台进程；相同源码指纹可能让源码环境与已安装版本�
 The Effect server drains admitted handlers before retiring. With compilation
 caching enabled, its final synchronous cache flush has a one-second allowance,
 supervised by a worker in the same process. Healthy completion still persists
-the real Node cache before removing the locator. A blocked or failed flush
+the real Node cache before removing the locator. The cache-disabled worker
+acknowledges readiness before loading cleanup helpers; those helpers load only
+after it wins retirement. The main thread still preloads them before flushing.
+This keeps cleanup-module loading out of the supervisor's startup allowance.
+A blocked or failed flush
 keeps that cache-disabled worker responsible for the same fenced, identity-checked
 locator cleanup and termination of the already settled process. Node invokes
 the calling environment's [native exit hooks even on self-`SIGKILL`](https://github.com/nodejs/node/blob/v24.21.0/src/node_process_methods.cc#L199-L205), so terminating
@@ -492,7 +496,9 @@ separate from injected-failure coverage; V8 CPU samples do not measure kernel IO
 
 Effect 服务先排空已接纳的 handler，再退出。启用编译缓存时，同进程 worker
 监督最终同步写盘，给缓存一秒处理时间；正常完成仍先持久化真实 Node 缓存，
-再清理定位文件。写盘阻塞或失败时，保留已就绪且关闭缓存的 worker，由它复用
+再清理定位文件。关闭缓存的 worker 先确认就绪，赢得退休权后才加载清理模块；
+主线程仍在写盘前预加载这些模块，避免清理模块加载消耗监督 worker 的启动额度。
+写盘阻塞或失败时，保留已就绪且关闭缓存的 worker，由它复用
 同一锁和精确身份校验清理定位文件，并终止已结算的进程。Node 自发 `SIGKILL`
 也先执行调用环境的原生退出钩子，因此先停 worker 再由主线程终止会重入缓存写盘；
 回归检查实际缓存文件，不能只检查退出信号。监督 worker 无法启动时，定位文件
